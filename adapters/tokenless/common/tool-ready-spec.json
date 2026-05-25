@@ -1,0 +1,113 @@
+{
+  "_comment": "Tool dependency specification for tokenless env-check (tool-ready). String format 'jq' is shorthand for {binary: 'jq', package: 'jq', manager: 'rpm'}. Version constraint: 'rtk>=0.35' means >= 0.35.",
+  "Shell": {
+    "required": [
+      "jq",
+      "rtk>=0.35"
+    ],
+    "recommended": [
+      {
+        "binary": "fzf",
+        "package": "fzf",
+        "manager": "rpm"
+      }
+    ],
+    "config_files": [
+      "~/.bashrc",
+      "~/.zshrc"
+    ],
+    "permissions": [
+      "exec_shell"
+    ],
+    "network": []
+  },
+  "WebFetch": {
+    "required": [
+      {
+        "binary": "curl",
+        "package": "curl",
+        "manager": "rpm"
+      }
+    ],
+    "recommended": [
+      {
+        "binary": "jq",
+        "package": "jq",
+        "manager": "rpm"
+      }
+    ],
+    "config_files": [],
+    "permissions": [
+      "https_outbound"
+    ],
+    "network": [
+      "https_outbound"
+    ]
+  },
+  "Read": {
+    "required": [],
+    "recommended": [
+      {
+        "binary": "bat",
+        "package": "bat",
+        "manager": "rpm",
+        "fallback": [
+          {
+            "method": "cargo",
+            "package": "bat",
+            "binary": "bat"
+          }
+        ]
+      }
+    ],
+    "config_files": [],
+    "permissions": [
+      "file_read"
+    ],
+    "network": []
+  },
+  "Write": {
+    "required": [],
+    "recommended": [],
+    "config_files": [],
+    "permissions": [
+      "file_write"
+    ],
+    "network": []
+  },
+  "Git": {
+    "required": [
+      {
+        "binary": "git",
+        "package": "git",
+        "manager": "rpm"
+      }
+    ],
+    "recommended": [],
+    "config_files": [
+      "~/.gitconfig"
+    ],
+    "permissions": [],
+    "network": []
+  },
+  "Python": {
+    "required": [
+      {
+        "binary": "python3",
+        "package": "python3",
+        "manager": "rpm"
+      }
+    ],
+    "recommended": [
+      {
+        "binary": "pip3",
+        "package": "python3-pip",
+        "manager": "rpm",
+        "pip_name": "pip"
+      }
+    ],
+    "config_files": [],
+    "permissions": [],
+    "network": []
+  }
+}

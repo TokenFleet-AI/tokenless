@@ -1,0 +1,445 @@
+//! Statistics recorder for tokenless.
+//!
+//! Provides SQLite-based storage for compression and rewriting metrics.
+
+use crate::record::{OperationType, StatsRecord};
+use chrono::DateTime;
+use rusqlite::Connection;
+use std::path::Path;
+use std::str::FromStr;
+use std::sync::Mutex;
+
+/// Result type for stats operations.
+pub type StatsResult<T> = Result<T, StatsError>;
+
+/// Error types for stats operations.
+#[derive(Debug, thiserror::Error)]
+pub enum StatsError {
+    /// A database operation failed.
+    #[error("database error: {0}")]
+    Database(#[from] rusqlite::Error),
+    /// An I/O operation failed.
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+}
+
+/// Statistics recorder that stores metrics in a SQLite database.
+///
+/// Manual `Debug` is provided because `rusqlite::Connection` does not implement it.
+pub struct StatsRecorder {
+    conn: Mutex<Connection>,
+}
+
+impl std::fmt::Debug for StatsRecorder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StatsRecorder")
+            .field("conn", &"Mutex<Connection>")
+            .finish()
+    }
+}
+
+impl StatsRecorder {
+    /// Create a new recorder with the database at `db_path`.
+    ///
+    /// Creates the database file and tables if they do not exist.
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the database cannot be opened or
+    /// the schema cannot be created.
+    pub fn new<P: AsRef<Path>>(db_path: P) -> StatsResult<Self> {
+        let conn = Connection::open(db_path)?;
+
+        conn.execute_batch(
+            "
+            PRAGMA journal_mode=WAL;
+            PRAGMA busy_timeout=5000;
+            PRAGMA synchronous=NORMAL;
+        ",
+        )?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS stats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                operation TEXT NOT NULL,
+                agent_id TEXT NOT NULL,
+                source_pid INTEGER,
+                session_id TEXT,
+                tool_use_id TEXT,
+                before_chars INTEGER NOT NULL,
+                before_tokens INTEGER NOT NULL,
+                after_chars INTEGER NOT NULL,
+                after_tokens INTEGER NOT NULL,
+                before_text TEXT,
+                after_text TEXT,
+                before_output TEXT,
+                after_output TEXT
+            )",
+            [],
+        )?;
+
+        let indexes = [
+            "CREATE INDEX IF NOT EXISTS idx_timestamp ON stats(timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_operation ON stats(operation)",
+            "CREATE INDEX IF NOT EXISTS idx_agent_id ON stats(agent_id)",
+            "CREATE INDEX IF NOT EXISTS idx_session_id ON stats(session_id)",
+        ];
+        for idx in &indexes {
+            conn.execute(idx, [])?;
+        }
+
+        // Schema migration: add columns introduced in v0.3.0 if missing
+        for col in &["before_output", "after_output"] {
+            let sql = format!("ALTER TABLE stats ADD COLUMN {col} TEXT");
+            if let Err(e) = conn.execute(&sql, []) {
+                if !e.to_string().contains("duplicate column name") {
+                    return Err(StatsError::Database(e));
+                }
+            }
+        }
+
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
+    }
+
+    /// Record a statistics entry.
+    ///
+    /// Returns the new row ID on success.
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the insert fails.
+    #[allow(clippy::too_many_lines)]
+    pub fn record(&self, stats_record: &StatsRecord) -> StatsResult<i64> {
+        let conn = self.conn.lock().unwrap_or_else(|e| {
+            self.conn.clear_poison();
+            e.into_inner()
+        });
+
+        conn.execute(
+            "INSERT INTO stats (
+                timestamp, operation, agent_id, source_pid, session_id, tool_use_id,
+                before_chars, before_tokens, after_chars, after_tokens,
+                before_text, after_text,
+                before_output, after_output
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            rusqlite::params![
+                stats_record.timestamp.to_rfc3339(),
+                stats_record.operation.as_str(),
+                stats_record.agent_id,
+                stats_record.source_pid,
+                stats_record.session_id,
+                stats_record.tool_use_id,
+                stats_record.before_chars,
+                stats_record.before_tokens,
+                stats_record.after_chars,
+                stats_record.after_tokens,
+                stats_record.before_text,
+                stats_record.after_text,
+                stats_record.before_output,
+                stats_record.after_output,
+            ],
+        )?;
+
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Query all records, newest first, with an optional limit.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the query fails.
+    pub fn all_records(&self, limit: Option<usize>) -> StatsResult<Vec<StatsRecord>> {
+        let conn = self.conn.lock().unwrap_or_else(|e| {
+            self.conn.clear_poison();
+            e.into_inner()
+        });
+
+        const COLS: &str =
+            "id, timestamp, operation, agent_id, source_pid, session_id, tool_use_id,
+             before_chars, before_tokens, after_chars, after_tokens,
+             before_text, after_text, before_output, after_output";
+
+        let records = match limit {
+            Some(n) => {
+                let mut stmt = conn.prepare(&format!(
+                    "SELECT {COLS} FROM stats ORDER BY timestamp DESC LIMIT ?1"
+                ))?;
+                let rows = stmt.query_map([n as i64], Self::row_to_record)?;
+                rows.filter_map(|r| r.ok()).collect()
+            }
+            None => {
+                let mut stmt =
+                    conn.prepare(&format!("SELECT {COLS} FROM stats ORDER BY timestamp DESC"))?;
+                let rows = stmt.query_map([], Self::row_to_record)?;
+                rows.filter_map(|r| r.ok()).collect()
+            }
+        };
+
+        Ok(records)
+    }
+
+    /// Get a single record by database ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the query fails.
+    pub fn record_by_id(&self, id: i64) -> StatsResult<Option<StatsRecord>> {
+        let conn = self.conn.lock().unwrap_or_else(|e| {
+            self.conn.clear_poison();
+            e.into_inner()
+        });
+
+        let mut stmt = conn.prepare(
+            "SELECT id, timestamp, operation, agent_id, source_pid, session_id, tool_use_id,
+                    before_chars, before_tokens, after_chars, after_tokens,
+                    before_text, after_text, before_output, after_output
+             FROM stats WHERE id = ?1",
+        )?;
+
+        let mut rows = stmt.query_map([id], Self::row_to_record)?;
+        Ok(rows.next().and_then(|r| r.ok()))
+    }
+
+    /// Get the total record count.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the query fails.
+    pub fn count(&self) -> StatsResult<usize> {
+        let conn = self.conn.lock().unwrap_or_else(|e| {
+            self.conn.clear_poison();
+            e.into_inner()
+        });
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM stats", [], |row| row.get(0))?;
+        Ok(usize::try_from(count).unwrap_or(0))
+    }
+
+    /// Clear all records and reset the auto-increment counter.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the delete fails.
+    pub fn clear(&self) -> StatsResult<()> {
+        let conn = self.conn.lock().unwrap_or_else(|e| {
+            self.conn.clear_poison();
+            e.into_inner()
+        });
+
+        conn.execute_batch("DELETE FROM stats; DELETE FROM sqlite_sequence WHERE name='stats';")?;
+        Ok(())
+    }
+
+    fn row_to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<StatsRecord> {
+        Ok(StatsRecord {
+            id: row.get(0)?,
+            timestamp: DateTime::parse_from_rfc3339(&row.get::<_, String>(1)?)
+                .map(|dt| dt.with_timezone(&chrono::Local))
+                .unwrap_or_else(|_| chrono::Local::now()),
+            operation: OperationType::from_str(&row.get::<_, String>(2)?)
+                .unwrap_or(OperationType::CompressSchema),
+            agent_id: row.get(3)?,
+            source_pid: row.get(4)?,
+            session_id: row.get(5)?,
+            tool_use_id: row.get(6)?,
+            before_chars: row.get(7)?,
+            before_tokens: row.get(8)?,
+            after_chars: row.get(9)?,
+            after_tokens: row.get(10)?,
+            before_text: row.get(11)?,
+            after_text: row.get(12)?,
+            before_output: row.get(13)?,
+            after_output: row.get(14)?,
+        })
+    }
+}
+
+/// Summary statistics aggregated from multiple records.
+#[derive(Debug, Clone, Default)]
+pub struct StatsSummary {
+    /// Total number of records.
+    pub total_records: usize,
+    /// Total characters before compression.
+    pub total_before_chars: usize,
+    /// Total characters after compression.
+    pub total_after_chars: usize,
+    /// Total tokens before compression.
+    pub total_before_tokens: usize,
+    /// Total tokens after compression.
+    pub total_after_tokens: usize,
+}
+
+impl StatsSummary {
+    /// Characters saved across all records.
+    #[must_use]
+    pub fn chars_saved(&self) -> usize {
+        self.total_before_chars
+            .saturating_sub(self.total_after_chars)
+    }
+
+    /// Tokens saved across all records.
+    #[must_use]
+    pub fn tokens_saved(&self) -> usize {
+        self.total_before_tokens
+            .saturating_sub(self.total_after_tokens)
+    }
+
+    /// Percentage of characters saved.
+    #[must_use]
+    pub fn chars_percent(&self) -> f64 {
+        if self.total_before_chars > 0 {
+            (self.chars_saved() as f64 / self.total_before_chars as f64) * 100.0
+        } else {
+            0.0
+        }
+    }
+
+    /// Percentage of tokens saved.
+    #[must_use]
+    pub fn tokens_percent(&self) -> f64 {
+        if self.total_before_tokens > 0 {
+            (self.tokens_saved() as f64 / self.total_before_tokens as f64) * 100.0
+        } else {
+            0.0
+        }
+    }
+
+    /// Build a summary from a slice of records.
+    #[must_use]
+    pub fn from_records(records: &[StatsRecord]) -> Self {
+        let mut summary = Self {
+            total_records: records.len(),
+            ..Self::default()
+        };
+
+        for record in records {
+            summary.total_before_chars += record.before_chars;
+            summary.total_after_chars += record.after_chars;
+            summary.total_before_tokens += record.before_tokens;
+            summary.total_after_tokens += record.after_tokens;
+        }
+
+        summary
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_test_recorder() -> StatsRecorder {
+        StatsRecorder::new(":memory:").expect("failed to create in-memory database")
+    }
+
+    #[test]
+    fn test_record_and_retrieve() {
+        let recorder = make_test_recorder();
+        let record = StatsRecord::new(
+            OperationType::CompressSchema,
+            "test-agent".to_string(),
+            100,
+            25,
+            50,
+            12,
+        );
+        let id = recorder.record(&record).unwrap();
+        assert!(id > 0, "record id should be positive");
+    }
+
+    #[test]
+    fn test_count() {
+        let recorder = make_test_recorder();
+        assert_eq!(recorder.count().unwrap(), 0);
+
+        let record = StatsRecord::new(
+            OperationType::CompressSchema,
+            "test-agent".to_string(),
+            100,
+            25,
+            50,
+            12,
+        );
+        recorder.record(&record).unwrap();
+        assert_eq!(recorder.count().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_all_records_empty() {
+        let recorder = make_test_recorder();
+        let records = recorder.all_records(None).unwrap();
+        assert!(records.is_empty());
+    }
+
+    #[test]
+    fn test_all_records_with_limit() {
+        let recorder = make_test_recorder();
+        let record = StatsRecord::new(
+            OperationType::CompressSchema,
+            "test".to_string(),
+            100,
+            25,
+            50,
+            12,
+        );
+        recorder.record(&record).unwrap();
+        recorder.record(&record).unwrap();
+        let records = recorder.all_records(Some(1)).unwrap();
+        assert_eq!(records.len(), 1);
+    }
+
+    #[test]
+    fn test_clear() {
+        let recorder = make_test_recorder();
+        let record = StatsRecord::new(
+            OperationType::CompressSchema,
+            "test".to_string(),
+            100,
+            25,
+            50,
+            12,
+        );
+        recorder.record(&record).unwrap();
+        recorder.clear().unwrap();
+        assert_eq!(recorder.count().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_record_by_id_not_found() {
+        let recorder = make_test_recorder();
+        assert!(recorder.record_by_id(999).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_stats_summary_from_empty() {
+        let summary = StatsSummary::from_records(&[]);
+        assert_eq!(summary.total_records, 0);
+        assert_eq!(summary.chars_saved(), 0);
+    }
+
+    #[test]
+    fn test_stats_summary_calculation() {
+        let records = vec![
+            StatsRecord::new(
+                OperationType::CompressSchema,
+                "agent".to_string(),
+                100,
+                25,
+                60,
+                15,
+            ),
+            StatsRecord::new(
+                OperationType::CompressResponse,
+                "agent".to_string(),
+                200,
+                50,
+                100,
+                25,
+            ),
+        ];
+        let summary = StatsSummary::from_records(&records);
+        assert_eq!(summary.total_records, 2);
+        assert_eq!(summary.chars_saved(), 140);
+        assert_eq!(summary.tokens_saved(), 35);
+    }
+}

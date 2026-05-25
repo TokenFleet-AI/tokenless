@@ -2,6 +2,11 @@
 
 This directory contains reusable project documentation for the template repository.
 
+## Tokenless 架构设计
+
+- [Tokenless Architecture (EN)](./design/tokenless-architecture.md) — 英文版架构设计文档
+- [Tokenless 架构设计 (中文)](./design/tokenless-architecture-zh.md) — 中文版架构设计文档
+
 ## Agent workflow
 
 - [Ruflo Usage](./ruflo-usage.md) — how this template uses Ruflo for agent workflow and orchestration.

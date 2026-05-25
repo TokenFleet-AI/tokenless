@@ -6,7 +6,7 @@ resolver = "3"
 version = "0.1.0"
 authors = ["Your Name <YourName@yourdomain.com>"]
 edition = "2024"
-license = "MIT"
+license = "Apache-2.0"
 documentation = "https://docs.rs/"
 repository = "https://github.com/TODO"
 homepage = "https://github.com/TODO"
@@ -14,15 +14,23 @@ readme = "README.md"
 
 [workspace.dependencies]
 anyhow = "1.0.102"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+dirs = "5.0"
+libc = "0.2"
+regex = "1.10"
+rusqlite = { version = "0.31", features = ["bundled"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.142"
 thiserror = "2.0.18"
 tokio = { version = "1.52", features = ["rt", "rt-multi-thread", "macros"] }
+toon-format = { version = "0.4", default-features = false }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # workspace crates
 tokenless-core = { path = "crates/core" }
+rtk-registry = { path = "../rtk/crates/rtk-registry" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -35,3 +43,10 @@ expect_used = "warn"
 panic = "warn"
 todo = "warn"
 pedantic = "warn"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
