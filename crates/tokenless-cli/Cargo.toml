@@ -6,6 +6,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
+readme = "README.md"
 keywords = ["llm", "token", "compression", "cli", "openai"]
 categories = ["development-tools", "command-line-utilities"]
 
