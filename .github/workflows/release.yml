@@ -32,10 +32,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo login ${{ secrets.CRATES_IO_TOKEN }}
-      - run: cargo publish -p tokenless-schema
-      - run: cargo publish -p tokenless-stats
-      - run: cargo publish -p tokenless-cli
+      - name: Publish tokenless-schema
+        run: cargo publish -p tokenless-schema
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+      - name: Publish tokenless-stats
+        run: cargo publish -p tokenless-stats
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+      - name: Publish tokenless (CLI)
+        run: cargo publish -p tokenless
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
 
   build:
     name: Build ${{ matrix.target }}
