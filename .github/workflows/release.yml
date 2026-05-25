@@ -28,6 +28,7 @@ jobs:
   crates-io:
     name: Publish to crates.io
     runs-on: ubuntu-latest
+    continue-on-error: true
     if: ${{ !inputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
@@ -102,7 +103,7 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [crates-io, build]
+    needs: [build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
