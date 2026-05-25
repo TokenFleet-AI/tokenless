@@ -1,9 +1,13 @@
 [package]
-name = "tokenless-cli"
-description = "CLI tool for LLM schema and response compression"
+name = "tokenless"
+description = "LLM token optimization CLI — schema/response compression, command rewriting, TOON encoding"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["llm", "token", "compression", "cli", "openai"]
+categories = ["development-tools", "command-line-utilities"]
 
 [[bin]]
 name = "tokenless"
@@ -18,7 +22,6 @@ serde_json.workspace = true
 toon-format.workspace = true
 rusqlite.workspace = true
 dirs.workspace = true
-libc.workspace = true
 rtk-registry.workspace = true
 
 [lints]

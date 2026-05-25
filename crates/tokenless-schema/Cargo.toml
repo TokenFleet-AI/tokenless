@@ -4,6 +4,10 @@ description = "Schema and response compression for LLM token optimization"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["llm", "token", "compression", "openai", "function-calling"]
+categories = ["development-tools", "compression"]
 
 [dependencies]
 serde_json.workspace = true

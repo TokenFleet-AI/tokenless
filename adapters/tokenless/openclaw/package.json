@@ -1,0 +1,12 @@
+{
+  "name": "@tokenless/openclaw-plugin",
+  "version": "1.0.0",
+  "description": "Unified OpenClaw plugin — RTK command rewriting + tokenless compression",
+  "type": "module",
+  "main": "index.js",
+  "openclaw": {
+    "extensions": ["./index.js"]
+  },
+  "files": ["index.js", "openclaw.plugin.json"],
+  "license": "MIT"
+}

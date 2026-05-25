@@ -23,11 +23,25 @@ install: build
 adapter-install:
 	@mkdir -p $(ADAPTER_DIR)/common
 	@cp -r adapters/tokenless/common/* $(ADAPTER_DIR)/common/
+	@cp -r adapters/tokenless/openclaw $(ADAPTER_DIR)/openclaw 2>/dev/null || true
+	@cp -r adapters/tokenless/hermes $(ADAPTER_DIR)/hermes 2>/dev/null || true
 	@echo "Installed adapters to $(ADAPTER_DIR)"
 
 adapter-uninstall:
 	@rm -rf $(ADAPTER_DIR)
 	@echo "Removed $(ADAPTER_DIR)"
+
+openclaw-install:
+	@bash adapters/tokenless/openclaw/scripts/install.sh
+
+openclaw-uninstall:
+	@bash adapters/tokenless/openclaw/scripts/uninstall.sh
+
+hermes-install:
+	@bash adapters/tokenless/hermes/scripts/install.sh
+
+hermes-uninstall:
+	@bash adapters/tokenless/hermes/scripts/uninstall.sh
 
 setup: install adapter-install
 	@echo "tokenless setup complete"

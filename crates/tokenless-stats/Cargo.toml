@@ -4,6 +4,10 @@ description = "SQLite-based compression metrics tracking for tokenless"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["llm", "token", "statistics", "sqlite", "metrics"]
+categories = ["development-tools"]
 
 [dependencies]
 serde.workspace = true

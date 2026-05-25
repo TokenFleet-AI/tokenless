@@ -518,6 +518,8 @@ checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 [[package]]
 name = "rtk-registry"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e0a5ae1bb07e0942fd95a2f2db34033b1c749924a7261ebaf35712847e3f75f"
 dependencies = [
  "lazy_static",
  "regex",
@@ -683,13 +685,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "tokenless-cli"
+name = "tokenless"
 version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
  "dirs",
- "libc",
  "rtk-registry",
  "rusqlite",
  "serde_json",

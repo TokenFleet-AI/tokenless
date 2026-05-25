@@ -4,12 +4,12 @@ resolver = "3"
 
 [workspace.package]
 version = "0.1.0"
-authors = ["Your Name <YourName@yourdomain.com>"]
+authors = ["TokenFleet-AI"]
 edition = "2024"
 license = "Apache-2.0"
+repository = "https://github.com/TokenFleet-AI/tokenless"
+homepage = "https://github.com/TokenFleet-AI/tokenless"
 documentation = "https://docs.rs/"
-repository = "https://github.com/TODO"
-homepage = "https://github.com/TODO"
 readme = "README.md"
 
 [workspace.dependencies]
@@ -30,7 +30,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # workspace crates
 tokenless-core = { path = "crates/core" }
-rtk-registry = { path = "../rtk/crates/rtk-registry" }
+rtk-registry = "0.1.0"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

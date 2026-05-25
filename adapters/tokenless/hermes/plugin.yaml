@@ -1,0 +1,9 @@
+name: tokenless
+version: "0.1.0"
+description: "Tokenless context compression for Hermes Agent — response compression, TOON encoding, command rewriting, Tool Ready"
+author: TokenFleet-AI
+requires_env: []
+provides_hooks:
+  - transform_tool_result
+  - pre_tool_call
+  - on_session_start

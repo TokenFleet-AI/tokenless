@@ -1,0 +1,16 @@
+{
+  "packages": {
+    ".": {
+      "release-type": "rust",
+      "package-name": "tokenless",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true,
+      "extra-files": [
+        "Cargo.toml",
+        "crates/tokenless-schema/Cargo.toml",
+        "crates/tokenless-stats/Cargo.toml",
+        "crates/tokenless-cli/Cargo.toml"
+      ]
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "function": {
+    "name": "get_weather",
+    "description": "Get the current weather for a location. This function queries the weather service API and returns temperature, humidity, wind speed, and other meteorological data for the specified location. It supports both city name and coordinates-based lookups.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "location": {
+          "type": "string",
+          "description": "The city name or coordinates to get weather for. This can be either a city name like 'Beijing' or 'San Francisco', or coordinates in 'lat,lng' format like '39.9,116.4'.",
+          "examples": ["Beijing", "39.9,116.4"]
+        },
+        "units": {
+          "type": "string",
+          "enum": ["celsius", "fahrenheit"],
+          "description": "The unit system to use for temperature. Defaults to celsius.",
+          "default": "celsius"
+        }
+      },
+      "required": ["location"]
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "id": "chatcmpl-abc123",
+  "object": "chat.completion",
+  "created": 1728000000,
+  "model": "gpt-4o",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Here is the weather data you requested."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 150,
+    "completion_tokens": 42,
+    "total_tokens": 192
+  },
+  "debug": {
+    "request_id": "req_xyz",
+    "latency_ms": 342,
+    "model_version": "gpt-4o-2024-08-06",
+    "trace_id": "trace_abc"
+  },
+  "logs": [
+    {"level": "info", "message": "Request processed successfully"},
+    {"level": "debug", "message": "Cache hit for tokenization"}
+  ]
+}

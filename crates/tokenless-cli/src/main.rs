@@ -22,16 +22,24 @@
 )]
 
 mod env_check;
+mod init;
 
 use clap::{Parser, Subcommand};
 use rtk_registry::{RtkInstallStatus, is_rtk_installed, rewrite_command};
 use std::fs;
 use std::io::{self, Read};
 use std::process;
+use std::sync::OnceLock;
 use tokenless_schema::{ResponseCompressor, SchemaCompressor};
 use tokenless_stats::estimate_tokens_from_bytes;
 use tokenless_stats::{OperationType, StatsRecord, StatsRecorder, TokenlessConfig};
 use tokenless_stats::{format_list, format_show, format_summary};
+
+/// Cached result of `is_rtk_installed()`, checked at most once per process lifetime.
+fn rtk_available() -> bool {
+    static RTK_OK: OnceLock<bool> = OnceLock::new();
+    *RTK_OK.get_or_init(|| matches!(is_rtk_installed(), RtkInstallStatus::Installed { .. }))
+}
 
 #[derive(Parser)]
 #[command(
@@ -109,6 +117,15 @@ enum Commands {
         /// Transparent prefixes (can be repeated).
         #[arg(long)]
         transparent_prefix: Vec<String>,
+    },
+    /// Install tokenless hooks for AI coding agents (claude, cursor, windsurf, cline, kilocode, antigravity, augment, hermes, pi, gemini, opencode).
+    Init {
+        /// Install globally (shared config) instead of project-local.
+        #[arg(short, long)]
+        global: bool,
+        /// Target agent [default: claude] [possible values: claude, cursor, windsurf, cline, kilocode, antigravity, augment, hermes, pi, gemini, opencode]
+        #[arg(long, default_value = "claude")]
+        agent: String,
     },
     /// Check tool environment readiness (binary availability, config, permissions, network).
     EnvCheck {
@@ -403,14 +420,11 @@ fn run() -> Result<(), (String, i32)> {
             };
             let cmd = cmd.trim().to_string();
 
-            match is_rtk_installed() {
-                RtkInstallStatus::Installed { .. } => {}
-                RtkInstallStatus::NotInstalled { ref install_hints } => {
-                    eprintln!("[tokenless] RTK is not installed.");
-                    for hint in &install_hints.install_commands {
-                        eprintln!("  Install: {hint}");
-                    }
-                }
+            if !rtk_available() {
+                eprintln!("[tokenless] RTK is not installed — using original command.");
+                eprintln!("  Install: cargo install rtk  or  brew install TokenFleet-AI/rtk/rtk");
+                println!("{cmd}");
+                return Ok(());
             }
 
             match rewrite_command(&cmd, &exclude, &transparent_prefix) {
@@ -420,6 +434,23 @@ fn run() -> Result<(), (String, i32)> {
                     println!("{cmd}");
                 }
             }
+        }
+        Commands::Init { global, agent } => {
+            let agent = match agent.as_str() {
+                "cursor" => init::Agent::Cursor,
+                "windsurf" => init::Agent::Windsurf,
+                "cline" => init::Agent::Cline,
+                "kilocode" => init::Agent::Kilocode,
+                "antigravity" => init::Agent::Antigravity,
+                "augment" => init::Agent::Augment,
+                "hermes" => init::Agent::Hermes,
+                "pi" => init::Agent::Pi,
+                "gemini" => init::Agent::Gemini,
+                "opencode" => init::Agent::Opencode,
+                _ => init::Agent::Claude,
+            };
+            let config = init::InitConfig { global };
+            init::run(agent, &config).map_err(|e| (e, 1))?;
         }
         Commands::EnvCheck {
             tool,

@@ -2,7 +2,9 @@
 
 This directory contains reusable project documentation for the template repository.
 
-## Tokenless 架构设计
+## Tokenless 文档
+
+- [用户指南与教程](./user-guide.md) — 全面的使用教程、设计说明和 API 参考
 
 - [Tokenless Architecture (EN)](./design/tokenless-architecture.md) — 英文版架构设计文档
 - [Tokenless 架构设计 (中文)](./design/tokenless-architecture-zh.md) — 中文版架构设计文档

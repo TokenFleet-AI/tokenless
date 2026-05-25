@@ -1,0 +1,25 @@
+{
+  "name": "Alice",
+  "age": 30,
+  "address": null,
+  "phone": null,
+  "preferences": {
+    "theme": "dark",
+    "notifications": true,
+    "debug_mode": false,
+    "debug": {
+      "last_login": "2024-01-01",
+      "session_id": "sess_001"
+    }
+  },
+  "tags": ["premium", "beta", "verified", "early_adopter", "vip"],
+  "recent_orders": [
+    {"id": 1, "item": "book", "price": 29.99, "debug_info": "ok"},
+    {"id": 2, "item": "laptop", "price": 1299.99, "debug_info": "ok"},
+    {"id": 3, "item": "mouse", "price": 49.99, "debug_info": "ok"},
+    {"id": 4, "item": "keyboard", "price": 89.99, "debug_info": "ok"},
+    {"id": 5, "item": "monitor", "price": 399.99, "debug_info": "ok"}
+  ],
+  "empty_field": "",
+  "null_field": null
+}
