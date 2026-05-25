@@ -1,0 +1,10 @@
+/target/
+.vscode/
+
+# Ruflo / Claude-flow runtime state
+.claude-flow/
+.swarm/
+.claude/
+.mcp.json
+ruvector.db
+.idea
