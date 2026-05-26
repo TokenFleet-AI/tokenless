@@ -133,6 +133,8 @@ enum Commands {
         #[arg(long)]
         tool_use_id: Option<String>,
     },
+    /// Claude Code PreToolUse hook — reads JSON from stdin, outputs hook JSON response.
+    RewriteHook,
     /// Install tokenless hooks for AI coding agents (claude, cursor, windsurf, cline, kilocode,
     /// antigravity, augment, hermes, pi, gemini, opencode).
     Init {
@@ -478,6 +480,49 @@ fn run() -> Result<(), (String, i32)> {
                     eprintln!("[tokenless] No rewrite available — passing through original.");
                     println!("{cmd}");
                 }
+            }
+        }
+        Commands::RewriteHook => {
+            let input = read_input(&None).map_err(|e| (e, 2))?;
+            let hook_input: serde_json::Value =
+                serde_json::from_str(&input).map_err(|e| (format!("JSON parse error: {e}"), 2))?;
+            let cmd = hook_input
+                .pointer("/tool_input/command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if cmd.is_empty() {
+                return Ok(());
+            }
+
+            if !rtk_available() {
+                return Ok(());
+            }
+
+            match rewrite_command(cmd, &[], &[]) {
+                Some(rewritten) if rewritten != cmd => {
+                    record_compression_stats(
+                        OperationType::RewriteCommand,
+                        None,
+                        None,
+                        None,
+                        cmd.to_string(),
+                        rewritten.clone(),
+                    );
+                    let response = serde_json::json!({
+                        "hookSpecificOutput": {
+                            "hookEventName": "PreToolUse",
+                            "permissionDecision": "allow",
+                            "permissionDecisionReason": "tokenless auto-rewrite",
+                            "updatedInput": {
+                                "tool_input": {
+                                    "command": rewritten
+                                }
+                            }
+                        }
+                    });
+                    println!("{}", serde_json::to_string(&response).unwrap_or_default());
+                }
+                _ => {}
             }
         }
         Commands::Init { global, agent } => {

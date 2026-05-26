@@ -42,7 +42,28 @@ pub enum Agent {
     Opencode,
 }
 
-const HOOKS_JSON: &str = r#"{
+/// Claude Code PreToolUse hook script — reads stdin JSON, rewrites command, outputs hook JSON.
+const CLAUDE_HOOK_SCRIPT: &str = r#"#!/usr/bin/env bash
+# tokenless Claude Code PreToolUse hook
+if ! command -v jq &>/dev/null; then exit 0; fi
+INPUT=$(cat)
+CMD=$(jq -r '.tool_input.command // empty' <<<"$INPUT")
+[ -z "$CMD" ] && exit 0
+REWRITTEN=$(tokenless rewrite "$CMD" 2>/dev/null)
+[ -z "$REWRITTEN" ] || [ "$CMD" = "$REWRITTEN" ] && exit 0
+jq -c --arg cmd "$REWRITTEN" \
+  '.tool_input.command = $cmd | {
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "permissionDecision": "allow",
+      "permissionDecisionReason": "tokenless auto-rewrite",
+      "updatedInput": .tool_input
+    }
+  }' <<<"$INPUT"
+"#;
+
+/// Default hooks JSON for non-Claude agents (shell-based).
+const DEFAULT_HOOKS_JSON: &str = r#"{
   "hooks": {
     "PreToolUse": [
       {
@@ -68,6 +89,37 @@ const HOOKS_JSON: &str = r#"{
     ]
   }
 }"#;
+
+fn claude_hooks_json(script_path: &str) -> String {
+    format!(
+        r#"{{
+  "hooks": {{
+    "PreToolUse": [
+      {{
+        "matcher": "Bash",
+        "hooks": [
+          {{
+            "type": "command",
+            "command": "{script_path}"
+          }}
+        ]
+      }}
+    ],
+    "PostToolUse": [
+      {{
+        "matcher": "*",
+        "hooks": [
+          {{
+            "type": "command",
+            "command": "tokenless compress-response"
+          }}
+        ]
+      }}
+    ]
+  }}
+}}"#
+    )
+}
 
 const SH_HOOK_REWRITE: &str = "#!/usr/bin/env bash
 # tokenless hook — rewrite commands
@@ -126,15 +178,15 @@ fn write_file(path: &Path, content: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn merge_into_settings(settings_path: &Path) -> Result<(), String> {
+fn merge_into_settings(settings_path: &Path, hooks_json: &str) -> Result<(), String> {
     let existing = std::fs::read_to_string(settings_path).unwrap_or_default();
     let merged = if existing.is_empty() {
-        HOOKS_JSON.to_string()
+        hooks_json.to_string()
     } else {
         let mut existing_val: serde_json::Value =
             serde_json::from_str(&existing).map_err(|e| format!("Invalid settings JSON: {e}"))?;
         let new_val: serde_json::Value =
-            serde_json::from_str(HOOKS_JSON).map_err(|e| format!("Invalid hooks JSON: {e}"))?;
+            serde_json::from_str(hooks_json).map_err(|e| format!("Invalid hooks JSON: {e}"))?;
         #[allow(clippy::collapsible_if)]
         if let Some(obj) = existing_val.as_object_mut() {
             if let Some(new_hooks) = new_val.get("hooks") {
@@ -160,11 +212,27 @@ fn claude_dir(global: bool) -> PathBuf {
 
 fn init_claude(config: &InitConfig) -> Result<(), String> {
     let dir = claude_dir(config.global);
+    // Write the hook shell script
+    let script_path = dir.join("hooks").join("tokenless-rewrite.sh");
+    write_file(&script_path, CLAUDE_HOOK_SCRIPT)?;
+    // Make it executable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(&script_path) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o755);
+            let _ = std::fs::set_permissions(&script_path, perms);
+        }
+    }
+    // Write settings.json referencing the script
     let settings_path = dir.join("settings.json");
-    merge_into_settings(&settings_path)?;
+    let hooks_json = claude_hooks_json(&script_path.display().to_string());
+    merge_into_settings(&settings_path, &hooks_json)?;
     let scope = if config.global { "global" } else { "project" };
     println!("[tokenless] Installed hooks for Claude Code ({scope})");
     println!("  {}", path_display(&settings_path));
+    println!("  {}", path_display(&script_path));
     Ok(())
 }
 
@@ -196,7 +264,7 @@ fn init_generic_agent(dir: &str, config: &InitConfig) -> Result<(), String> {
         PathBuf::from(dir.trim_start_matches('.'))
     };
     let settings_path = base.join("settings.json");
-    merge_into_settings(&settings_path)?;
+    merge_into_settings(&settings_path, DEFAULT_HOOKS_JSON)?;
     let name = dir.trim_start_matches('.');
     let scope = if config.global { "global" } else { "project" };
     let capitalized: String = name[..1]
@@ -218,7 +286,7 @@ fn init_cline(config: &InitConfig) -> Result<(), String> {
     } else {
         PathBuf::from(".vscode/globalStorage/saoudrizwan.claude-dev/settings.json")
     };
-    merge_into_settings(&vscode_config)?;
+    merge_into_settings(&vscode_config, DEFAULT_HOOKS_JSON)?;
     println!("[tokenless] Installed hooks for Cline");
     println!("  {}", path_display(&vscode_config));
     Ok(())
@@ -320,7 +388,7 @@ mod tests {
         let path = std::env::temp_dir().join("tokenless-test-settings.json");
         // Start empty — will be created
         let _ = std::fs::remove_file(&path);
-        merge_into_settings(&path).unwrap();
+        merge_into_settings(&path, DEFAULT_HOOKS_JSON).unwrap();
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("PreToolUse"));
         assert!(content.contains("PostToolUse"));
@@ -332,7 +400,7 @@ mod tests {
     fn test_merge_preserves_existing() {
         let path = std::env::temp_dir().join("tokenless-test-merge.json");
         std::fs::write(&path, r#"{"env":{"KEY":"val"}}"#).unwrap();
-        merge_into_settings(&path).unwrap();
+        merge_into_settings(&path, DEFAULT_HOOKS_JSON).unwrap();
         let content = std::fs::read_to_string(&path).unwrap();
         let v: serde_json::Value = serde_json::from_str(&content).unwrap();
         assert!(v.get("hooks").is_some());
