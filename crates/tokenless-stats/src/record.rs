@@ -3,9 +3,10 @@
 //! Each record represents a single compression or rewriting operation
 //! with before/after metrics and optional text content for diff export.
 
+use std::str::FromStr;
+
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 
 /// Type of compression or rewriting operation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

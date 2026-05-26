@@ -1,7 +1,8 @@
 //! Formatting helpers for displaying statistics records and summaries.
 
-use crate::record::StatsRecord;
 use std::collections::BTreeMap;
+
+use crate::record::StatsRecord;
 
 /// Format a full summary, optionally with a header title.
 #[must_use]
@@ -59,7 +60,8 @@ pub fn format_summary(records: &[StatsRecord], title: Option<&str>) -> String {
         total_after_tokens += at;
 
         output.push_str(&format!(
-            "{op_name}\n  Count: {count}\n  Chars: {bc} → {ac} (-{cs}, {cp:.1}%)\n  Tokens: {bt} → {at} (-{ts}, {tp:.1}%)\n\n",
+            "{op_name}\n  Count: {count}\n  Chars: {bc} → {ac} (-{cs}, {cp:.1}%)\n  Tokens: {bt} \
+             → {at} (-{ts}, {tp:.1}%)\n\n",
             count = group.len(),
             cp = chars_pct,
             tp = tokens_pct,
@@ -83,7 +85,8 @@ pub fn format_summary(records: &[StatsRecord], title: Option<&str>) -> String {
     };
 
     output.push_str(&format!(
-        "Total\n  Count: {count}\n  Chars: {bc} → {ac} (-{cs}, {cp:.1}%)\n  Tokens: {bt} → {at} (-{ts}, {tp:.1}%)\n",
+        "Total\n  Count: {count}\n  Chars: {bc} → {ac} (-{cs}, {cp:.1}%)\n  Tokens: {bt} → {at} \
+         (-{ts}, {tp:.1}%)\n",
         count = records.len(),
         bc = format_number(total_before_chars),
         ac = format_number(total_after_chars),
@@ -136,7 +139,8 @@ pub fn format_show(record: &StatsRecord) -> String {
     }
 
     output.push_str(&format!(
-        "\nBefore: {bc} chars, {bt} tokens\nAfter: {ac} chars, {at} tokens\nSaved: {cs} chars (-{cp:.1}%), {ts} tokens (-{tp:.1}%)\n\n",
+        "\nBefore: {bc} chars, {bt} tokens\nAfter: {ac} chars, {at} tokens\nSaved: {cs} chars \
+         (-{cp:.1}%), {ts} tokens (-{tp:.1}%)\n\n",
         bc = record.before_chars,
         bt = record.before_tokens,
         ac = record.after_chars,
@@ -158,6 +162,43 @@ pub fn format_show(record: &StatsRecord) -> String {
         output.push('\n');
     }
 
+    output
+}
+
+/// Format a breakdown of rewrite-command records grouped by original command.
+#[must_use]
+pub fn format_rewrites(records: &[&StatsRecord], limit: usize) -> String {
+    let mut output = String::from("Rewrite Commands Breakdown\n");
+    output.push_str("==========================\n\n");
+
+    if records.is_empty() {
+        output.push_str("No rewrite records found.\n");
+        return output;
+    }
+
+    let mut by_cmd: BTreeMap<&str, usize> = BTreeMap::new();
+    for r in records {
+        if let Some(ref before) = r.before_text {
+            *by_cmd.entry(before.as_str()).or_default() += 1;
+        }
+    }
+
+    let mut entries: Vec<_> = by_cmd.into_iter().collect();
+    entries.sort_by(|a, b| b.1.cmp(&a.1));
+    let total: usize = entries.iter().map(|(_, c)| c).sum();
+
+    for (cmd, count) in entries.iter().take(limit) {
+        output.push_str(&format!("  {count:>5}  {cmd}\n"));
+    }
+
+    if entries.len() > limit {
+        output.push_str(&format!("  ... and {} more\n", entries.len() - limit));
+    }
+
+    output.push_str(&format!(
+        "\n  Total: {total} rewrites across {} unique commands\n",
+        entries.len()
+    ));
     output
 }
 

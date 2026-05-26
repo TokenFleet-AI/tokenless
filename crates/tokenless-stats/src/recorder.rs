@@ -2,12 +2,12 @@
 //!
 //! Provides SQLite-based storage for compression and rewriting metrics.
 
-use crate::record::{OperationType, StatsRecord};
+use std::{path::Path, str::FromStr, sync::Mutex};
+
 use chrono::DateTime;
 use rusqlite::Connection;
-use std::path::Path;
-use std::str::FromStr;
-use std::sync::Mutex;
+
+use crate::record::{OperationType, StatsRecord};
 
 /// Result type for stats operations.
 pub type StatsResult<T> = Result<T, StatsError>;
@@ -155,8 +155,8 @@ impl StatsRecorder {
             e.into_inner()
         });
 
-        const COLS: &str =
-            "id, timestamp, operation, agent_id, source_pid, session_id, tool_use_id,
+        const COLS: &str = "id, timestamp, operation, agent_id, source_pid, session_id, \
+                            tool_use_id,
              before_chars, before_tokens, after_chars, after_tokens,
              before_text, after_text, before_output, after_output";
 

@@ -1,6 +1,7 @@
+use std::sync::LazyLock;
+
 use regex::Regex;
 use serde_json::Value;
-use std::sync::LazyLock;
 
 #[allow(clippy::expect_used)]
 static CODE_BLOCK_RE: LazyLock<Regex> =
@@ -254,8 +255,9 @@ impl SchemaCompressor {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn test_compress_long_description() {
@@ -418,7 +420,8 @@ mod tests {
     #[test]
     fn test_truncate_at_sentence_boundary() {
         let compressor = SchemaCompressor::new();
-        let text = "Short intro text for testing. This sentence ends here. More text follows after that point.";
+        let text = "Short intro text for testing. This sentence ends here. More text follows \
+                    after that point.";
         let result = compressor.truncate_description(text, 60);
         assert!(result.ends_with('.'));
         assert!(result.len() <= 60);

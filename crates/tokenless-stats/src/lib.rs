@@ -29,7 +29,7 @@ pub mod tokenizer;
 #[doc(inline)]
 pub use config::TokenlessConfig;
 #[doc(inline)]
-pub use query::{format_list, format_show, format_summary};
+pub use query::{format_list, format_rewrites, format_show, format_summary};
 #[doc(inline)]
 pub use record::{OperationType, StatsRecord};
 #[doc(inline)]

@@ -3,8 +3,11 @@
 //! Supported agents: claude (default), cursor, windsurf, cline, kilocode,
 //! antigravity, augment, hermes, pi, gemini, opencode.
 
-use std::path::{Path, PathBuf};
-use std::{fs, io::Write};
+use std::{
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 /// Tokenless hook configuration.
 pub struct InitConfig {
@@ -130,8 +133,8 @@ fn merge_into_settings(settings_path: &Path) -> Result<(), String> {
     } else {
         let mut existing_val: serde_json::Value =
             serde_json::from_str(&existing).map_err(|e| format!("Invalid settings JSON: {e}"))?;
-        let new_val: serde_json::Value = serde_json::from_str(HOOKS_JSON)
-            .map_err(|e| format!("Invalid hooks JSON: {e}"))?;
+        let new_val: serde_json::Value =
+            serde_json::from_str(HOOKS_JSON).map_err(|e| format!("Invalid hooks JSON: {e}"))?;
         #[allow(clippy::collapsible_if)]
         if let Some(obj) = existing_val.as_object_mut() {
             if let Some(new_hooks) = new_val.get("hooks") {
@@ -196,7 +199,11 @@ fn init_generic_agent(dir: &str, config: &InitConfig) -> Result<(), String> {
     merge_into_settings(&settings_path)?;
     let name = dir.trim_start_matches('.');
     let scope = if config.global { "global" } else { "project" };
-    let capitalized: String = name[..1].to_uppercase().chars().chain(name[1..].chars()).collect();
+    let capitalized: String = name[..1]
+        .to_uppercase()
+        .chars()
+        .chain(name[1..].chars())
+        .collect();
     println!("[tokenless] Installed hooks for {capitalized} ({scope})");
     println!("  {}", path_display(&settings_path));
     Ok(())
@@ -229,11 +236,15 @@ fn init_hermes(config: &InitConfig) -> Result<(), String> {
     let plugin_init = base.join("__init__.py");
     write_file(
         &manifest,
-        "name: tokenless-rewrite\nversion: \"0.1.0\"\ndescription: Command rewriting via tokenless\nhooks:\n  pre_tool_call:\n    - tokenless rewrite {{command}}\n",
+        "name: tokenless-rewrite\nversion: \"0.1.0\"\ndescription: Command rewriting via \
+         tokenless\nhooks:\n  pre_tool_call:\n    - tokenless rewrite {{command}}\n",
     )?;
     write_file(
         &plugin_init,
-        "# tokenless Hermes plugin\nimport subprocess\n\ndef pre_tool_call(ctx):\n    cmd = ctx.get(\"command\", \"\")\n    result = subprocess.run([\"tokenless\", \"rewrite\", cmd], capture_output=True, text=True)\n    if result.returncode == 0 and result.stdout.strip():\n        ctx[\"command\"] = result.stdout.strip()\n",
+        "# tokenless Hermes plugin\nimport subprocess\n\ndef pre_tool_call(ctx):\n    cmd = \
+         ctx.get(\"command\", \"\")\n    result = subprocess.run([\"tokenless\", \"rewrite\", \
+         cmd], capture_output=True, text=True)\n    if result.returncode == 0 and \
+         result.stdout.strip():\n        ctx[\"command\"] = result.stdout.strip()\n",
     )?;
     let scope = if config.global { "global" } else { "project" };
     println!("[tokenless] Installed hooks for Hermes ({scope})");
@@ -250,7 +261,12 @@ fn init_pi(config: &InitConfig) -> Result<(), String> {
         PathBuf::from(".pi/agent/extensions")
     };
     let plugin_file = base.join("tokenless.ts");
-    write_file(plugin_file.as_path(), "// tokenless Pi extension\nexport function preToolUse(command: string): string {\n  const result = await exec(\"tokenless rewrite \" + command);\n  return result || command;\n}\n")?;
+    write_file(
+        plugin_file.as_path(),
+        "// tokenless Pi extension\nexport function preToolUse(command: string): string {\n  \
+         const result = await exec(\"tokenless rewrite \" + command);\n  return result || \
+         command;\n}\n",
+    )?;
     let scope = if config.global { "global" } else { "project" };
     println!("[tokenless] Installed hooks for Pi ({scope})");
     println!("  {}", path_display(&base));
@@ -277,11 +293,19 @@ fn init_gemini(config: &InitConfig) -> Result<(), String> {
 
 fn init_opencode(config: &InitConfig) -> Result<(), String> {
     if !config.global {
-        return Err("OpenCode plugin is global-only. Use: tokenless init --global --agent opencode".to_string());
+        return Err(
+            "OpenCode plugin is global-only. Use: tokenless init --global --agent opencode"
+                .to_string(),
+        );
     }
     let base = home_dir().join(".opencode/plugins/tokenless");
     let plugin_json = base.join("plugin.json");
-    write_file(&plugin_json, "{\"name\":\"tokenless-rewrite\",\"version\":\"0.1.0\",\"hooks\":{\"before_tool_call\":{\"exec\":\"tokenless rewrite {{command}}\"},\"tool_result_persist\":{\"exec\":\"tokenless compress-response\"}}}")?;
+    write_file(
+        &plugin_json,
+        "{\"name\":\"tokenless-rewrite\",\"version\":\"0.1.0\",\"hooks\":{\"before_tool_call\":{\"\
+         exec\":\"tokenless rewrite {{command}}\"},\"tool_result_persist\":{\"exec\":\"tokenless \
+         compress-response\"}}}",
+    )?;
     println!("[tokenless] Installed hooks for OpenCode (global)");
     println!("  {}", path_display(&plugin_json));
     Ok(())

@@ -24,16 +24,20 @@
 mod env_check;
 mod init;
 
+use std::{
+    fs,
+    io::{self, Read},
+    process,
+    sync::OnceLock,
+};
+
 use clap::{Parser, Subcommand};
 use rtk_registry::{RtkInstallStatus, is_rtk_installed, rewrite_command};
-use std::fs;
-use std::io::{self, Read};
-use std::process;
-use std::sync::OnceLock;
 use tokenless_schema::{ResponseCompressor, SchemaCompressor};
-use tokenless_stats::estimate_tokens_from_bytes;
-use tokenless_stats::{OperationType, StatsRecord, StatsRecorder, TokenlessConfig};
-use tokenless_stats::{format_list, format_show, format_summary};
+use tokenless_stats::{
+    OperationType, StatsRecord, StatsRecorder, TokenlessConfig, estimate_tokens_from_bytes,
+    format_list, format_rewrites, format_show, format_summary,
+};
 
 /// Cached result of `is_rtk_installed()`, checked at most once per process lifetime.
 fn rtk_available() -> bool {
@@ -117,13 +121,24 @@ enum Commands {
         /// Transparent prefixes (can be repeated).
         #[arg(long)]
         transparent_prefix: Vec<String>,
+        /// Agent ID for stats.
+        #[arg(long)]
+        agent_id: Option<String>,
+        /// Session ID for grouping.
+        #[arg(long)]
+        session_id: Option<String>,
+        /// Tool use ID.
+        #[arg(long)]
+        tool_use_id: Option<String>,
     },
-    /// Install tokenless hooks for AI coding agents (claude, cursor, windsurf, cline, kilocode, antigravity, augment, hermes, pi, gemini, opencode).
+    /// Install tokenless hooks for AI coding agents (claude, cursor, windsurf, cline, kilocode,
+    /// antigravity, augment, hermes, pi, gemini, opencode).
     Init {
         /// Install globally (shared config) instead of project-local.
         #[arg(short, long)]
         global: bool,
-        /// Target agent [default: claude] [possible values: claude, cursor, windsurf, cline, kilocode, antigravity, augment, hermes, pi, gemini, opencode]
+        /// Target agent [default: claude] [possible values: claude, cursor, windsurf, cline,
+        /// kilocode, antigravity, augment, hermes, pi, gemini, opencode]
         #[arg(long, default_value = "claude")]
         agent: String,
     },
@@ -168,6 +183,11 @@ enum StatsCommands {
     Clear {
         #[arg(long)]
         yes: bool,
+    },
+    /// Show rewrite-command breakdown by original command.
+    Rewrites {
+        #[arg(short, long, default_value = "50")]
+        limit: usize,
     },
     /// Show stats recording status.
     Status,
@@ -238,14 +258,21 @@ fn record_compression_stats(
         return;
     }
 
-    let before_bytes = before_text.len();
-    let after_bytes = after_text.len();
-
-    let before_tokens = estimate_tokens_from_bytes(before_bytes);
-    let after_tokens = estimate_tokens_from_bytes(after_bytes);
-    if after_tokens >= before_tokens {
-        return;
-    }
+    let (before_bytes, after_bytes, before_tokens, after_tokens) =
+        if op == OperationType::RewriteCommand {
+            let n = before_text.len();
+            let t = estimate_tokens_from_bytes(n);
+            (n, n, t, t)
+        } else {
+            let bb = before_text.len();
+            let ab = after_text.len();
+            let bt = estimate_tokens_from_bytes(bb);
+            let at = estimate_tokens_from_bytes(ab);
+            if at >= bt {
+                return;
+            }
+            (bb, ab, bt, at)
+        };
 
     let pid = process::id();
     let agent = agent_id.unwrap_or_else(|| "cli".to_string());
@@ -413,6 +440,9 @@ fn run() -> Result<(), (String, i32)> {
             command,
             exclude,
             transparent_prefix,
+            agent_id,
+            session_id,
+            tool_use_id,
         } => {
             let cmd = match command {
                 Some(c) => c,
@@ -428,7 +458,17 @@ fn run() -> Result<(), (String, i32)> {
             }
 
             match rewrite_command(&cmd, &exclude, &transparent_prefix) {
-                Some(rewritten) => println!("{rewritten}"),
+                Some(rewritten) => {
+                    record_compression_stats(
+                        OperationType::RewriteCommand,
+                        agent_id,
+                        session_id,
+                        tool_use_id,
+                        cmd,
+                        rewritten.clone(),
+                    );
+                    println!("{rewritten}");
+                }
                 None => {
                     eprintln!("[tokenless] No rewrite available — passing through original.");
                     println!("{cmd}");
@@ -473,6 +513,16 @@ fn run() -> Result<(), (String, i32)> {
                         "{}",
                         format_summary(&records, Some("Tokenless Statistics Summary"))
                     );
+                }
+                StatsCommands::Rewrites { limit } => {
+                    let all = recorder
+                        .all_records(None)
+                        .map_err(|e| (format!("Failed to query records: {e}"), 1))?;
+                    let rewrites: Vec<_> = all
+                        .iter()
+                        .filter(|r| r.operation == OperationType::RewriteCommand)
+                        .collect();
+                    println!("{}", format_rewrites(&rewrites, limit));
                 }
                 StatsCommands::List { limit } => {
                     let records = recorder

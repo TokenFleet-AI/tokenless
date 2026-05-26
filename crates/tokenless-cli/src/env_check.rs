@@ -6,11 +6,9 @@
 
 #![allow(dead_code)]
 
+use std::{collections::HashMap, fs, path::PathBuf, process::Command};
+
 use serde_json::Value;
-use std::collections::HashMap;
-use std::fs;
-use std::path::PathBuf;
-use std::process::Command;
 
 /// A single dependency entry, normalized from string or object format.
 #[derive(Debug, Clone)]
@@ -569,7 +567,11 @@ fn generate_checklist(results: &[ToolReadyResult]) -> String {
         .iter()
         .filter(|r| r.status == ReadyStatus::NotReady)
         .count();
-    output.push_str(&format!("Summary: {ready_count} ready, {partial_count} partial, {not_ready_count} not ready (total: {})\n", results.len()));
+    output.push_str(&format!(
+        "Summary: {ready_count} ready, {partial_count} partial, {not_ready_count} not ready \
+         (total: {})\n",
+        results.len()
+    ));
     output
 }
 
@@ -599,7 +601,8 @@ fn build_json_result(
     }
     if *status == ReadyStatus::NotReady {
         let diag = format!(
-            "[tokenless tool-ready] {tool_name}: NOT_READY — {}. Skip retry — environment issue, not logic error.",
+            "[tokenless tool-ready] {tool_name}: NOT_READY — {}. Skip retry — environment issue, \
+             not logic error.",
             missing
                 .iter()
                 .map(|m| format!("required dependency missing: {m}"))
@@ -851,8 +854,9 @@ pub fn run(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn normalize_dep_simple_string() {

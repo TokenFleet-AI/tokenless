@@ -1,5 +1,6 @@
-use serde_json::{Map, Value};
 use std::collections::HashSet;
+
+use serde_json::{Map, Value};
 
 /// Compresses JSON API responses by truncating strings, limiting arrays,
 /// removing nulls, and dropping debug fields.
@@ -204,8 +205,9 @@ impl ResponseCompressor {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn test_string_truncation() {

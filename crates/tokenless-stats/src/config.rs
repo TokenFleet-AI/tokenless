@@ -3,8 +3,9 @@
 //! Reads from `TOKENLESS_STATS_ENABLED` env var or
 //! `~/.tokenless/config.json` to determine if stats recording is active.
 
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+use serde::{Deserialize, Serialize};
 
 /// Persistent configuration for tokenless stats recording.
 #[derive(Debug, Clone, Serialize, Deserialize)]
