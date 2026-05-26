@@ -42,25 +42,32 @@ pub enum Agent {
     Opencode,
 }
 
-/// Claude Code PreToolUse hook script — reads stdin JSON, rewrites command, outputs hook JSON.
-const CLAUDE_HOOK_SCRIPT: &str = r#"#!/usr/bin/env bash
-# tokenless Claude Code PreToolUse hook
-if ! command -v jq &>/dev/null; then exit 0; fi
-INPUT=$(cat)
-CMD=$(jq -r '.tool_input.command // empty' <<<"$INPUT")
-[ -z "$CMD" ] && exit 0
-REWRITTEN=$(tokenless rewrite "$CMD" 2>/dev/null)
-[ -z "$REWRITTEN" ] || [ "$CMD" = "$REWRITTEN" ] && exit 0
-jq -c --arg cmd "$REWRITTEN" \
-  '.tool_input.command = $cmd | {
-    "hookSpecificOutput": {
-      "hookEventName": "PreToolUse",
-      "permissionDecision": "allow",
-      "permissionDecisionReason": "tokenless auto-rewrite",
-      "updatedInput": .tool_input
-    }
-  }' <<<"$INPUT"
-"#;
+const CLAUDE_HOOKS_JSON: &str = r#"{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "tokenless hook rewrite claude"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "tokenless hook compress"
+          }
+        ]
+      }
+    ]
+  }
+}"#;
 
 /// Default hooks JSON for non-Claude agents (shell-based).
 const DEFAULT_HOOKS_JSON: &str = r#"{
@@ -82,44 +89,13 @@ const DEFAULT_HOOKS_JSON: &str = r#"{
         "hooks": [
           {
             "type": "command",
-            "command": "tokenless compress-response"
+            "command": "tokenless hook compress"
           }
         ]
       }
     ]
   }
 }"#;
-
-fn claude_hooks_json(script_path: &str) -> String {
-    format!(
-        r#"{{
-  "hooks": {{
-    "PreToolUse": [
-      {{
-        "matcher": "Bash",
-        "hooks": [
-          {{
-            "type": "command",
-            "command": "{script_path}"
-          }}
-        ]
-      }}
-    ],
-    "PostToolUse": [
-      {{
-        "matcher": "*",
-        "hooks": [
-          {{
-            "type": "command",
-            "command": "tokenless compress-response"
-          }}
-        ]
-      }}
-    ]
-  }}
-}}"#
-    )
-}
 
 const SH_HOOK_REWRITE: &str = "#!/usr/bin/env bash
 # tokenless hook — rewrite commands
@@ -212,27 +188,11 @@ fn claude_dir(global: bool) -> PathBuf {
 
 fn init_claude(config: &InitConfig) -> Result<(), String> {
     let dir = claude_dir(config.global);
-    // Write the hook shell script
-    let script_path = dir.join("hooks").join("tokenless-rewrite.sh");
-    write_file(&script_path, CLAUDE_HOOK_SCRIPT)?;
-    // Make it executable
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::metadata(&script_path) {
-            let mut perms = meta.permissions();
-            perms.set_mode(0o755);
-            let _ = std::fs::set_permissions(&script_path, perms);
-        }
-    }
-    // Write settings.json referencing the script
     let settings_path = dir.join("settings.json");
-    let hooks_json = claude_hooks_json(&script_path.display().to_string());
-    merge_into_settings(&settings_path, &hooks_json)?;
+    merge_into_settings(&settings_path, CLAUDE_HOOKS_JSON)?;
     let scope = if config.global { "global" } else { "project" };
     println!("[tokenless] Installed hooks for Claude Code ({scope})");
     println!("  {}", path_display(&settings_path));
-    println!("  {}", path_display(&script_path));
     Ok(())
 }
 

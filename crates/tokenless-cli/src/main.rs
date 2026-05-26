@@ -133,8 +133,9 @@ enum Commands {
         #[arg(long)]
         tool_use_id: Option<String>,
     },
-    /// Claude Code PreToolUse hook — reads JSON from stdin, outputs hook JSON response.
-    RewriteHook,
+    /// Agent hook protocol handlers (stdin JSON → stdout JSON).
+    #[command(subcommand)]
+    Hook(HookCommands),
     /// Install tokenless hooks for AI coding agents (claude, cursor, windsurf, cline, kilocode,
     /// antigravity, augment, hermes, pi, gemini, opencode).
     Init {
@@ -164,6 +165,27 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+}
+
+#[derive(Subcommand)]
+enum HookCommands {
+    /// Command rewriting hooks (PreToolUse).
+    #[command(subcommand)]
+    Rewrite(RewriteTarget),
+    /// Response compression hook (PostToolUse, stdin → stdout).
+    Compress,
+}
+
+#[derive(Debug, Subcommand)]
+enum RewriteTarget {
+    /// Claude Code PreToolUse hook.
+    Claude,
+    /// Cursor editor PreToolUse hook (not yet implemented).
+    Cursor,
+    /// Gemini CLI BeforeTool hook (not yet implemented).
+    Gemini,
+    /// GitHub Copilot PreToolUse hook (not yet implemented).
+    Copilot,
 }
 
 #[derive(Subcommand)]
@@ -482,49 +504,78 @@ fn run() -> Result<(), (String, i32)> {
                 }
             }
         }
-        Commands::RewriteHook => {
-            let input = read_input(&None).map_err(|e| (e, 2))?;
-            let hook_input: serde_json::Value =
-                serde_json::from_str(&input).map_err(|e| (format!("JSON parse error: {e}"), 2))?;
-            let cmd = hook_input
-                .pointer("/tool_input/command")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            if cmd.is_empty() {
-                return Ok(());
-            }
-
-            if !rtk_available() {
-                return Ok(());
-            }
-
-            match rewrite_command(cmd, &[], &[]) {
-                Some(rewritten) if rewritten != cmd => {
-                    record_compression_stats(
-                        OperationType::RewriteCommand,
-                        None,
-                        None,
-                        None,
-                        cmd.to_string(),
-                        rewritten.clone(),
-                    );
-                    let response = serde_json::json!({
-                        "hookSpecificOutput": {
-                            "hookEventName": "PreToolUse",
-                            "permissionDecision": "allow",
-                            "permissionDecisionReason": "tokenless auto-rewrite",
-                            "updatedInput": {
-                                "tool_input": {
-                                    "command": rewritten
+        Commands::Hook(sub) => match sub {
+            HookCommands::Rewrite(target) => match target {
+                RewriteTarget::Claude => {
+                    let input = read_input(&None).map_err(|e| (e, 2))?;
+                    let hook_input: serde_json::Value = serde_json::from_str(&input)
+                        .map_err(|e| (format!("JSON parse error: {e}"), 2))?;
+                    let cmd = hook_input
+                        .pointer("/tool_input/command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if cmd.is_empty() || !rtk_available() {
+                        return Ok(());
+                    }
+                    match rewrite_command(cmd, &[], &[]) {
+                        Some(rewritten) if rewritten != cmd => {
+                            record_compression_stats(
+                                OperationType::RewriteCommand,
+                                None,
+                                None,
+                                None,
+                                cmd.to_string(),
+                                rewritten.clone(),
+                            );
+                            let response = serde_json::json!({
+                                "hookSpecificOutput": {
+                                    "hookEventName": "PreToolUse",
+                                    "permissionDecision": "allow",
+                                    "permissionDecisionReason": "tokenless auto-rewrite",
+                                    "updatedInput": {
+                                        "command": rewritten
+                                    }
                                 }
-                            }
+                            });
+                            println!("{}", serde_json::to_string(&response).unwrap_or_default());
                         }
-                    });
-                    println!("{}", serde_json::to_string(&response).unwrap_or_default());
+                        _ => {}
+                    }
                 }
-                _ => {}
+                _ => {
+                    eprintln!("[tokenless] hook rewrite {target:?} not yet implemented");
+                }
+            },
+            HookCommands::Compress => {
+                let input = read_input(&None).map_err(|e| (e, 2))?;
+                let value: serde_json::Value = serde_json::from_str(&input)
+                    .map_err(|e| (format!("JSON parse error: {e}"), 2))?;
+                let compressor = ResponseCompressor::new();
+                let result_json = serde_json::to_string_pretty(&compressor.compress(&value))
+                    .map_err(|e| (format!("Serialization error: {e}"), 2))?;
+                let after_compact = serde_json::to_string(
+                    &serde_json::from_str::<serde_json::Value>(&result_json)
+                        .unwrap_or(serde_json::Value::Null),
+                )
+                .unwrap_or_else(|_| result_json.clone());
+                let before_tokens = estimate_tokens_from_bytes(input.len());
+                let after_tokens = estimate_tokens_from_bytes(after_compact.len());
+                let output_text = if after_tokens >= before_tokens {
+                    input.clone()
+                } else {
+                    result_json
+                };
+                println!("{output_text}");
+                record_compression_stats(
+                    OperationType::CompressResponse,
+                    None,
+                    None,
+                    None,
+                    input,
+                    output_text,
+                );
             }
-        }
+        },
         Commands::Init { global, agent } => {
             let agent = match agent.as_str() {
                 "cursor" => init::Agent::Cursor,
