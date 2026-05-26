@@ -47,26 +47,36 @@ tokenless-stats ─────────┘
 ### 发布步骤
 
 ```bash
-# 1. 注册账号
+# 1. 确保已登录
 cargo login
 
-# 2. 按依赖顺序发布
-cd crates/tokenless-schema
-cargo publish
+# 2. 升级版本号（workspace Cargo.toml）
+#    version = "0.X.0"  （所有 crate 用 version.workspace = true）
 
-cd crates/tokenless-stats
-cargo publish
+# 3. 更新跨 crate 依赖版本
+#    crates/tokenless-cli/Cargo.toml:
+#      tokenless-schema = { path = "../tokenless-schema", version = "0.X.0" }
+#      tokenless-stats   = { path = "../tokenless-stats",   version = "0.X.0" }
 
-# 3. CLI 需要先处理 rtk-registry 依赖
-#    方案 A：rtk-registry 也发布到 crates.io
-#    方案 B：用 feature gate 在无 rtk 时降级
-cd crates/tokenless-cli
-cargo publish
+# 4. 提交 + 打 tag（tag push 触发 GitHub Release CI）
+git add Cargo.toml Cargo.lock crates/tokenless-cli/Cargo.toml
+git commit -m "chore: bump to 0.X.0"
+git tag v0.X.0
+git push origin master v0.X.0
 
-# 4. 验证
+# 5. 按依赖顺序发布 crates.io（本地手动）
+cargo publish -p tokenless-schema
+cargo publish -p tokenless-stats
+cargo publish -p tokenless
+
+# 6. 验证
 cargo install tokenless
 tokenless --version
 ```
+
+> **注意**：crates.io 发布改为本地手动，GitHub Actions 不再自动发布。
+> tag push 只会触发 build + GitHub Release（各平台二进制）。
+> 如需通过 CI 发布 crates.io，在 Actions 中手动触发 Release workflow 并勾选 `publish-crates-io`。
 
 ### rtk-registry 依赖 ✅ 已解决
 
@@ -81,7 +91,7 @@ v0.1.0 → v0.2.0 → v0.3.0 → v1.0.0
   dev      功能完善   稳定API   正式版
 ```
 
-当前 `version = "0.1.0"`，建议 **v0.2.0** 作为第一个发布版本。
+当前 `version = "0.2.0"`。
 
 ---
 
