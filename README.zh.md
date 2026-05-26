@@ -38,7 +38,7 @@ tokenless/
 │   └── hermes/                     # Hermes Agent 插件（未来）
 ```
 
-**命令重写** 由 [`rtk-registry`](https://github.com/TokenFleet-AI/rtk/tree/main/crates/rtk-registry) crate 在库层面完成（无需调用 RTK 二进制）：
+**命令重写** 由 [`rtk-registry`](https://github.com/TokenFleet-AI/rtk/tree/master/crates/rtk-registry) crate 在库层面完成（无需调用 RTK 二进制）：
 
 ```rust
 use rtk_registry::rewrite_command;

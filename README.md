@@ -38,7 +38,7 @@ tokenless/
 │   └── hermes/                     # Hermes Agent plugin (future)
 ```
 
-**Command rewriting** is handled by the [`rtk-registry`](https://github.com/TokenFleet-AI/rtk/tree/main/crates/rtk-registry) crate (no shelling out to the RTK binary):
+**Command rewriting** is handled by the [`rtk-registry`](https://github.com/TokenFleet-AI/rtk/tree/master/crates/rtk-registry) crate (no shelling out to the RTK binary):
 
 ```rust
 use rtk_registry::rewrite_command;
