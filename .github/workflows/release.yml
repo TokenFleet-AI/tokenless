@@ -25,27 +25,6 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  crates-io:
-    name: Publish to crates.io
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    if: ${{ !inputs.prerelease }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Publish tokenless-schema
-        run: cargo publish -p tokenless-schema
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
-      - name: Publish tokenless-stats
-        run: cargo publish -p tokenless-stats
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
-      - name: Publish tokenless (CLI)
-        run: cargo publish -p tokenless
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
-
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
