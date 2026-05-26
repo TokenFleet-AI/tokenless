@@ -7,4 +7,5 @@
 .claude/
 .mcp.json
 ruvector.db
+.codegraph/
 .idea

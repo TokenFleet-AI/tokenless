@@ -166,39 +166,51 @@ pub fn format_show(record: &StatsRecord) -> String {
 }
 
 /// Format a breakdown of rewrite-command records grouped by original command.
+///
+/// `entries` is a list of `(command, count, savings_pct)` tuples, pre-sorted by count descending.
 #[must_use]
-pub fn format_rewrites(records: &[&StatsRecord], limit: usize) -> String {
+pub fn format_rewrites(
+    entries: &[(&str, usize, Option<f64>)],
+    limit: usize,
+    offset: usize,
+) -> String {
     let mut output = String::from("Rewrite Commands Breakdown\n");
     output.push_str("==========================\n\n");
 
-    if records.is_empty() {
+    if entries.is_empty() {
         output.push_str("No rewrite records found.\n");
         return output;
     }
 
-    let mut by_cmd: BTreeMap<&str, usize> = BTreeMap::new();
-    for r in records {
-        if let Some(ref before) = r.before_text {
-            *by_cmd.entry(before.as_str()).or_default() += 1;
+    let total_commands = entries.len();
+    let total_rewrites: usize = entries.iter().map(|(_, c, _)| c).sum();
+    let shown = entries.iter().skip(offset).take(limit).count();
+    let total_pages = total_commands.div_ceil(limit);
+    let current_page = offset / limit + 1;
+
+    output.push_str(&format!(
+        "  {total_commands} commands, {total_rewrites} rewrites",
+    ));
+    if total_pages > 1 {
+        output.push_str(&format!(" (page {current_page}/{total_pages})"));
+    }
+    output.push_str("\n\n");
+
+    for (cmd, count, savings) in entries.iter().skip(offset).take(limit) {
+        match savings {
+            Some(pct) => output.push_str(&format!("  {count:>5}  {cmd:<40} ~{pct:.0}%\n")),
+            None => output.push_str(&format!("  {count:>5}  {cmd}\n")),
         }
     }
 
-    let mut entries: Vec<_> = by_cmd.into_iter().collect();
-    entries.sort_by(|a, b| b.1.cmp(&a.1));
-    let total: usize = entries.iter().map(|(_, c)| c).sum();
-
-    for (cmd, count) in entries.iter().take(limit) {
-        output.push_str(&format!("  {count:>5}  {cmd}\n"));
+    if offset + shown < total_commands {
+        let remaining = total_commands - offset - shown;
+        output.push_str(&format!(
+            "\n  ... {remaining} more command(s). Use --offset {} for next page.\n",
+            offset + limit
+        ));
     }
 
-    if entries.len() > limit {
-        output.push_str(&format!("  ... and {} more\n", entries.len() - limit));
-    }
-
-    output.push_str(&format!(
-        "\n  Total: {total} rewrites across {} unique commands\n",
-        entries.len()
-    ));
     output
 }
 

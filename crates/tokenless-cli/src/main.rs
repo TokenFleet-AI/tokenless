@@ -32,7 +32,9 @@ use std::{
 };
 
 use clap::{Parser, Subcommand};
-use rtk_registry::{RtkInstallStatus, is_rtk_installed, rewrite_command};
+use rtk_registry::{
+    Classification, RtkInstallStatus, classify_command, is_rtk_installed, rewrite_command,
+};
 use tokenless_schema::{ResponseCompressor, SchemaCompressor};
 use tokenless_stats::{
     OperationType, StatsRecord, StatsRecorder, TokenlessConfig, estimate_tokens_from_bytes,
@@ -186,8 +188,11 @@ enum StatsCommands {
     },
     /// Show rewrite-command breakdown by original command.
     Rewrites {
-        #[arg(short, long, default_value = "50")]
+        #[arg(short, long, default_value = "20")]
         limit: usize,
+        /// Skip the first N commands (for pagination).
+        #[arg(long, default_value = "0")]
+        offset: usize,
     },
     /// Show stats recording status.
     Status,
@@ -514,7 +519,7 @@ fn run() -> Result<(), (String, i32)> {
                         format_summary(&records, Some("Tokenless Statistics Summary"))
                     );
                 }
-                StatsCommands::Rewrites { limit } => {
+                StatsCommands::Rewrites { limit, offset } => {
                     let all = recorder
                         .all_records(None)
                         .map_err(|e| (format!("Failed to query records: {e}"), 1))?;
@@ -522,7 +527,30 @@ fn run() -> Result<(), (String, i32)> {
                         .iter()
                         .filter(|r| r.operation == OperationType::RewriteCommand)
                         .collect();
-                    println!("{}", format_rewrites(&rewrites, limit));
+                    let mut by_cmd: std::collections::BTreeMap<&str, usize> =
+                        std::collections::BTreeMap::new();
+                    for r in &rewrites {
+                        if let Some(ref before) = r.before_text {
+                            *by_cmd.entry(before.as_str()).or_default() += 1;
+                        }
+                    }
+                    let mut entries: Vec<_> = by_cmd
+                        .into_iter()
+                        .map(|(cmd, count)| {
+                            let savings = match classify_command(cmd) {
+                                Classification::Supported {
+                                    estimated_savings_pct,
+                                    ..
+                                } => Some(estimated_savings_pct),
+                                _ => None,
+                            };
+                            (cmd, count, savings)
+                        })
+                        .collect();
+                    entries.sort_by(|a, b| b.1.cmp(&a.1));
+                    let slice: Vec<(&str, usize, Option<f64>)> =
+                        entries.iter().map(|(c, n, s)| (*c, *n, *s)).collect();
+                    println!("{}", format_rewrites(&slice, limit, offset));
                 }
                 StatsCommands::List { limit } => {
                     let records = recorder
