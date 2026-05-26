@@ -16,6 +16,7 @@
     clippy::similar_names,
     clippy::single_match_else,
     clippy::too_many_lines,
+    clippy::collapsible_if,
     clippy::unnecessary_map_or,
     clippy::unwrap_used,
     clippy::useless_format
@@ -40,6 +41,15 @@ use tokenless_stats::{
     OperationType, StatsRecord, StatsRecorder, TokenlessConfig, estimate_tokens_from_bytes,
     format_list, format_rewrites, format_show, format_summary,
 };
+
+/// Strip leading UTF-8 BOM bytes (Cursor on Windows may prepend one or two).
+fn strip_leading_bom(input: &str) -> String {
+    input
+        .strip_prefix("\u{feff}")
+        .or_else(|| input.strip_prefix("\u{feff}\u{feff}"))
+        .unwrap_or(input)
+        .to_string()
+}
 
 /// Cached result of `is_rtk_installed()`, checked at most once per process lifetime.
 fn rtk_available() -> bool {
@@ -542,8 +552,152 @@ fn run() -> Result<(), (String, i32)> {
                         _ => {}
                     }
                 }
-                _ => {
-                    eprintln!("[tokenless] hook rewrite {target:?} not yet implemented");
+                RewriteTarget::Cursor => {
+                    let input = read_input(&None).map_err(|e| (e, 2))?;
+                    let input = strip_leading_bom(&input);
+                    let hook_input: serde_json::Value = serde_json::from_str(&input)
+                        .map_err(|e| (format!("JSON parse error: {e}"), 2))?;
+                    let cmd = hook_input
+                        .pointer("/tool_input/command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if cmd.is_empty() || !rtk_available() {
+                        println!("{{}}");
+                        return Ok(());
+                    }
+                    match rewrite_command(cmd, &[], &[]) {
+                        Some(rewritten) if rewritten != cmd => {
+                            record_compression_stats(
+                                OperationType::RewriteCommand,
+                                None,
+                                None,
+                                None,
+                                cmd.to_string(),
+                                rewritten.clone(),
+                            );
+                            let response = serde_json::json!({
+                                "continue": true,
+                                "permission": "allow",
+                                "updated_input": {
+                                    "command": rewritten
+                                }
+                            });
+                            println!("{}", serde_json::to_string(&response).unwrap_or_default());
+                        }
+                        _ => println!("{{}}"),
+                    }
+                }
+                RewriteTarget::Gemini => {
+                    let input = read_input(&None).map_err(|e| (e, 2))?;
+                    let hook_input: serde_json::Value = serde_json::from_str(&input)
+                        .map_err(|e| (format!("JSON parse error: {e}"), 2))?;
+                    let cmd = hook_input
+                        .pointer("/tool_input/command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if cmd.is_empty() || !rtk_available() {
+                        println!("{{\"decision\":\"allow\"}}");
+                        return Ok(());
+                    }
+                    match rewrite_command(cmd, &[], &[]) {
+                        Some(rewritten) if rewritten != cmd => {
+                            record_compression_stats(
+                                OperationType::RewriteCommand,
+                                None,
+                                None,
+                                None,
+                                cmd.to_string(),
+                                rewritten.clone(),
+                            );
+                            let response = serde_json::json!({
+                                "decision": "allow",
+                                "hookSpecificOutput": {
+                                    "tool_input": {
+                                        "command": rewritten
+                                    }
+                                }
+                            });
+                            println!("{}", serde_json::to_string(&response).unwrap_or_default());
+                        }
+                        _ => println!("{{\"decision\":\"allow\"}}"),
+                    }
+                }
+                RewriteTarget::Copilot => {
+                    let input = read_input(&None).map_err(|e| (e, 2))?;
+                    let hook_input: serde_json::Value = serde_json::from_str(&input)
+                        .map_err(|e| (format!("JSON parse error: {e}"), 2))?;
+                    // Detect format: snake_case tool_name = VS Code, camelCase toolName = CLI
+                    let is_cli = hook_input.get("toolName").is_some();
+                    if is_cli {
+                        let tool_args_str = hook_input
+                            .pointer("/toolArgs")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let args: serde_json::Value =
+                            serde_json::from_str(tool_args_str).unwrap_or_default();
+                        let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                        if cmd.is_empty() || !rtk_available() {
+                            return Ok(());
+                        }
+                        if let Some(rewritten) = rewrite_command(cmd, &[], &[]) {
+                            if rewritten != cmd {
+                                record_compression_stats(
+                                    OperationType::RewriteCommand,
+                                    None,
+                                    None,
+                                    None,
+                                    cmd.to_string(),
+                                    rewritten.clone(),
+                                );
+                                println!(
+                                    "{}",
+                                    serde_json::to_string(&serde_json::json!({
+                                        "permissionDecision": "deny",
+                                        "permissionDecisionReason": format!(
+                                            "Token savings: use `{rewritten}` instead (rtk saves 60-90% tokens)"
+                                        )
+                                    }))
+                                    .unwrap_or_default()
+                                );
+                            }
+                        }
+                    } else {
+                        // VS Code Copilot Chat — same protocol as Claude
+                        let cmd = hook_input
+                            .pointer("/tool_input/command")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        if cmd.is_empty() || !rtk_available() {
+                            return Ok(());
+                        }
+                        match rewrite_command(cmd, &[], &[]) {
+                            Some(rewritten) if rewritten != cmd => {
+                                record_compression_stats(
+                                    OperationType::RewriteCommand,
+                                    None,
+                                    None,
+                                    None,
+                                    cmd.to_string(),
+                                    rewritten.clone(),
+                                );
+                                let response = serde_json::json!({
+                                    "hookSpecificOutput": {
+                                        "hookEventName": "PreToolUse",
+                                        "permissionDecision": "allow",
+                                        "permissionDecisionReason": "tokenless auto-rewrite",
+                                        "updatedInput": {
+                                            "command": rewritten
+                                        }
+                                    }
+                                });
+                                println!(
+                                    "{}",
+                                    serde_json::to_string(&response).unwrap_or_default()
+                                );
+                            }
+                            _ => {}
+                        }
+                    }
                 }
             },
             HookCommands::Compress => {
@@ -588,6 +742,7 @@ fn run() -> Result<(), (String, i32)> {
                 "pi" => init::Agent::Pi,
                 "gemini" => init::Agent::Gemini,
                 "opencode" => init::Agent::Opencode,
+                "copilot" => init::Agent::Copilot,
                 _ => init::Agent::Claude,
             };
             let config = init::InitConfig { global };

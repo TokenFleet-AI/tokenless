@@ -51,7 +51,7 @@ repos:
       - id: cargo-clippy
         name: cargo clippy
         description: Lint rust sources
-        entry: bash -c 'cargo clippy --all-targets --all-features --tests --benches -- -D warnings'
+        entry: bash -c 'cargo clippy --all-targets --all-features --tests --benches -- -D warnings -W clippy::pedantic'
         language: system
         files: \.rs$
         pass_filenames: false
@@ -61,4 +61,11 @@ repos:
         entry: bash -c 'cargo nextest run --all-features -- --include-ignored'
         language: system
         files: \.rs$
+        pass_filenames: false
+      - id: check-agent-sync
+        name: check agent sync
+        description: Ensure AGENTS.md stays in sync with CLAUDE.md
+        entry: bash -c 'make check-agent-sync'
+        language: system
+        files: (CLAUDE\.md|AGENTS\.md)$
         pass_filenames: false

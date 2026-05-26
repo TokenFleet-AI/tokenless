@@ -40,6 +40,8 @@ pub enum Agent {
     Gemini,
     /// OpenCode VS Code extension.
     Opencode,
+    /// GitHub Copilot (VS Code + CLI).
+    Copilot,
 }
 
 const CLAUDE_HOOKS_JSON: &str = r#"{
@@ -69,7 +71,8 @@ const CLAUDE_HOOKS_JSON: &str = r#"{
   }
 }"#;
 
-/// Default hooks JSON for non-Claude agents (shell-based).
+#[cfg(test)]
+/// Default hooks JSON for tests only.
 const DEFAULT_HOOKS_JSON: &str = r#"{
   "hooks": {
     "PreToolUse": [
@@ -97,15 +100,73 @@ const DEFAULT_HOOKS_JSON: &str = r#"{
   }
 }"#;
 
-const SH_HOOK_REWRITE: &str = "#!/usr/bin/env bash
-# tokenless hook — rewrite commands
-exec tokenless rewrite \"$(cat)\"
+const CURSOR_HOOKS_JSON: &str = r#"{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "command": "tokenless hook rewrite cursor",
+        "matcher": "Shell"
+      }
+    ]
+  }
+}"#;
+
+const GEMINI_HOOK_SCRIPT: &str = "#!/usr/bin/env bash
+# tokenless Gemini CLI BeforeTool hook
+exec tokenless hook rewrite gemini
 ";
 
-const SH_HOOK_COMPRESS: &str = "#!/usr/bin/env bash
-# tokenless hook — compress responses
-exec tokenless compress-response
-";
+const COPILOT_HOOK_JSON: &str = r#"{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "type": "command",
+        "command": "tokenless hook rewrite copilot",
+        "cwd": ".",
+        "timeout": 5
+      }
+    ]
+  }
+}"#;
+
+fn rtk_rules(agent_name: &str) -> String {
+    format!(
+        r#"# RTK - Rust Token Killer ({agent_name})
+
+**Usage**: Token-optimized CLI proxy for shell commands.
+
+## Rule
+
+Always prefix shell commands with `rtk` to minimize token consumption.
+
+Examples:
+
+```bash
+rtk git status
+rtk cargo test
+rtk ls src/
+rtk grep "pattern" src/
+rtk find "*.rs" .
+rtk docker ps
+rtk gh pr list
+```
+
+## Meta Commands
+
+```bash
+rtk gain              # Show token savings
+rtk gain --history    # Command history with savings
+rtk discover          # Find missed RTK opportunities
+rtk proxy <cmd>       # Run raw (no filtering, for debugging)
+```
+
+## Why
+
+RTK filters and compresses command output before it reaches the LLM context, saving 60-90% tokens on common operations. Always use `rtk <cmd>` instead of raw commands.
+"#
+    )
+}
 
 /// Run `tokenless init` for the specified agent.
 ///
@@ -116,15 +177,16 @@ pub fn run(agent: Agent, config: &InitConfig) -> Result<(), String> {
     match agent {
         Agent::Claude => init_claude(config),
         Agent::Cursor => init_cursor(config),
-        Agent::Windsurf => init_generic_agent(".windsurf", config),
+        Agent::Windsurf => init_windsurf(config),
         Agent::Cline => init_cline(config),
-        Agent::Kilocode => init_generic_agent(".kilocode", config),
-        Agent::Antigravity => init_generic_agent(".antigravity", config),
-        Agent::Augment => init_generic_agent(".augment", config),
+        Agent::Kilocode => init_kilocode(config),
+        Agent::Antigravity => init_antigravity(config),
+        Agent::Augment => init_augment(config),
         Agent::Hermes => init_hermes(config),
         Agent::Pi => init_pi(config),
         Agent::Gemini => init_gemini(config),
         Agent::Opencode => init_opencode(config),
+        Agent::Copilot => init_copilot(config),
     }
 }
 
@@ -196,6 +258,66 @@ fn init_claude(config: &InitConfig) -> Result<(), String> {
     Ok(())
 }
 
+// ── Windsurf ───────────────────────────────────────────────
+
+fn init_windsurf(config: &InitConfig) -> Result<(), String> {
+    let path = PathBuf::from(".windsurfrules");
+    write_file(&path, &rtk_rules("Windsurf"))?;
+    let scope = if config.global { "global" } else { "project" };
+    println!("[tokenless] Installed rules for Windsurf ({scope})");
+    println!("  {}", path_display(&path));
+    Ok(())
+}
+
+// ── Cline ──────────────────────────────────────────────────
+
+fn init_cline(config: &InitConfig) -> Result<(), String> {
+    let path = PathBuf::from(".clinerules");
+    write_file(&path, &rtk_rules("Cline"))?;
+    let scope = if config.global { "global" } else { "project" };
+    println!("[tokenless] Installed rules for Cline ({scope})");
+    println!("  {}", path_display(&path));
+    Ok(())
+}
+
+// ── Kilo Code ──────────────────────────────────────────────
+
+fn init_kilocode(config: &InitConfig) -> Result<(), String> {
+    let path = PathBuf::from(".kilocode/rules/rtk-rules.md");
+    write_file(&path, &rtk_rules("Kilo Code"))?;
+    let scope = if config.global { "global" } else { "project" };
+    println!("[tokenless] Installed rules for Kilo Code ({scope})");
+    println!("  {}", path_display(&path));
+    Ok(())
+}
+
+// ── Antigravity ────────────────────────────────────────────
+
+fn init_antigravity(config: &InitConfig) -> Result<(), String> {
+    let path = PathBuf::from(".agents/rules/antigravity-rtk-rules.md");
+    write_file(&path, &rtk_rules("Google Antigravity"))?;
+    let scope = if config.global { "global" } else { "project" };
+    println!("[tokenless] Installed rules for Antigravity ({scope})");
+    println!("  {}", path_display(&path));
+    Ok(())
+}
+
+// ── Augment ────────────────────────────────────────────────
+
+fn init_augment(config: &InitConfig) -> Result<(), String> {
+    let base = if config.global {
+        home_dir().join(".augment")
+    } else {
+        PathBuf::from(".augment")
+    };
+    let path = base.join("rules/rtk.md");
+    write_file(&path, &rtk_rules("Augment"))?;
+    let scope = if config.global { "global" } else { "project" };
+    println!("[tokenless] Installed rules for Augment ({scope})");
+    println!("  {}", path_display(&path));
+    Ok(())
+}
+
 // ── Cursor ─────────────────────────────────────────────────
 
 fn init_cursor(config: &InitConfig) -> Result<(), String> {
@@ -204,51 +326,11 @@ fn init_cursor(config: &InitConfig) -> Result<(), String> {
     } else {
         PathBuf::from(".cursor")
     };
-    let pre = base.join("hooks/pre_tool_use.sh");
-    let post = base.join("hooks/post_tool_use.sh");
-    write_file(&pre, SH_HOOK_REWRITE)?;
-    write_file(&post, SH_HOOK_COMPRESS)?;
+    let hooks_json = base.join("hooks.json");
+    write_file(&hooks_json, CURSOR_HOOKS_JSON)?;
     let scope = if config.global { "global" } else { "project" };
     println!("[tokenless] Installed hooks for Cursor ({scope})");
-    println!("  {}", path_display(&pre));
-    println!("  {}", path_display(&post));
-    Ok(())
-}
-
-// ── Generic agent (Windsurf, Kilo, Antigravity, Augment) ──
-
-fn init_generic_agent(dir: &str, config: &InitConfig) -> Result<(), String> {
-    let base = if config.global {
-        home_dir().join(dir)
-    } else {
-        PathBuf::from(dir.trim_start_matches('.'))
-    };
-    let settings_path = base.join("settings.json");
-    merge_into_settings(&settings_path, DEFAULT_HOOKS_JSON)?;
-    let name = dir.trim_start_matches('.');
-    let scope = if config.global { "global" } else { "project" };
-    let capitalized: String = name[..1]
-        .to_uppercase()
-        .chars()
-        .chain(name[1..].chars())
-        .collect();
-    println!("[tokenless] Installed hooks for {capitalized} ({scope})");
-    println!("  {}", path_display(&settings_path));
-    Ok(())
-}
-
-// ── Cline (VS Code extension) ───────────────────────────────
-
-fn init_cline(config: &InitConfig) -> Result<(), String> {
-    // Cline stores config in VS Code's global storage
-    let vscode_config = if config.global {
-        home_dir().join(".config/Code/User/globalStorage/saoudrizwan.claude-dev/settings")
-    } else {
-        PathBuf::from(".vscode/globalStorage/saoudrizwan.claude-dev/settings.json")
-    };
-    merge_into_settings(&vscode_config, DEFAULT_HOOKS_JSON)?;
-    println!("[tokenless] Installed hooks for Cline");
-    println!("  {}", path_display(&vscode_config));
+    println!("  {}", path_display(&hooks_json));
     Ok(())
 }
 
@@ -309,11 +391,56 @@ fn init_gemini(config: &InitConfig) -> Result<(), String> {
     } else {
         PathBuf::from(".gemini")
     };
-    let hook_file = base.join("rtk-hook-gemini.sh");
-    write_file(&hook_file, SH_HOOK_REWRITE)?;
+    // Write the hook wrapper script
+    let hooks_dir = base.join("hooks");
+    let hook_script = hooks_dir.join("tokenless-hook-gemini.sh");
+    write_file(&hook_script, GEMINI_HOOK_SCRIPT)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(&hook_script) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o755);
+            let _ = std::fs::set_permissions(&hook_script, perms);
+        }
+    }
+    // Write settings.json with BeforeTool hook (Gemini uses BeforeTool, not PreToolUse)
+    let settings_path = base.join("settings.json");
+    let gemini_hooks_json = format!(
+        r#"{{
+  "hooks": {{
+    "BeforeTool": [
+      {{
+        "matcher": "run_shell_command",
+        "hooks": [
+          {{
+            "type": "command",
+            "command": "{}"
+          }}
+        ]
+      }}
+    ]
+  }}
+}}"#,
+        hook_script.display()
+    );
+    merge_into_settings(&settings_path, &gemini_hooks_json)?;
     let scope = if config.global { "global" } else { "project" };
     println!("[tokenless] Installed hooks for Gemini CLI ({scope})");
-    println!("  {}", path_display(&hook_file));
+    println!("  {}", path_display(&settings_path));
+    println!("  {}", path_display(&hook_script));
+    Ok(())
+}
+
+// ── Copilot ───────────────────────────────────────────────
+
+fn init_copilot(config: &InitConfig) -> Result<(), String> {
+    let hooks_dir = PathBuf::from(".github").join("hooks");
+    let hooks_json = hooks_dir.join("rtk-rewrite.json");
+    write_file(&hooks_json, COPILOT_HOOK_JSON)?;
+    let scope = if config.global { "global" } else { "project" };
+    println!("[tokenless] Installed hooks for GitHub Copilot ({scope})");
+    println!("  {}", path_display(&hooks_json));
     Ok(())
 }
 
