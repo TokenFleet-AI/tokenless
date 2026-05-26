@@ -189,12 +189,9 @@ pub fn format_rewrites(
     let current_page = offset / limit + 1;
 
     output.push_str(&format!(
-        "  {total_commands} commands, {total_rewrites} rewrites",
+        "  {total_commands} commands, {total_rewrites} rewrites (page \
+         {current_page}/{total_pages})\n\n",
     ));
-    if total_pages > 1 {
-        output.push_str(&format!(" (page {current_page}/{total_pages})"));
-    }
-    output.push_str("\n\n");
 
     for (cmd, count, savings) in entries.iter().skip(offset).take(limit) {
         match savings {
