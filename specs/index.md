@@ -13,4 +13,8 @@ Design specifications and technical documentation for tokenless.
 | 0007 | [Testing Strategy](./0007-testing-strategy.md) | 测试架构、覆盖分析与改进建议 |
 | 0008 | [Deployment Architecture](./0008-deployment-architecture.md) | 构建管道、安装矩阵与 CI/CD |
 | 0009 | [Optimization Analysis](./0009-optimization-analysis.md) | 性能优化机会与代码改进建议 |
-| 0010 | [Innovation Roadmap](./0010-innovation-roadmap.md) | 创新方向与技术路线图 |
+| 0010 | [Innovation Roadmap](./0010-innovation-roadmap.md) | 创新方向与技术路线图（含状态标注） |
+| 0011 | [MCP Server](./0011-mcp-server.md) | MCP JSON-RPC Server 集成：7 个 Tool |
+| 0012 | [Format Router](./0012-format-router.md) | 智能格式路由：结构分析 + 3 种编码策略 |
+| 0013 | [Differential Response](./0013-differential-response.md) | 差分响应压缩：轮询场景 unified diff |
+| 0014 | [Semantic-Aware Compression](./0014-semantic-aware-compression.md) | 语义感知压缩：三级架构（规则→ONNX→远程 API） |

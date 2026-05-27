@@ -23,6 +23,10 @@ This directory contains reusable project documentation for the template reposito
 - [0008 部署架构](../specs/0008-deployment-architecture.md)
 - [0009 优化分析](../specs/0009-optimization-analysis.md)
 - [0010 创新路线图](../specs/0010-innovation-roadmap.md)
+- [0011 MCP Server](../specs/0011-mcp-server.md)
+- [0012 智能格式路由](../specs/0012-format-router.md)
+- [0013 差分响应压缩](../specs/0013-differential-response.md)
+- [0014 语义感知压缩](../specs/0014-semantic-aware-compression.md)
 
 ## Agent workflow
 
