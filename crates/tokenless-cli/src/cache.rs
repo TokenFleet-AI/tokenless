@@ -6,7 +6,10 @@
 //!
 //! Set `TOKENLESS_CACHE_SIZE=0` to disable caching (default: 512 entries).
 
+use std::collections::HashMap;
+use std::fmt::Write as FmtWrite;
 use std::sync::{LazyLock, Mutex};
+use std::time::Instant;
 
 /// An LRU cache keyed by blake3 hash (first 8 bytes as u64).
 ///
@@ -102,6 +105,157 @@ pub fn cache_insert(input: &str, output: &str) {
     cache().insert(input, output);
 }
 
+// ── Differential Response Compression ────────────────────────────────
+
+/// Stores the last raw response for a command key, used for diff computation.
+/// Key = command string (e.g. "git status --porcelain")
+static LAST_RESPONSES: LazyLock<Mutex<HashMap<String, (String, Instant)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Default threshold: diff must be < 70% of full output to be used.
+const DEFAULT_DIFF_THRESHOLD: f64 = 0.7;
+
+fn diff_threshold() -> f64 {
+    std::env::var("TOKENLESS_DIFF_THRESHOLD")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_DIFF_THRESHOLD)
+}
+
+/// Compute a unified diff between old and new output for a command key.
+///
+/// Returns `None` on the first call (no baseline) or when the diff is larger
+/// than `threshold * new_output.len()`, meaning it is cheaper to send the full
+/// output.
+pub fn compute_diff(command_key: &str, new_output: &str) -> Option<String> {
+    compute_diff_inner(command_key, new_output, diff_threshold())
+}
+
+/// Core diff logic with explicit threshold (for testing).
+fn compute_diff_inner(command_key: &str, new_output: &str, threshold: f64) -> Option<String> {
+    let mut responses = LAST_RESPONSES.lock().unwrap_or_else(|e| {
+        LAST_RESPONSES.clear_poison();
+        e.into_inner()
+    });
+
+    let now = Instant::now();
+    let result = if let Some((old_output, _ts)) = responses.get(command_key) {
+        let diff = unified_diff(old_output, new_output);
+        // Unchanged outputs always emit the marker (no threshold check needed).
+        // Otherwise, only use diff if it is meaningfully smaller than full output.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let threshold_len = (new_output.len() as f64 * threshold) as usize;
+        if diff == "(unchanged)" || diff.len() < threshold_len {
+            Some(diff)
+        } else {
+            None
+        }
+    } else {
+        None // First call: no baseline
+    };
+
+    // Update baseline for next call
+    responses.insert(command_key.to_string(), (new_output.to_string(), now));
+    result
+}
+
+/// Simple unified diff: returns lines with `-` for removals and `+` for
+/// additions, with up to 3 lines of surrounding context.
+fn unified_diff(old: &str, new: &str) -> String {
+    let old_lines: Vec<&str> = old.lines().collect();
+    let new_lines: Vec<&str> = new.lines().collect();
+
+    // Find common prefix
+    let mut prefix = 0usize;
+    while prefix < old_lines.len()
+        && prefix < new_lines.len()
+        && old_lines[prefix] == new_lines[prefix]
+    {
+        prefix += 1;
+    }
+
+    // Find common suffix
+    let mut suffix = 0usize;
+    while suffix < old_lines.len() - prefix
+        && suffix < new_lines.len() - prefix
+        && old_lines[old_lines.len() - 1 - suffix] == new_lines[new_lines.len() - 1 - suffix]
+    {
+        suffix += 1;
+    }
+
+    let old_changed = &old_lines[prefix..old_lines.len() - suffix];
+    let new_changed = &new_lines[prefix..new_lines.len() - suffix];
+
+    // If nothing changed
+    if old_changed.is_empty() && new_changed.is_empty() {
+        return "(unchanged)".to_string();
+    }
+
+    let mut result = String::new();
+
+    // Context: show unchanged lines before the change (up to 3)
+    let ctx_start = prefix.saturating_sub(3);
+    if prefix > 3 {
+        let _ = writeln!(
+            result,
+            "  ... {unchanged_above} unchanged lines above",
+            unchanged_above = prefix - 3
+        );
+    }
+    for line in &old_lines[ctx_start..prefix] {
+        let _ = writeln!(result, "  {line}");
+    }
+
+    // Removed lines
+    for line in old_changed {
+        let _ = writeln!(result, "- {line}");
+    }
+    // Added lines
+    for line in new_changed {
+        let _ = writeln!(result, "+ {line}");
+    }
+
+    // Context: show unchanged lines after the change (up to 3)
+    let ctx_end = suffix.min(3);
+    for line in new_lines
+        .iter()
+        .skip(new_lines.len().saturating_sub(suffix))
+        .take(ctx_end)
+    {
+        let _ = writeln!(result, "  {line}");
+    }
+    if suffix > 3 {
+        let _ = writeln!(
+            result,
+            "  ... {unchanged_below} unchanged lines below",
+            unchanged_below = suffix - 3
+        );
+    }
+
+    // Header
+    if result.is_empty() {
+        result
+    } else {
+        format!(
+            "[diff from previous call — {}→{} lines, showing changes]\n{result}",
+            old_lines.len(),
+            new_lines.len(),
+        )
+    }
+}
+
+/// Clear stored response baselines (test-only helper).
+#[cfg(test)]
+pub fn clear_diff_cache() {
+    LAST_RESPONSES
+        .lock()
+        .unwrap_or_else(|e| {
+            LAST_RESPONSES.clear_poison();
+            e.into_inner()
+        })
+        .clear();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,5 +273,120 @@ mod tests {
 
         // Hit
         assert_eq!(cache().get(input).unwrap(), output);
+    }
+
+    // ── Differential Response Compression tests ───────────────────
+
+    #[test]
+    fn test_diff_first_call_returns_none() {
+        clear_diff_cache();
+        let result = compute_diff("test-first-call", "line1\nline2\n");
+        assert!(
+            result.is_none(),
+            "first call should return None (no baseline)"
+        );
+    }
+
+    #[test]
+    fn test_diff_second_call_returns_diff() {
+        clear_diff_cache();
+        let key = "test-second-call";
+        // threshold=2.0 disables size-gating so we can verify diff content.
+        let baseline: String = (0..20)
+            .map(|i| format!("line{i:02}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let changed: String = (0..20)
+            .map(|i| {
+                if i == 10 {
+                    "line10-modified".to_string()
+                } else {
+                    format!("line{i:02}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        compute_diff_inner(key, &baseline, 2.0);
+        let result = compute_diff_inner(key, &changed, 2.0);
+        assert!(
+            result.is_some(),
+            "second call with changes should return diff"
+        );
+        let diff = result.unwrap();
+        assert!(
+            diff.contains("+ line10-modified"),
+            "diff should show added line: {diff}"
+        );
+        assert!(
+            diff.contains("- line10"),
+            "diff should show removed line: {diff}"
+        );
+    }
+
+    #[test]
+    fn test_diff_no_changes_returns_unchanged() {
+        clear_diff_cache();
+        let key = "test-no-changes";
+        compute_diff_inner(key, "line1\nline2\n", 0.7);
+        let result = compute_diff_inner(key, "line1\nline2\n", 0.7);
+        assert_eq!(result.unwrap(), "(unchanged)");
+    }
+
+    #[test]
+    fn test_diff_too_large_returns_none() {
+        clear_diff_cache();
+        let key = "test-too-large";
+        compute_diff_inner(key, "a\n", 0.7);
+        // Generate a completely different output
+        let new = "b\nc\nd\ne\nf\ng\nh\ni\nj\nk\n";
+        let result = compute_diff_inner(key, new, 0.7);
+        assert!(
+            result.is_none(),
+            "majority change should return None (full output)"
+        );
+    }
+
+    #[test]
+    fn test_diff_threshold_strict() {
+        clear_diff_cache();
+        // With threshold 0.3, even moderate changes should fallback to full
+        compute_diff_inner("test-strict", "a\nb\nc\n", 0.3);
+        let result = compute_diff_inner("test-strict", "x\ny\nz\n", 0.3); // 100% different
+        assert!(result.is_none(), "strict threshold should reject full diff");
+    }
+
+    #[test]
+    fn test_diff_threshold_lenient() {
+        clear_diff_cache();
+        // threshold=2.0 disables size-gating; verifies diff content.
+        let baseline: String = (0..20)
+            .map(|i| format!("line{i:02}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let changed: String = (0..20)
+            .map(|i| {
+                if i == 5 {
+                    "line05-changed".to_string()
+                } else {
+                    format!("line{i:02}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        compute_diff_inner("test-lenient", &baseline, 2.0);
+        let result = compute_diff_inner("test-lenient", &changed, 2.0);
+        assert!(
+            result.is_some(),
+            "lenient threshold should accept small changes"
+        );
+        let diff = result.unwrap();
+        assert!(
+            diff.contains("+ line05-changed"),
+            "diff should show added line: {diff}"
+        );
+        assert!(
+            diff.contains("- line05"),
+            "diff should show removed line: {diff}"
+        );
     }
 }

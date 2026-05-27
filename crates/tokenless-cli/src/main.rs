@@ -220,6 +220,8 @@ enum HookCommands {
     Rewrite(RewriteTarget),
     /// Response compression hook (PostToolUse, stdin → stdout).
     Compress,
+    /// Differential response compression hook (PostToolUse, stdin → stdout).
+    Diff,
 }
 
 #[derive(Debug, Subcommand)]
@@ -830,6 +832,20 @@ fn run() -> Result<(), (String, i32)> {
                     input,
                     output_text,
                 );
+            }
+            HookCommands::Diff => {
+                let input = read_input(&None).map_err(|e| (e, 2))?;
+                let input = strip_leading_bom(&input);
+                let val: serde_json::Value = serde_json::from_str(&input)
+                    .map_err(|e| (format!("JSON parse error: {e}"), 2))?;
+                let cmd = val.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                let output = val.get("output").and_then(|v| v.as_str()).unwrap_or("");
+
+                if let Some(diff) = cache::compute_diff(cmd, output) {
+                    println!("{diff}");
+                } else {
+                    println!("{output}");
+                }
             }
         },
         Commands::Init { global, agent } => {
