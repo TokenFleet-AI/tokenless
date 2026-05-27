@@ -1,4 +1,6 @@
-[default.extend-words]
-
 [files]
 extend-exclude = ["CHANGELOG.md", "vendors/"]
+
+[default.extend-words]
+caf = "caf"  # truncated form of "café" in test assertion
+wriet = "wriet"  # intentional typo example in spec

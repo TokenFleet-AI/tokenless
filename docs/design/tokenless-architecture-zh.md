@@ -205,3 +205,16 @@ strip = true
 - 所有公共项必须有文档注释
 - 错误处理：library 使用 `thiserror`，应用层使用 `anyhow`
 - Rust 2024 版本，`#![forbid(unsafe_code)]`（env_check 中 `libc::getuid` 需要 `unsafe` 块除外）
+
+## 相关 Specs
+
+- [0001 架构设计](../../specs/0001-architecture.md) — 项目架构总览（英文）
+- [0002 Schema Compressor 增强方案](../../specs/0002-schema-compressor-enhancements.md)
+- [0003 数据流与管道设计](../../specs/0003-data-flow-pipeline-design.md)
+- [0004 Hook 协议规范](../../specs/0004-hook-protocol-spec.md)
+- [0005 安全模型设计](../../specs/0005-security-model-design.md)
+- [0006 错误处理策略](../../specs/0006-error-handling-strategy.md)
+- [0007 测试策略](../../specs/0007-testing-strategy.md)
+- [0008 部署架构](../../specs/0008-deployment-architecture.md)
+- [0009 优化分析](../../specs/0009-optimization-analysis.md)
+- [0010 创新路线图](../../specs/0010-innovation-roadmap.md)

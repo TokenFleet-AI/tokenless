@@ -13,7 +13,10 @@ fmt:
 clippy:
 	@cargo clippy --all-targets --all-features -- -D warnings
 
-lint: fmt clippy
+audit:
+	@cargo audit
+
+lint: fmt clippy audit
 
 install: build
 	@mkdir -p $(BIN_DIR)
@@ -65,4 +68,4 @@ release:
 update-submodule:
 	@git submodule update --init --recursive --remote
 
-.PHONY: build test fmt clippy lint install adapter-install adapter-uninstall setup clean check-agent-sync release update-submodule
+.PHONY: build test fmt clippy audit lint install adapter-install adapter-uninstall setup clean check-agent-sync release update-submodule

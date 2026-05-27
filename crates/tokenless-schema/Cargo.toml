@@ -13,6 +13,7 @@ categories = ["development-tools", "compression"]
 [dependencies]
 serde_json.workspace = true
 regex = "1.10"
+tracing.workspace = true
 
 [lints]
 workspace = true

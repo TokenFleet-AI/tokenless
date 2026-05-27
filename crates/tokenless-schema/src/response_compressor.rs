@@ -13,6 +13,7 @@ pub struct ResponseCompressor {
     drop_empty_fields: bool,
     max_depth: usize,
     add_truncation_marker: bool,
+    max_keys_per_object: usize,
 }
 
 impl Default for ResponseCompressor {
@@ -20,12 +21,19 @@ impl Default for ResponseCompressor {
         let mut drop_fields = HashSet::new();
         for f in &[
             "debug",
+            "Debug",
             "trace",
+            "Trace",
             "traces",
+            "Traces",
             "stack",
+            "Stack",
             "stacktrace",
+            "Stacktrace",
             "logs",
+            "Logs",
             "logging",
+            "Logging",
         ] {
             drop_fields.insert((*f).to_string());
         }
@@ -37,6 +45,7 @@ impl Default for ResponseCompressor {
             drop_empty_fields: true,
             max_depth: 8,
             add_truncation_marker: true,
+            max_keys_per_object: usize::MAX,
         }
     }
 }
@@ -90,9 +99,18 @@ impl ResponseCompressor {
         self
     }
 
+    /// Set the maximum number of keys per object before truncation (default unlimited).
+    #[must_use]
+    pub fn with_max_keys_per_object(mut self, max: usize) -> Self {
+        self.max_keys_per_object = max;
+        self
+    }
+
     /// Add a field name to the drop-on-sight list.
-    pub fn add_drop_field(&mut self, field: &str) {
-        self.drop_fields.insert(field.to_string());
+    #[must_use]
+    pub fn with_drop_field(mut self, field: impl Into<String>) -> Self {
+        self.drop_fields.insert(field.into());
+        self
     }
 
     /// Compress a JSON response value.
@@ -131,6 +149,12 @@ impl ResponseCompressor {
         }
     }
 
+    /// Truncate a string at the configured code-point limit.
+    ///
+    /// Truncation operates at the Unicode code-point level, not at the
+    /// grapheme-cluster level. This is acceptable for LLM tokenizer
+    /// consumers because tokenizers also operate on code-point sequences
+    /// rather than rendered grapheme clusters.
     fn compress_string(&self, s: &str) -> Value {
         let char_count = s.chars().count();
         if char_count <= self.truncate_strings_at {
@@ -167,18 +191,31 @@ impl ResponseCompressor {
             result.push(compressed);
         }
         if truncate && self.add_truncation_marker {
-            result.push(Value::String(format!(
-                "<... {} more items truncated>",
-                arr.len() - self.truncate_arrays_at
-            )));
+            if result.is_empty() {
+                result.push(Value::String(format!(
+                    "<... array truncated: prefix empty, up to {} more items>",
+                    arr.len() - limit
+                )));
+            } else {
+                result.push(Value::String(format!(
+                    "<... up to {} more items truncated>",
+                    arr.len() - limit
+                )));
+            }
         }
         Value::Array(result)
     }
 
     fn compress_object(&self, obj: &Map<String, Value>, depth: usize) -> Value {
         let mut result = Map::new();
+        let mut count: usize = 0;
+        let mut truncated: usize = 0;
         for (key, value) in obj {
             if self.drop_fields.contains(key) {
+                continue;
+            }
+            if count >= self.max_keys_per_object {
+                truncated += 1;
                 continue;
             }
             let compressed = self.compress_value(value, depth + 1);
@@ -189,6 +226,13 @@ impl ResponseCompressor {
                 continue;
             }
             result.insert(key.clone(), compressed);
+            count += 1;
+        }
+        if truncated > 0 {
+            result.insert(
+                "<...keys_truncated>".to_string(),
+                Value::String(format!("<... {truncated} more keys truncated>")),
+            );
         }
         Value::Object(result)
     }
@@ -335,5 +379,223 @@ mod tests {
         let compressor = ResponseCompressor::new();
         let v = json!({"a": 1, "b": "hello"});
         assert_eq!(compressor.compress(&v), v);
+    }
+
+    // D4: Array truncation count wording
+    #[test]
+    fn test_array_truncation_marker_says_up_to() {
+        let compressor = ResponseCompressor::new().with_truncate_arrays_at(5);
+        let arr: Vec<i32> = (1..=10).collect();
+        let result = compressor.compress(&json!(arr));
+        let last = result.as_array().unwrap().last().unwrap();
+        assert!(last.as_str().unwrap().contains("up to"));
+    }
+
+    // D5: PascalCase drop fields
+    #[test]
+    fn test_drop_fields_pascal_case() {
+        let compressor = ResponseCompressor::new();
+        let obj = json!({"Debug": "rm", "Trace": "rm", "Stack": "rm", "keep": "yes"});
+        let result = compressor.compress(&obj);
+        let obj_result = result.as_object().unwrap();
+        assert!(
+            !obj_result.contains_key("Debug"),
+            "PascalCase 'Debug' should be dropped"
+        );
+        assert!(
+            !obj_result.contains_key("Trace"),
+            "PascalCase 'Trace' should be dropped"
+        );
+        assert!(
+            !obj_result.contains_key("Stack"),
+            "PascalCase 'Stack' should be dropped"
+        );
+        assert!(
+            obj_result.contains_key("keep"),
+            "'keep' should be preserved"
+        );
+    }
+
+    // D6: Combining character truncation
+    #[test]
+    fn test_combining_character_truncation_known_limitation() {
+        let compressor = ResponseCompressor::new().with_truncate_strings_at(4);
+        let result = compressor.compress(&json!("cafe\u{0301} extra"));
+        assert!(result.as_str().unwrap().starts_with("caf"));
+    }
+
+    // D7: Builder chaining with with_drop_field
+    #[test]
+    fn test_with_drop_field_builder_chaining() {
+        let compressor = ResponseCompressor::new()
+            .with_drop_field("custom_debug")
+            .with_truncate_strings_at(100);
+        let obj = json!({"custom_debug": "rm", "keep": "yes"});
+        let result = compressor.compress(&obj);
+        assert!(!result.as_object().unwrap().contains_key("custom_debug"));
+        assert!(result.as_object().unwrap().contains_key("keep"));
+    }
+
+    // D8: max_keys_per_object
+    #[test]
+    fn test_max_keys_per_object() {
+        let compressor = ResponseCompressor::new().with_max_keys_per_object(3);
+        let mut obj_map = serde_json::Map::new();
+        for i in 0..10 {
+            obj_map.insert(format!("key_{i}"), json!(i));
+        }
+        let result = compressor.compress(&Value::Object(obj_map));
+        let obj_result = result.as_object().unwrap();
+        assert!(obj_result.len() <= 4, "at most 3 data keys + 1 marker");
+        assert!(obj_result.contains_key("<...keys_truncated>"));
+    }
+
+    #[test]
+    fn test_max_keys_default_unlimited() {
+        let compressor = ResponseCompressor::new();
+        let mut obj_map = serde_json::Map::new();
+        for i in 0..1000 {
+            obj_map.insert(format!("key_{i}"), json!(i));
+        }
+        let result = compressor.compress(&Value::Object(obj_map));
+        assert_eq!(result.as_object().unwrap().len(), 1000);
+    }
+
+    #[test]
+    fn test_max_keys_respects_drop_fields() {
+        let compressor = ResponseCompressor::new().with_max_keys_per_object(2);
+        let obj = json!({"debug": "rm", "keep1": 1, "keep2": 2, "keep3": 3});
+        let result = compressor.compress(&obj);
+        let obj_result = result.as_object().unwrap();
+        assert!(obj_result.contains_key("keep1"));
+        assert!(obj_result.contains_key("keep2"));
+        assert!(!obj_result.contains_key("keep3"));
+        assert!(!obj_result.contains_key("debug"));
+    }
+
+    // D9: Empty array prefix marker
+    #[test]
+    fn test_array_truncation_all_null_prefix() {
+        let compressor = ResponseCompressor::new().with_truncate_arrays_at(3);
+        let arr = json!([null, null, null, 1, 2]);
+        let result = compressor.compress(&arr);
+        let arr_result = result.as_array().unwrap();
+        assert_eq!(arr_result.len(), 1, "all null prefix → only marker remains");
+        let marker = arr_result[0].as_str().unwrap();
+        assert!(
+            marker.contains("prefix empty"),
+            "marker should indicate prefix was empty: {marker}"
+        );
+    }
+
+    // ── Gap 6: CJK boundary, RTL, ZWJ tests ──────────────────────────
+
+    #[test]
+    fn test_cjk_truncation_no_panic() {
+        // CJK text: 100 repeated CJK chars, truncate at 20 char limit
+        let compressor = ResponseCompressor::new().with_truncate_strings_at(20);
+        let cjk_text = "你好世界这是测试文本".repeat(10); // 10 * 8 = 80 CJK chars
+        let result = compressor.compress(&json!(cjk_text));
+        let output = result.as_str().unwrap();
+        // Should be truncated
+        assert!(
+            output.contains("truncated"),
+            "CJK text should be truncated at char limit, got len={}",
+            output.chars().count()
+        );
+    }
+
+    #[test]
+    fn test_mixed_cjk_ascii_emoji_truncation() {
+        // Mixed CJK + ASCII + Emoji — truncation should not split mid-char
+        let compressor = ResponseCompressor::new().with_truncate_strings_at(30);
+        let mixed = "Hello 你好 World 🌍 世界 🚀 cont".repeat(5);
+        let result = compressor.compress(&json!(mixed));
+        let output = result.as_str().unwrap();
+        // Result should be valid UTF-8, no panics
+        assert!(output.contains("truncated"));
+        // Verify it starts with the correct prefix
+        assert!(output.starts_with("Hello 你好 World "));
+    }
+
+    #[test]
+    fn test_rtl_danish_text_preserved_in_truncation() {
+        // Arabic RTL text — truncation should be at char boundary
+        let compressor = ResponseCompressor::new().with_truncate_strings_at(100);
+        let arabic = "مرحبا بالعالم هذا نص عربي للاختبار".repeat(5);
+        let result = compressor.compress(&json!(arabic));
+        let output = result.as_str().unwrap();
+        // Arabic text is long (~200 chars), should be truncated at ~100
+        let chars = output.chars().count();
+        // "… (truncated)" adds 15 chars to the limit
+        assert!(
+            chars <= 115,
+            "RTL text truncation should respect char boundary, got {chars} chars"
+        );
+        assert!(output.contains("truncated"));
+    }
+
+    #[test]
+    fn test_rtl_hebrew_text_no_corruption() {
+        let compressor = ResponseCompressor::new().with_truncate_strings_at(50);
+        let hebrew = "שלום עולם".repeat(20); // Hebrew RTL
+        let result = compressor.compress(&json!(hebrew));
+        let output = result.as_str().unwrap();
+        assert!(output.contains("truncated"));
+        // Verify output is valid UTF-8 by checking we can iterate chars
+        let char_count = output.chars().count();
+        assert!(char_count > 0);
+    }
+
+    #[test]
+    fn test_zero_width_joiner_preserved() {
+        // Zero-width joiner (U+200D) should not be split
+        let compressor = ResponseCompressor::new().with_truncate_strings_at(200);
+        let zwj_text = "family\u{200d}man\u{200d}woman\u{200d}girl\u{200d}boy ".repeat(10);
+        let result = compressor.compress(&json!(zwj_text));
+        let output = result.as_str().unwrap();
+        assert!(
+            output.contains("\u{200d}"),
+            "ZWJ should be preserved in output"
+        );
+    }
+
+    #[test]
+    fn test_combining_char_at_boundary() {
+        // Combining character right at the truncation boundary should be handled
+        let compressor = ResponseCompressor::new().with_truncate_strings_at(10);
+        // "cafe" (4) + combining acute accent (1 char) + " extra..."
+        // Total chars: "cafe\u{0301} extra" = 12 chars
+        let result = compressor.compress(&json!("cafe\u{0301} extra text"));
+        let output = result.as_str().unwrap();
+        assert!(output.contains("truncated"));
+        // Key: should be valid UTF-8, no panics
+        let _: Vec<char> = output.chars().collect(); // must not panic
+    }
+
+    #[test]
+    fn test_cjk_with_array_truncation() {
+        // Array of CJK strings truncated
+        let compressor = ResponseCompressor::new()
+            .with_truncate_strings_at(15)
+            .with_truncate_arrays_at(3);
+        let arr = json!([
+            "这是第一段中文文本用于测试",
+            "这是第二段较长中文文本用于测试截断功能",
+            "第三段文本",
+            "第四段文本应该被截断",
+            "第五段文本"
+        ]);
+        let result = compressor.compress(&arr);
+        let arr_result = result.as_array().unwrap();
+        assert_eq!(arr_result.len(), 4, "3 items + 1 marker = 4");
+        // Verify CJK strings are within char limit
+        for item in arr_result.iter().take(3) {
+            let s = item.as_str().unwrap();
+            assert!(
+                s.chars().count() <= 30, // 15 + marker overhead
+                "CJK string should be truncated: {s}"
+            );
+        }
     }
 }

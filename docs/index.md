@@ -6,8 +6,23 @@ This directory contains reusable project documentation for the template reposito
 
 - [用户指南与教程](./user-guide.md) — 全面的使用教程、设计说明和 API 参考
 
-- [Tokenless Architecture (EN)](./design/tokenless-architecture.md) — 英文版架构设计文档
 - [Tokenless 架构设计 (中文)](./design/tokenless-architecture-zh.md) — 中文版架构设计文档
+- [Architecture (EN)](../specs/0001-architecture.md) — 英文版架构规格（Specs 0001）
+
+## 设计规格（Specs）
+
+详见 [specs/index.md](../specs/index.md)
+
+- [0001 架构设计](../specs/0001-architecture.md)
+- [0002 Schema Compressor 增强](../specs/0002-schema-compressor-enhancements.md)
+- [0003 数据流与管道设计](../specs/0003-data-flow-pipeline-design.md)
+- [0004 Hook 协议规范](../specs/0004-hook-protocol-spec.md)
+- [0005 安全模型设计](../specs/0005-security-model-design.md)
+- [0006 错误处理策略](../specs/0006-error-handling-strategy.md)
+- [0007 测试策略](../specs/0007-testing-strategy.md)
+- [0008 部署架构](../specs/0008-deployment-architecture.md)
+- [0009 优化分析](../specs/0009-optimization-analysis.md)
+- [0010 创新路线图](../specs/0010-innovation-roadmap.md)
 
 ## Agent workflow
 

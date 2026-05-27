@@ -23,7 +23,9 @@ serde_json.workspace = true
 toon-format.workspace = true
 rusqlite.workspace = true
 dirs.workspace = true
+tracing.workspace = true
 rtk-registry.workspace = true
+blake3 = "1"
 
 [lints]
 workspace = true

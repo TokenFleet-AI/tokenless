@@ -35,4 +35,4 @@ pub use record::{OperationType, StatsRecord};
 #[doc(inline)]
 pub use recorder::{StatsError, StatsRecorder, StatsResult, StatsSummary};
 #[doc(inline)]
-pub use tokenizer::{estimate_tokens, estimate_tokens_from_bytes};
+pub use tokenizer::{estimate_tokens, estimate_tokens_cjk_aware, estimate_tokens_from_bytes};

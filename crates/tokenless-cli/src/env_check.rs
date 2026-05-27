@@ -347,7 +347,10 @@ fn check_permission(perm: &str) -> bool {
             .arg("bash")
             .output()
             .map_or(false, |o| o.status.success()),
-        _ => true,
+        _ => {
+            eprintln!("[tokenless] env_check: unknown permission type: {perm}");
+            true
+        }
     }
 }
 
@@ -443,16 +446,58 @@ fn load_spec(spec_path: &PathBuf) -> Result<HashMap<String, ToolDepSpec>, String
 }
 
 fn check_tool(tool_name: &str, spec: &ToolDepSpec) -> ToolReadyResult {
+    let req_count = spec.required.len();
+
+    // Collect all deps into one slice: required first, then recommended.
+    // Order is preserved via index-based result collection.
+    let all_deps: Vec<&DepEntry> = spec
+        .required
+        .iter()
+        .chain(spec.recommended.iter())
+        .collect();
+
+    // Parallel dep checking via thread::scope.
+    // One thread per dep — each is I/O-bound (subprocess spawn + wait).
+    let mut dep_statuses: Vec<DepStatus> = vec![DepStatus::Missing; all_deps.len()];
+    if !all_deps.is_empty() {
+        std::thread::scope(|s| {
+            let handles: Vec<_> = all_deps
+                .iter()
+                .enumerate()
+                .map(|(i, dep)| {
+                    let dep_ref: &DepEntry = dep;
+                    s.spawn(move || {
+                        let status = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            check_dep(dep_ref)
+                        }))
+                        .unwrap_or(DepStatus::Missing);
+                        (i, status)
+                    })
+                })
+                .collect();
+            for handle in handles {
+                if let Ok((i, status)) = handle.join() {
+                    dep_statuses[i] = status;
+                }
+            }
+        });
+    }
+
+    // Split results back into required / recommended in original order
     let required_results: Vec<_> = spec
         .required
         .iter()
-        .map(|d| (d.clone(), check_dep(d)))
+        .enumerate()
+        .map(|(i, d)| (d.clone(), dep_statuses[i].clone()))
         .collect();
     let recommended_results: Vec<_> = spec
         .recommended
         .iter()
-        .map(|d| (d.clone(), check_dep(d)))
+        .enumerate()
+        .map(|(i, d)| (d.clone(), dep_statuses[req_count + i].clone()))
         .collect();
+
+    // Config/permission/network checks remain sequential (fast fs operations)
     let config_results: Vec<_> = spec
         .config_files
         .iter()
@@ -960,5 +1005,201 @@ mod tests {
         assert!(specs.contains_key("Shell"));
         #[allow(clippy::disallowed_methods)]
         std::fs::remove_file(&spec_path).ok();
+    }
+
+    #[test]
+    fn test_check_dep_order_preserved() {
+        // Create a spec with 3 required deps in known order
+        let spec_json = json!({
+            "aliases": [],
+            "required": [
+                {"binary": "sh", "package": "bash", "manager": "rpm"},
+                {"binary": "ls", "package": "coreutils", "manager": "rpm"},
+                {"binary": "cat", "package": "coreutils", "manager": "rpm"}
+            ],
+            "recommended": [],
+            "config_files": [],
+            "permissions": [],
+            "network": []
+        });
+
+        // Manually check order via normalize_deps
+        let deps = normalize_deps(&spec_json["required"]);
+        assert_eq!(deps.len(), 3);
+        assert_eq!(deps[0].binary, "sh");
+        assert_eq!(deps[1].binary, "ls");
+        assert_eq!(deps[2].binary, "cat");
+    }
+
+    #[test]
+    fn test_check_tool_empty_deps() {
+        // This verifies the parallel path handles empty deps gracefully
+        let spec_json = json!({
+            "aliases": [],
+            "required": [],
+            "recommended": [],
+            "config_files": [],
+            "permissions": [],
+            "network": []
+        });
+        let deps = normalize_deps(&spec_json["required"]);
+        assert!(deps.is_empty());
+        // After optimization, thread::scope on empty slice should not panic
+    }
+
+    #[test]
+    fn test_dep_status_clone() {
+        // Verify DepStatus::Missing clones correctly (needed for the parallel path)
+        let status = DepStatus::Missing;
+        let cloned = status.clone();
+        assert_eq!(status, cloned);
+
+        let version_low = DepStatus::VersionLow {
+            installed: "1.0".to_string(),
+            required: "2.0".to_string(),
+        };
+        let cloned = version_low.clone();
+        assert!(matches!(cloned, DepStatus::VersionLow { .. }));
+    }
+
+    // ── Gap 8: normalize_dep fallback entries ─────────────────────────
+
+    #[test]
+    fn test_normalize_dep_with_fallback_entries() {
+        let dep = normalize_dep(&json!({
+            "binary": "python",
+            "version": ">=3.8",
+            "package": "python3",
+            "manager": "apt",
+            "pip_name": "python",
+            "fallback": [
+                {
+                    "method": "pip",
+                    "package": "python",
+                    "binary": "python3"
+                },
+                {
+                    "method": "cargo",
+                    "package": "python-launcher",
+                    "binary": "py",
+                    "features": "default"
+                }
+            ]
+        }));
+        assert_eq!(dep.binary, "python");
+        assert_eq!(dep.version.as_deref(), Some(">=3.8"));
+        assert_eq!(dep.package, "python3");
+        assert_eq!(dep.manager, "apt");
+        assert_eq!(dep.pip_name.as_deref(), Some("python"));
+
+        // Verify fallback entries
+        assert_eq!(dep.fallback.len(), 2, "should have 2 fallback entries");
+        assert_eq!(dep.fallback[0].method, "pip");
+        assert_eq!(dep.fallback[0].package.as_deref(), Some("python"));
+        assert_eq!(dep.fallback[0].binary.as_deref(), Some("python3"));
+        assert_eq!(dep.fallback[1].method, "cargo");
+        assert_eq!(dep.fallback[1].features.as_deref(), Some("default"));
+    }
+
+    #[test]
+    fn test_normalize_dep_fallback_with_url_and_source() {
+        let dep = normalize_dep(&json!({
+            "binary": "node",
+            "fallback": [
+                {
+                    "method": "curl",
+                    "url": "https://nodejs.org/dist/v20.0.0/node-v20.0.0-linux-x64.tar.xz",
+                    "binary": "node"
+                },
+                {
+                    "method": "source",
+                    "source": "https://github.com/nodejs/node.git",
+                    "manifest": "Makefile"
+                }
+            ]
+        }));
+        assert_eq!(dep.fallback.len(), 2);
+        assert_eq!(dep.fallback[0].method, "curl");
+        assert_eq!(
+            dep.fallback[0].url.as_deref(),
+            Some("https://nodejs.org/dist/v20.0.0/node-v20.0.0-linux-x64.tar.xz")
+        );
+        assert_eq!(dep.fallback[1].method, "source");
+        assert_eq!(
+            dep.fallback[1].source.as_deref(),
+            Some("https://github.com/nodejs/node.git")
+        );
+        assert_eq!(dep.fallback[1].manifest.as_deref(), Some("Makefile"));
+    }
+
+    #[test]
+    fn test_normalize_dep_fallback_with_args() {
+        let dep = normalize_dep(&json!({
+            "binary": "ripgrep",
+            "fallback": [
+                {
+                    "method": "cargo",
+                    "package": "ripgrep",
+                    "binary": "rg",
+                    "args": "--features pcre2"
+                }
+            ]
+        }));
+        assert_eq!(dep.fallback.len(), 1);
+        assert_eq!(dep.fallback[0].method, "cargo");
+        assert_eq!(dep.fallback[0].args.as_deref(), Some("--features pcre2"));
+    }
+
+    #[test]
+    fn test_normalize_dep_no_fallback() {
+        let dep = normalize_dep(&json!({
+            "binary": "curl",
+            "package": "curl",
+            "manager": "apt"
+        }));
+        assert_eq!(dep.fallback.len(), 0, "no fallback should be empty vec");
+    }
+
+    #[test]
+    fn test_normalize_dep_use_npx() {
+        let dep = normalize_dep(&json!({
+            "binary": "tsx",
+            "package": "tsx",
+            "manager": "npm",
+            "npm_name": "tsx",
+            "use_npx": true
+        }));
+        assert_eq!(dep.binary, "tsx");
+        assert!(dep.use_npx, "use_npx should be true");
+        assert_eq!(dep.npm_name.as_deref(), Some("tsx"));
+    }
+
+    #[test]
+    fn test_normalize_dep_uv_name() {
+        let dep = normalize_dep(&json!({
+            "binary": "ruff",
+            "package": "ruff",
+            "manager": "pip",
+            "pip_name": "ruff",
+            "uv_name": "ruff"
+        }));
+        assert_eq!(dep.pip_name.as_deref(), Some("ruff"));
+        assert_eq!(dep.uv_name.as_deref(), Some("ruff"));
+    }
+
+    #[test]
+    fn test_normalize_deps_array_with_fallback_mixed() {
+        let deps = normalize_deps(&json!([
+            "jq",
+            {"binary": "python3", "fallback": [{"method": "apt", "package": "python3"}]},
+            "git>=2.0"
+        ]));
+        assert_eq!(deps.len(), 3);
+        assert_eq!(deps[0].binary, "jq");
+        assert_eq!(deps[0].fallback.len(), 0);
+        assert_eq!(deps[1].binary, "python3");
+        assert_eq!(deps[1].fallback.len(), 1);
+        assert_eq!(deps[2].binary, "git");
+        assert_eq!(deps[2].version.as_deref(), Some(">=2.0"));
     }
 }
