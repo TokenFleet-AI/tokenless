@@ -693,6 +693,7 @@ dependencies = [
  "dirs",
  "rtk-registry",
  "rusqlite",
+ "serde",
  "serde_json",
  "tokenless-schema",
  "tokenless-stats",

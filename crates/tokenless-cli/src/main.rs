@@ -25,6 +25,7 @@
 mod cache;
 mod env_check;
 mod init;
+mod mcp;
 
 use std::{
     fs,
@@ -37,7 +38,9 @@ use clap::{Parser, Subcommand};
 use rtk_registry::{
     Classification, RtkInstallStatus, classify_command, is_rtk_installed, rewrite_command,
 };
-use tokenless_schema::{ResponseCompressor, SchemaCompressor};
+use tokenless_schema::{
+    ResponseCompressor, SchemaCompressor, compress_auto as schema_compress_auto, strategy_name,
+};
 use tokenless_stats::{
     OperationType, StatsRecord, StatsRecorder, TokenlessConfig, estimate_tokens_from_bytes,
     format_list, format_rewrites, format_show, format_summary,
@@ -97,6 +100,23 @@ enum Commands {
     CompressResponse {
         #[arg(short, long)]
         file: Option<String>,
+        /// Agent ID for stats.
+        #[arg(long)]
+        agent_id: Option<String>,
+        /// Session ID for grouping.
+        #[arg(long)]
+        session_id: Option<String>,
+        /// Tool use ID.
+        #[arg(long)]
+        tool_use_id: Option<String>,
+    },
+    /// Auto-select best encoding strategy and compress JSON.
+    CompressAuto {
+        #[arg(short, long)]
+        file: Option<String>,
+        /// Output JSON with strategy info and savings.
+        #[arg(long)]
+        json: bool,
         /// Agent ID for stats.
         #[arg(long)]
         agent_id: Option<String>,
@@ -181,6 +201,16 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Start MCP (Model Context Protocol) server over stdin/stdout.
+    #[command(subcommand)]
+    Mcp(McpAction),
+}
+
+/// MCP server subcommands.
+#[derive(Subcommand)]
+enum McpAction {
+    /// Start the MCP server (JSON-RPC over stdin/stdout).
+    Start,
 }
 
 #[derive(Subcommand)]
@@ -429,6 +459,60 @@ fn run() -> Result<(), (String, i32)> {
                 input.clone()
             } else {
                 result_json
+            };
+
+            cache::cache_insert(&input, &output_text);
+            println!("{output_text}");
+
+            record_compression_stats(
+                OperationType::CompressResponse,
+                agent_id,
+                session_id,
+                tool_use_id,
+                input,
+                output_text,
+            );
+        }
+        Commands::CompressAuto {
+            file,
+            json,
+            agent_id,
+            session_id,
+            tool_use_id,
+        } => {
+            let input = read_input(&file).map_err(|e| (e, 2))?;
+            if let Some(cached) = cache::cache_get(&input) {
+                println!("{cached}");
+                return Ok(());
+            }
+            let value: serde_json::Value =
+                serde_json::from_str(&input).map_err(|e| (format!("JSON parse error: {e}"), 2))?;
+
+            let (strategy, compressed) = schema_compress_auto(&value, &input);
+
+            let before_tokens = estimate_tokens_from_bytes(input.len());
+            let after_tokens = estimate_tokens_from_bytes(compressed.len());
+
+            let output_text = if after_tokens >= before_tokens {
+                input.clone()
+            } else if json {
+                let savings_pct = if input.is_empty() {
+                    0.0
+                } else {
+                    ((input.len() - compressed.len()) as f64 / input.len() as f64) * 100.0
+                };
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "strategy": strategy_name(&strategy),
+                    "compressed": compressed,
+                    "savings": {
+                        "chars_before": input.len(),
+                        "chars_after": compressed.len(),
+                        "pct": (savings_pct * 10.0).round() / 10.0
+                    }
+                }))
+                .unwrap_or_default()
+            } else {
+                compressed
             };
 
             cache::cache_insert(&input, &output_text);
@@ -774,6 +858,9 @@ fn run() -> Result<(), (String, i32)> {
             json,
         } => {
             env_check::run(tool.as_deref(), all, fix, checklist, json)?;
+        }
+        Commands::Mcp(McpAction::Start) => {
+            mcp::run_mcp();
         }
         Commands::Stats(stats_cmd) => {
             let recorder = open_recorder()?;
