@@ -47,6 +47,10 @@ This directory contains reusable project documentation for the template reposito
 - [高风险任务处理规范](./high-risk-task-guideline.md) — 高风险改动的协作、测试与审查要求。
 - [文档搜索索引](./search.md) — GitHub 可渲染的轻量检索入口。
 
+## 营销与推广
+
+- [微头条引流文案](./marketing/weitoutao-copies.md) — 人设定位、5 种文案模板、发布策略
+
 ## 推荐阅读顺序
 
 1. 先读 [SPARC 使用规范](./sparc-usage-guideline.md)，建立整体判断框架。
