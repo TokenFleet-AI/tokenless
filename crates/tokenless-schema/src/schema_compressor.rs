@@ -384,35 +384,38 @@ impl SchemaCompressor {
     /// character truncation.
     #[must_use]
     pub fn truncate_description(&self, desc: &str, max_len: usize, max_tokens: usize) -> String {
-        let mut text = desc.trim().to_string();
-        if self.drop_markdown {
-            text = CODE_BLOCK_RE.replace_all(&text, "").to_string();
-            text = INLINE_CODE_RE.replace_all(&text, "").to_string();
-        }
-        text = WHITESPACE_RE.replace_all(&text, " ").to_string();
-        text = text.trim().to_string();
+        // Phase 1: Normalize whitespace and optionally strip markdown.
+        let trimmed = desc.trim();
+        let text = if self.drop_markdown {
+            let text = CODE_BLOCK_RE.replace_all(trimmed, "").into_owned();
+            let text = INLINE_CODE_RE.replace_all(&text, "");
+            WHITESPACE_RE.replace_all(&text, " ").into_owned()
+        } else {
+            WHITESPACE_RE.replace_all(trimmed, " ").into_owned()
+        };
+        let text_str = text.trim();
 
-        if text.chars().count() <= max_len {
-            // Phase 2: token soft limit
+        // Early return if under both limits.
+        if text_str.chars().count() <= max_len {
             if max_tokens != usize::MAX {
-                let pos = Self::token_limit_byte_pos(&text, max_tokens);
-                if pos < text.len() {
-                    return text[..pos].trim().to_string();
+                let pos = Self::token_limit_byte_pos(text_str, max_tokens);
+                if pos < text_str.len() {
+                    return text_str[..pos].trim().to_string();
                 }
             }
-            return text;
+            return text_str.to_string();
         }
 
-        // Use f64 for fractional mid-point calculation; loss on 64-bit is acceptable here.
+        // Phase 2: Sentence-boundary truncation in range [max_len * 0.5, max_len].
         #[allow(
             clippy::cast_precision_loss,
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss
         )]
         let min_target = (max_len as f64 * 0.5) as usize;
-        let min_pos = find_char_boundary(&text, min_target);
-        let max_pos = find_char_boundary(&text, max_len.min(text.len()));
-        let search_range = &text[min_pos..max_pos];
+        let min_pos = find_char_boundary(text_str, min_target);
+        let max_pos = find_char_boundary(text_str, max_len.min(text_str.len()));
+        let search_range = &text_str[min_pos..max_pos];
 
         let sentence_endings = ['.', '。', '！', '？'];
         #[allow(clippy::double_ended_iterator_last)]
@@ -422,21 +425,21 @@ impl SchemaCompressor {
             .last()
             .map(|(i, c)| min_pos + i + c.len_utf8());
 
-        if let Some(pos) = best_pos {
-            text = text[..pos].trim().to_string();
+        let text = if let Some(pos) = best_pos {
+            text_str[..pos].trim().to_string()
         } else {
             let mut truncate_pos = max_len;
-            while !text.is_char_boundary(truncate_pos) && truncate_pos > 0 {
+            while !text_str.is_char_boundary(truncate_pos) && truncate_pos > 0 {
                 truncate_pos -= 1;
             }
-            text = text[..truncate_pos].trim().to_string();
-        }
+            text_str[..truncate_pos].trim().to_string()
+        };
 
-        // Phase 2: token soft limit
+        // Phase 3: Token soft limit.
         if max_tokens != usize::MAX {
             let pos = Self::token_limit_byte_pos(&text, max_tokens);
             if pos < text.len() {
-                text = text[..pos].trim().to_string();
+                return text[..pos].trim().to_string();
             }
         }
 
@@ -717,6 +720,32 @@ mod tests {
         }));
         // Intentionally forget `_result` to avoid recursive serde_json drop for deep nesting.
         // The test goal is solely to verify no-panic — the depth guard is the fix.
+    }
+
+    #[test]
+    fn test_truncate_description_edge_cases_preserved() {
+        let compressor = SchemaCompressor::new();
+        // Short string unchanged
+        assert_eq!(
+            compressor.truncate_description("hello", 100, usize::MAX),
+            "hello"
+        );
+        assert_eq!(compressor.truncate_description("hello", 100, 100), "hello");
+        // Empty and whitespace-only
+        assert_eq!(compressor.truncate_description("", 100, usize::MAX), "");
+        assert_eq!(compressor.truncate_description("   ", 100, usize::MAX), "");
+        // Markdown removed
+        let md =
+            compressor.truncate_description("Some `code` and ```block``` here.", 256, usize::MAX);
+        assert!(!md.contains('`'), "markdown removed");
+        // Whitespace normalized
+        let ws = compressor.truncate_description("  hello    world  ", 256, usize::MAX);
+        assert_eq!(ws, "hello world", "whitespace normalized");
+        // Sentence boundary
+        let sentence = "First sentence. Second sentence here. Third.";
+        let short = compressor.truncate_description(sentence, 30, usize::MAX);
+        assert!(short.len() <= 30);
+        assert!(!short.contains("Third"), "stopped before Third");
     }
 
     // ── P1: max_enum_items ───────────────────────────────────────────

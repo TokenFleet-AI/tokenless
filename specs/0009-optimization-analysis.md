@@ -1,5 +1,7 @@
 # Tokenless Optimization Analysis
 
+> 最后更新: 2026-05-29 — 标记 [已解决] 的项目已在 v0.2.1 中修复
+
 ## Performance Optimizations
 
 ### 1. Schema Compressor: Reduce JSON Round-Trips

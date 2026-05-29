@@ -107,7 +107,17 @@ Commands::Mcp { .. } => {
 }
 ```
 
-## 7. MCP ↔ Hook Coexistence
+## 7. Security
+
+### 7.1 Input Size Limit
+
+MCP server rejects JSON-RPC lines exceeding 10 MB with a `-32700 Parse error` response to prevent memory exhaustion from oversized payloads.
+
+### 7.2 Static Compressor Reuse
+
+Schema and response compressors are initialized once as `LazyLock` statics and reused across all MCP tool calls, eliminating per-request allocation overhead.
+
+## 8. MCP ↔ Hook Coexistence
 
 | | MCP | Hook |
 |---|---|---|
@@ -119,7 +129,7 @@ Commands::Mcp { .. } => {
 
 **Coexistence**: MCP server also serves as the hook backend. Instead of `tokenless hook rewrite claude` spawning a short-lived process, the MCP server process can handle hook requests via a lightweight internal channel. Future optimization.
 
-## 8. Test Strategy
+## 9. Test Strategy
 
 | Test | Method |
 |------|--------|
@@ -130,7 +140,7 @@ Commands::Mcp { .. } => {
 | `test_mcp_unknown_tool` | Send unknown tool name, verify error response |
 | `test_mcp_invalid_json` | Send malformed line, verify error response |
 
-## 9. Related Specs
+## 10. Related Specs
 
 - [0001 Architecture](./0001-architecture.md) — system context, RuFlo integration
 - [0003 Data Flow](./0003-data-flow-pipeline-design.md) — compression pipeline

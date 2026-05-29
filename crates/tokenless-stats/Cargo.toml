@@ -17,6 +17,7 @@ chrono = { workspace = true, features = ["serde"] }
 rusqlite.workspace = true
 thiserror.workspace = true
 dirs.workspace = true
+tracing.workspace = true
 
 [lints]
 workspace = true

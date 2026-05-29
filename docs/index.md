@@ -59,4 +59,9 @@ This directory contains reusable project documentation for the template reposito
 4. 涉及重构、安全、兼容性等高风险改动时，补充阅读 [高风险任务处理规范](./high-risk-task-guideline.md)。
 5. 需要快速定位主题时，使用 [文档搜索索引](./search.md)。
 
-Owner: baoyx · 版本：v1.0 · 生效日期：2026-05-21 · 最后更新：2026-05-21
+## 项目健康分析
+
+- [多维度分析报告](./analysis/multi-dimensional-analysis.md) — 架构、文档、安全、性能四维度综合评估
+- [性能基准报告](./performance-benchmarks.md) — 实际压缩效果与构建指标
+
+Owner: baoyx · 版本：v1.1 · 生效日期：2026-05-29 · 最后更新：2026-05-29

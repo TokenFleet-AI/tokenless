@@ -207,6 +207,15 @@ enum Commands {
     /// Start MCP (Model Context Protocol) server over stdin/stdout.
     #[command(subcommand)]
     Mcp(McpAction),
+    /// Launch interactive TUI dashboard for compression statistics.
+    Tui {
+        /// Refresh interval in seconds (default: 5).
+        #[arg(long, default_value = "5")]
+        refresh: u64,
+        /// Language: zh (Chinese, default) or en (English).
+        #[arg(long, default_value = "zh")]
+        lang: String,
+    },
 }
 
 /// MCP server subcommands.
@@ -762,7 +771,7 @@ fn run() -> Result<(), (String, i32)> {
                                     cmd.to_string(),
                                     rewritten.clone(),
                                 );
-                            let prefixed = format!("{RTK_ENV_PREFIX}{rewritten}");
+                                let prefixed = format!("{RTK_ENV_PREFIX}{rewritten}");
                                 println!(
                                     "{}",
                                     serde_json::to_string(&serde_json::json!({
@@ -885,6 +894,14 @@ fn run() -> Result<(), (String, i32)> {
         }
         Commands::Mcp(McpAction::Start) => {
             mcp::run_mcp();
+        }
+        Commands::Tui { refresh, lang } => {
+            let lang = match lang.as_str() {
+                "en" => tokenless_tui::Lang::En,
+                _ => tokenless_tui::Lang::Zh,
+            };
+            let recorder = open_recorder()?;
+            tokenless_tui::run_tui(recorder, refresh, lang).map_err(|e| (e, 1))?;
         }
         Commands::Stats(stats_cmd) => {
             let recorder = open_recorder()?;

@@ -140,6 +140,10 @@ tokenless stats show 5               # 记录详情
 
 详见 [specs/](./specs/) 目录下的 14 份设计文档，覆盖架构设计、数据流、Hook 协议、安全模型、错误处理、测试策略、部署架构、优化分析和创新路线图。
 
+## 参与贡献
+
+参见 [CONTRIBUTING.md](CONTRIBUTING.md) 了解开发流程、编码规范和测试指南。
+
 ## 许可证
 
 Apache License 2.0 — 详见 [LICENSE](LICENSE.md)。

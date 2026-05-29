@@ -1,0 +1,22 @@
+[package]
+name = "tokenless-tui"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Interactive TUI dashboard for tokenless compression statistics"
+
+[dependencies]
+# Workspace deps
+serde_json.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+
+# TUI
+ratatui = "0.28"
+crossterm = "0.28"
+
+# Internal
+tokenless-stats = { path = "../tokenless-stats", version = "0.3.0" }
+tokenless-schema = { path = "../tokenless-schema", version = "0.3.0" }

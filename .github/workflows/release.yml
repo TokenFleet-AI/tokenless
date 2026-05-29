@@ -11,7 +11,7 @@ on:
         default: false
       publish-crates-io:
         type: boolean
-        default: false
+        default: true
   workflow_dispatch:
     inputs:
       tag:

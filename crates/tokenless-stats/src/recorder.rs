@@ -121,6 +121,26 @@ impl StatsRecorder {
     pub fn record(&self, stats_record: &StatsRecord) -> StatsResult<i64> {
         let conn = self.lock_conn();
 
+        // Sanitize text fields: warn and clear if sensitive content detected
+        let before_text = stats_record.before_text.as_deref().and_then(|t| {
+            if sanitize_stats_text(t).is_none() {
+                tracing::warn!(
+                    "Sensitive content detected in before_text, skipping text recording"
+                );
+                None
+            } else {
+                Some(t.to_string())
+            }
+        });
+        let after_text = stats_record.after_text.as_deref().and_then(|t| {
+            if sanitize_stats_text(t).is_none() {
+                tracing::warn!("Sensitive content detected in after_text, skipping text recording");
+                None
+            } else {
+                Some(t.to_string())
+            }
+        });
+
         conn.execute(
             "INSERT INTO stats (
                 timestamp, operation, agent_id, source_pid, session_id, tool_use_id,
@@ -139,8 +159,8 @@ impl StatsRecorder {
                 stats_record.before_tokens,
                 stats_record.after_chars,
                 stats_record.after_tokens,
-                stats_record.before_text,
-                stats_record.after_text,
+                before_text,
+                after_text,
                 stats_record.before_output,
                 stats_record.after_output,
             ],
@@ -224,6 +244,105 @@ impl StatsRecorder {
         Ok(())
     }
 
+    /// Query records with optional filters.
+    ///
+    /// Supports filtering by exact `agent_id`, text search across
+    /// `agent_id` and `operation` columns, and an optional `limit`.
+    /// Returns records ordered by timestamp descending.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the query fails.
+    pub fn records_filtered(
+        &self,
+        agent_id: Option<&str>,
+        search: Option<&str>,
+        limit: Option<usize>,
+    ) -> StatsResult<Vec<StatsRecord>> {
+        let conn = self.lock_conn();
+
+        const COLS: &str = "id, timestamp, operation, agent_id, source_pid, session_id, \
+                            tool_use_id,
+             before_chars, before_tokens, after_chars, after_tokens,
+             before_text, after_text, before_output, after_output";
+
+        let mut sql = format!("SELECT {COLS} FROM stats WHERE 1=1");
+        let mut params: Vec<rusqlite::types::Value> = Vec::new();
+
+        if let Some(aid) = agent_id {
+            sql.push_str(" AND agent_id = ?");
+            params.push(rusqlite::types::Value::Text(aid.to_string()));
+        }
+
+        if let Some(pattern) = search {
+            sql.push_str(" AND (agent_id LIKE ? OR operation LIKE ?)");
+            let like = rusqlite::types::Value::Text(format!("%{pattern}%"));
+            params.push(like.clone());
+            params.push(like);
+        }
+
+        sql.push_str(" ORDER BY timestamp DESC");
+
+        if let Some(n) = limit {
+            sql.push_str(" LIMIT ?");
+            params.push(rusqlite::types::Value::Integer(n as i64));
+        }
+
+        let mut stmt = conn.prepare(&sql)?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params
+            .iter()
+            .map(|v| v as &dyn rusqlite::types::ToSql)
+            .collect();
+        let rows = stmt.query_map(param_refs.as_slice(), Self::row_to_record)?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    /// Get the list of all distinct agent IDs, sorted alphabetically.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the query fails.
+    pub fn all_agents(&self) -> StatsResult<Vec<String>> {
+        let conn = self.lock_conn();
+
+        let mut stmt = conn.prepare("SELECT DISTINCT agent_id FROM stats ORDER BY agent_id")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let agents: Vec<String> = rows.filter_map(|r| r.ok()).collect();
+        Ok(agents)
+    }
+
+    /// Get aggregated summary statistics for a specific agent.
+    ///
+    /// Returns a single [`AgentSummaryRow`] with summed counts. If the agent
+    /// has no records, all totals are zero.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the query fails.
+    pub fn agent_summary(&self, agent_id: &str) -> StatsResult<AgentSummaryRow> {
+        let conn = self.lock_conn();
+
+        let row = conn.query_row(
+            "SELECT ?1, COUNT(*), COALESCE(SUM(before_chars), 0), \
+                    COALESCE(SUM(after_chars), 0), COALESCE(SUM(before_tokens), 0), \
+                    COALESCE(SUM(after_tokens), 0) \
+             FROM stats WHERE agent_id = ?1",
+            [agent_id],
+            |row| {
+                Ok(AgentSummaryRow {
+                    agent_id: row.get(0)?,
+                    record_count: usize::try_from(row.get::<_, i64>(1)?).unwrap_or(0),
+                    total_before_chars: usize::try_from(row.get::<_, i64>(2)?).unwrap_or(0),
+                    total_after_chars: usize::try_from(row.get::<_, i64>(3)?).unwrap_or(0),
+                    total_before_tokens: usize::try_from(row.get::<_, i64>(4)?).unwrap_or(0),
+                    total_after_tokens: usize::try_from(row.get::<_, i64>(5)?).unwrap_or(0),
+                })
+            },
+        )?;
+
+        Ok(row)
+    }
+
     fn row_to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<StatsRecord> {
         Ok(StatsRecord {
             id: row.get(0)?,
@@ -246,6 +365,50 @@ impl StatsRecorder {
             after_output: row.get(14)?,
         })
     }
+}
+
+/// Sanitize stats text by checking for sensitive content patterns.
+///
+/// Returns `None` if the text appears to contain secrets (e.g., API keys,
+/// bearer tokens, authorization headers), signaling the caller to skip
+/// recording. Returns `Some(text)` if the text is safe to record.
+///
+/// Detected patterns:
+/// - "Bearer " followed by a long string (API token)
+/// - "Authorization" header presence
+/// - "api_key", "apikey", or "token" followed by `=` or `:` and a long value
+#[must_use]
+pub fn sanitize_stats_text(text: &str) -> Option<&str> {
+    // Pattern: "Bearer " followed by a long token string
+    if let Some(pos) = text.find("Bearer ") {
+        let after = &text[pos + 7..];
+        let value = after.split_whitespace().next().unwrap_or("");
+        if value.len() > 10 {
+            return None;
+        }
+    }
+
+    // Pattern: "Authorization" anywhere in text
+    if text.contains("Authorization") {
+        return None;
+    }
+
+    // Pattern: "api_key", "apikey", or "token" followed by = or : and a long value
+    for pat in &["api_key", "apikey", "token"] {
+        let lower = text.to_lowercase();
+        if let Some(pos) = lower.find(pat) {
+            let after = &text[pos + pat.len()..];
+            let after = after.trim_start();
+            if after.starts_with('=') || after.starts_with(':') {
+                let value = after[1..].trim();
+                if value.len() > 10 {
+                    return None;
+                }
+            }
+        }
+    }
+
+    Some(text)
 }
 
 /// Summary statistics aggregated from multiple records.
@@ -315,6 +478,23 @@ impl StatsSummary {
 
         summary
     }
+}
+
+/// Aggregated statistics for a single agent.
+#[derive(Debug, Clone, Default)]
+pub struct AgentSummaryRow {
+    /// Agent identifier.
+    pub agent_id: String,
+    /// Number of records for this agent.
+    pub record_count: usize,
+    /// Total characters before compression.
+    pub total_before_chars: usize,
+    /// Total characters after compression.
+    pub total_after_chars: usize,
+    /// Total tokens before compression.
+    pub total_before_tokens: usize,
+    /// Total tokens after compression.
+    pub total_after_tokens: usize,
 }
 
 #[cfg(test)]
@@ -434,6 +614,40 @@ mod tests {
         assert_eq!(summary.total_records, 2);
         assert_eq!(summary.chars_saved(), 140);
         assert_eq!(summary.tokens_saved(), 35);
+    }
+
+    // ── Stats text sanitization ──────────────────────────────────────
+
+    #[test]
+    fn test_sanitize_detects_api_key() {
+        let result = sanitize_stats_text("Bearer sk-1234567890abcdef1234567890abcdef");
+        assert!(result.is_none(), "should detect Bearer token in text");
+    }
+
+    #[test]
+    fn test_sanitize_allows_safe_text() {
+        let result =
+            sanitize_stats_text("compress_schema completed successfully for schema with 3 fields");
+        assert!(result.is_some(), "should allow safe text without secrets");
+    }
+
+    #[test]
+    fn test_sanitize_detects_authorization_header() {
+        let result = sanitize_stats_text("Header: Authorization: Bearer xyz123");
+        assert!(result.is_none(), "should detect Authorization header");
+    }
+
+    #[test]
+    fn test_sanitize_detects_api_key_pattern() {
+        let result = sanitize_stats_text("api_key=sk-abc123def456ghi789jkl");
+        assert!(result.is_none(), "should detect api_key with long value");
+    }
+
+    #[test]
+    fn test_sanitize_allows_short_token_value() {
+        // Short values after "token" are not suspicious
+        let result = sanitize_stats_text("token=abc");
+        assert!(result.is_some(), "should allow short token values");
     }
 
     // ── Gap 3: Stats migration — old DB schema auto-upgrade ──────────
@@ -607,5 +821,142 @@ mod tests {
 
         let count = recorder.count().unwrap();
         assert_eq!(count, 60, "10 pre-populated + 50 writer inserts = 60");
+    }
+
+    // ── Filtered record queries ───────────────────────────────────────
+
+    #[test]
+    fn test_records_filtered_by_agent() {
+        let recorder = make_test_recorder();
+        let rec_a = StatsRecord::new(
+            OperationType::CompressSchema,
+            "agent-a".into(),
+            100,
+            10,
+            50,
+            5,
+        );
+        let rec_b = StatsRecord::new(
+            OperationType::CompressSchema,
+            "agent-b".into(),
+            200,
+            20,
+            100,
+            10,
+        );
+        recorder.record(&rec_a).unwrap();
+        recorder.record(&rec_b).unwrap();
+        recorder.record(&rec_a).unwrap();
+
+        let results = recorder
+            .records_filtered(Some("agent-a"), None, None)
+            .unwrap();
+        assert_eq!(results.len(), 2, "should find 2 records for agent-a");
+        for r in &results {
+            assert_eq!(r.agent_id, "agent-a");
+        }
+    }
+
+    #[test]
+    fn test_records_filtered_by_search() {
+        let recorder = make_test_recorder();
+        let rec1 = StatsRecord::new(
+            OperationType::CompressSchema,
+            "alpha-bot".into(),
+            100,
+            10,
+            50,
+            5,
+        );
+        let rec2 = StatsRecord::new(
+            OperationType::CompressResponse,
+            "beta-bot".into(),
+            200,
+            20,
+            100,
+            10,
+        );
+        recorder.record(&rec1).unwrap();
+        recorder.record(&rec2).unwrap();
+
+        let results = recorder
+            .records_filtered(None, Some("alpha"), None)
+            .unwrap();
+        assert_eq!(results.len(), 1, "should find 1 record matching 'alpha'");
+        assert_eq!(results[0].agent_id, "alpha-bot");
+    }
+
+    #[test]
+    fn test_records_filtered_no_match() {
+        let recorder = make_test_recorder();
+        let rec = StatsRecord::new(
+            OperationType::CompressSchema,
+            "exists".into(),
+            100,
+            10,
+            50,
+            5,
+        );
+        recorder.record(&rec).unwrap();
+
+        let results = recorder
+            .records_filtered(Some("nonexistent"), None, None)
+            .unwrap();
+        assert!(
+            results.is_empty(),
+            "should return empty for non-matching filter"
+        );
+    }
+
+    #[test]
+    fn test_all_agents() {
+        let recorder = make_test_recorder();
+        let rec_a = StatsRecord::new(
+            OperationType::CompressSchema,
+            "agent-aa".into(),
+            100,
+            10,
+            50,
+            5,
+        );
+        let rec_b = StatsRecord::new(
+            OperationType::CompressResponse,
+            "agent-bb".into(),
+            200,
+            20,
+            100,
+            10,
+        );
+        recorder.record(&rec_a).unwrap();
+        recorder.record(&rec_b).unwrap();
+        recorder.record(&rec_a).unwrap();
+
+        let agents = recorder.all_agents().unwrap();
+        assert_eq!(agents.len(), 2, "should have 2 distinct agents");
+        assert_eq!(agents[0], "agent-aa");
+        assert_eq!(agents[1], "agent-bb");
+    }
+
+    #[test]
+    fn test_agent_summary() {
+        let recorder = make_test_recorder();
+        let rec = StatsRecord::new(
+            OperationType::CompressSchema,
+            "summary-agent".into(),
+            1000,
+            400,
+            600,
+            200,
+        );
+        recorder.record(&rec).unwrap();
+        recorder.record(&rec).unwrap();
+
+        let summary = recorder.agent_summary("summary-agent").unwrap();
+        assert_eq!(summary.agent_id, "summary-agent");
+        assert_eq!(summary.record_count, 2);
+        assert_eq!(summary.total_before_chars, 2000);
+        assert_eq!(summary.total_after_chars, 1200);
+        assert_eq!(summary.total_before_tokens, 800);
+        assert_eq!(summary.total_after_tokens, 400);
     }
 }

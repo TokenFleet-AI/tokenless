@@ -160,6 +160,15 @@ tokenless stats show <ID>         # 详情
 tokenless stats enable/disable    # 开关
 ```
 
+### 3.7 环境变量参考
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `TOKENLESS_CACHE_SIZE` | 512 | 预测缓存容量（设为 0 禁用缓存） |
+| `TOKENLESS_DIFF_THRESHOLD` | 0.7 | 差分响应阈值，diff 大小超过此比例时回退到全量输出 |
+| `TOKENLESS_STATS_DB` | `~/.tokenless/stats.db` | 统计数据库路径 |
+| `TOKENLESS_STATS_ENABLED` | — | 环境变量方式禁用统计（设为 `0` 或 `false`） |
+
 ---
 
 ## 四、Agent 集成

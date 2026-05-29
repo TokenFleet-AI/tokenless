@@ -140,6 +140,10 @@ tokenless stats show 5               # Record details
 
 See [specs/](./specs/) for 14 design documents covering architecture, data flow, hook protocols, security model, error handling, testing strategy, deployment, optimization analysis, and innovation roadmap.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow, coding conventions, and testing guidelines.
+
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE.md) for details.
