@@ -2,7 +2,7 @@
 
 ## Overview
 
-Tokenless operates as a multi-stage compression pipeline that intercepts LLM agent tool calls at three critical points: **before tool execution** (schema compression, command rewriting), **during execution** (environment pre-check), and **after tool execution** (response compression, TOON encoding).
+Tokenless operates as a multi-stage compression pipeline that intercepts LLM agent tool calls at three critical points: **before tool execution** (schema compression, command rewriting), **during execution** (environment pre-check), and **after tool execution** (response compression, TOON/format encoding, differential response).
 
 ## Pipeline Architecture
 
@@ -16,14 +16,27 @@ Tokenless operates as a multi-stage compression pipeline that intercepts LLM age
 │  └─────────┘    └──────────┘    └──────────┘    └───────────────┘  │
 │       ▲              │                │                │            │
 │       │         ┌────┴────┐     ┌─────┴─────┐    ┌────┴────┐      │
-│       │         │ Schema  │     │ env-check  │    │Response │      │
-│       │         │Compress │     │ (pre-exe)  │    │Compress │      │
-│       │         └─────────┘     └───────────┘    └─────────┘      │
-│       │              │                                  │            │
-│       │         ┌────┴────┐                      ┌─────┴─────┐     │
-│       │         │Command  │                      │   TOON    │     │
-│       │         │Rewrite  │                      │  Encode   │     │
-│       │         └─────────┘                      └───────────┘     │
+│       │         │Predict- │     │ env-check  │    │Response │      │
+│       │         │ Cache   │     │ (pre-exe)  │    │Compress │      │
+│       │         │    │    │     └────────────┘    │    │    │      │
+│       │         │    ▼    │                       │    ▼    │      │
+│       │         │ ShapeAn-│                       │  Format │      │
+│       │         │ alyzer  │                       │  Router │      │
+│       │         │    │    │                       │    │    │      │
+│       │         │    ▼    │                       │    ▼    │      │
+│       │         │Format   │                       │Predict- │      │
+│       │         │ Router  │                       │ Cache   │      │
+│       │         └─────────┘                       └─────────┘      │
+│       │              │                            │                │
+│       │         ┌────┴────┐                       │                │
+│       │         │Command  │                       │                │
+│       │         │Rewrite  │                       │                │
+│       │         └─────────┘                       │                │
+│       │              │                            │                │
+│       │         ┌────┴────┐                       │                │
+│       │         │ Diff    │                       │                │
+│       │         │ (poll)  │                       │                │
+│       │         └─────────┘                       │                │
 │       │                                            │               │
 │       └────────────────────────────────────────────┘               │
 │                   (compressed context returns to LLM)              │
@@ -32,34 +45,63 @@ Tokenless operates as a multi-stage compression pipeline that intercepts LLM age
 
 ## Stage 1: Pre-Tool-Use (Before Execution)
 
-### 1a. Schema Compression
+### 1a. Predictive Cache Lookup
+
+**Trigger**: All compression/rewrite operations.
+
+```
+Input: Compression/rewrite payload
+  │
+  ├─▶ blake3 hash of input → u64 key
+  │     ├─▶ PredictCache lookup (LRU, default 512 entries)
+  │     │   ├─ Hit → return cached result immediately
+  │     │   └─ Miss → proceed to compression pipeline
+  │     └─▶ Cache store after compression (on miss)
+  │
+  └─▶ TOKENLESS_CACHE_SIZE=0 disables entirely
+```
+
+### 1b. Schema Compression
 
 **Trigger**: Intercepted before model sends tool definitions.
 
 ```
 Input: OpenAI Function Calling schema JSON
   │
-  ├─▶ SchemaCompressor.compress()
-  │     ├─ Remove "title" fields (no semantic value for LLM)
-  │     ├─ Remove "examples" fields (inferred from descriptions)
-  │     ├─ Strip markdown (code blocks, inline code)
-  │     ├─ Truncate descriptions at sentence boundaries
-  │     │   ├─ Function-level: max 256 chars
-  │     │   └─ Parameter-level: max 160 chars
-  │     └─ Recursively process: properties, items, anyOf, oneOf, allOf
+  ├─▶ ShapeAnalyzer.analyze() → JsonShape (TopType, uniformity, depth)
+  │
+  ├─▶ FormatRouter.select_strategy(shape) → Strategy
+  │   ├─ SchemaCompressor (function calling schema)
+  │   ├─ ResponseCompressor (generic JSON)
+  │   ├─ ToonHrv (uniform object arrays, ≥5 items)
+  │   ├─ EnhancedToon (schemas with enums/constraints)
+  │   └─ CjsonCompact (irregular structures)
+  │
+  ├─▶ Selected Strategy executes
+  │     ├─ SchemaCompressor.compress()
+  │     │   ├─ Remove "title" fields
+  │     │   ├─ Remove "examples" fields
+  │     │   ├─ Strip markdown
+  │     │   ├─ Truncate descriptions at sentence boundaries
+  │     │   │   ├─ Function-level: max 256 chars
+  │     │   │   └─ Parameter-level: max 160 chars
+  │     │   └─ Recursively process: properties, items, anyOf, oneOf, allOf
+  │     └─ FormatRouter → encoding strategy result
   │
   ▼
-Output: Compressed schema (~57% reduction)
+Output: Compressed/encoded schema (~57%+ reduction)
 ```
 
 **Zero-savings guard**: If compressed JSON is identical to input, return original unchanged to avoid pointless processing.
 
-### 1b. Command Rewriting
+### 1c. Command Rewriting
 
 **Trigger**: Intercepted before Bash/Shell tool execution.
 
 ```
 Input: Shell command string
+  │
+  ├─▶ PredictCache lookup (blake3 hash)
   │
   ├─▶ rtk_registry::rewrite_command()
   │     ├─ Classify command (Supported/Unsupported/Ignored)
@@ -69,6 +111,8 @@ Input: Shell command string
   ├─▶ RTK availability check (OnceLock cached)
   │     ├─ Installed → rewrite applied
   │     └─ Not installed → pass-through + install hint to stderr
+  │
+  └─▶ PredictCache store (on miss)
   │
   ▼
 Output: Rewritten command (or original if no rewrite available)
@@ -81,7 +125,27 @@ Output: Rewritten command (or original if no rewrite available)
 - **Copilot (CLI)**: Returns `permissionDecision: deny` with suggestion (one round-trip)
 - **Copilot (VS Code)**: Same protocol as Claude Code (zero round-trip)
 
-### 1c. Environment Pre-Check
+### 1d. Differential Response (Polling)
+
+**Trigger**: Repeated invocation of the same tool command (e.g., `git status` polling).
+
+```
+Input: {"command": "<cmd>", "output": "<response text>"}
+  │
+  ├─▶ Lookup last output by command key (in-process HashMap)
+  │   ├─ First call → store baseline, return full output
+  │   └─ Subsequent call → compute unified diff
+  │       ├─ diff_len < threshold * full_len → emit diff (+/- lines)
+  │       ├─ No changes → emit "(unchanged)" marker
+  │       └─ diff too large → fall back to full output
+  │
+  └─▶ TOKENLESS_DIFF_THRESHOLD=0.7 (configurable)
+  │
+  ▼
+Output: unified diff or "(unchanged)" or full output (saves 90-95% for polling)
+```
+
+### 1e. Environment Pre-Check
 
 **Trigger**: Optional, before any tool execution.
 
@@ -124,34 +188,47 @@ Output: Status + diagnostic + fixed/missing lists
 ```
 Input: Tool execution result JSON
   │
-  ├─▶ ResponseCompressor.compress()
-  │     ├─ Drop debug fields: debug, trace, traces, stack, stacktrace, logs, logging
-  │     ├─ Drop null values (configurable)
-  │     ├─ Drop empty fields: "", [], {}
-  │     ├─ Truncate strings > 512 chars (UTF-8 safe, char boundary aware)
-  │     ├─ Truncate arrays > 16 items (with truncation marker)
-  │     └─ Depth limit: objects nested > 8 levels replaced with type marker
+  ├─▶ ShapeAnalyzer.analyze() → JsonShape
+  │
+  ├─▶ FormatRouter.select_strategy(shape) → Strategy
+  │   ├─ ResponseCompressor.compress()
+  │   │   ├─ Drop debug fields: debug, trace, traces, stack, stacktrace, logs, logging
+  │   │   ├─ Drop null values (configurable)
+  │   │   ├─ Drop empty fields: "", [], {}
+  │   │   ├─ Truncate strings > 512 chars (UTF-8 safe)
+  │   │   ├─ Truncate arrays > 16 items (with truncation marker)
+  │   │   └─ Depth limit: objects nested > 8 levels replaced with type marker
+  │   │
+  │   ├─ ToonHrv (uniform arrays → Header-Row-Value)
+  │   ├─ EnhancedToon (schema-like with constraints)
+  │   └─ CjsonCompact (irregular mixed structures)
   │
   ├─▶ Zero-savings guard: if compressed == original, return original
   │
-  ▼
-Output: Compressed JSON (~26-78% reduction)
-```
-
-### 3b. TOON Encoding (optional, configurable)
-
-```
-Input: Compressed JSON response (from stage 3a)
-  │
-  ├─▶ toon_format::encode_default()
-  │     ├─ Key: Value pairs (one per line)
-  │     ├─ Nested objects indented
-  │     └─ Arrays as indexed entries
-  │
-  ├─▶ Zero-savings guard: if TOON output >= JSON input, return original JSON
+  └─▶ PredictCache store (on miss)
   │
   ▼
-Output: TOON-encoded text (~15-40% additional reduction)
+Output: Compressed/encoded JSON (~26-78%+ reduction)
+```
+
+### 3b. Differential Response (Post-Execution)
+
+For polling-style commands, the PostToolUse hook also computes diffs:
+
+```
+Input: Tool output + command key
+  │
+  ├─▶ Store current output as new baseline
+  │
+  ├─▶ Compare with previous baseline → unified diff
+  │     ├─ Common prefix/suffix detection + 3 lines context
+  │     ├─ Removed lines: "-" prefix
+  │     └─ Added lines: "+" prefix
+  │
+  └─▶ Threshold gate: diff must be < 70% of full output
+  │
+  ▼
+Output: Diff-encoded response or "(unchanged)" or full output
 ```
 
 ## Stats Recording Flow
@@ -179,6 +256,32 @@ StatsRecorder::record() → SQLite (WAL mode, 5s busy timeout)
   Failure → silent (never blocks compression output)
 ```
 
+## MCP Server Mode
+
+In addition to per-agent hooks, Tokenless exposes all compression operations via MCP (Model Context Protocol):
+
+```
+Client (any MCP-capable agent)                    Server (tokenless mcp start)
+═══════════════════════════════════                ══════════════════════════════
+                                                          │
+  {"jsonrpc":"2.0","method":"initialize",...}              │
+  ─────────────────────────────────────────────────────▶  │ Extract agent_id from clientInfo
+                                                          │
+  {"jsonrpc":"2.0","method":"tools/call",                  │
+   "params":{"name":"compress_schema",                     │
+   "arguments":{"schema":{...}}}}                          │
+  ─────────────────────────────────────────────────────▶  │ Execute pipeline:
+                                                          │   → cache check (blake3)
+                                                          │   → ShapeAnalyzer
+                                                          │   → FormatRouter
+                                                          │   → compress/encode
+                                                          │   → cache insert
+  {"content":[{"type":"text","text":"{compressed}"}]}      │
+  ◀──────────────────────────────────────────────────────  │
+```
+
+**7 MCP tools**: `compress_schema`, `compress_response`, `rewrite_command`, `compress_toon`, `decompress_toon`, `env_check`, `stats_summary`.
+
 ## Cross-Cutting Concerns
 
 ### Zero-Savings Guard
@@ -198,6 +301,24 @@ result
 
 This prevents wasteful round-trips where compression provides no benefit.
 
+### Predictive Cache
+
+All compression/rewrite/encoding operations are pure functions — same input always produces the same output. The `PredictCache` uses blake3 hashing (first 8 bytes as u64 key) with an LRU eviction policy (default 512 entries, configurable via `TOKENLESS_CACHE_SIZE`):
+
+```rust
+// On cache miss:
+let hash = blake3::hash(input_bytes);
+let key = u64_from_first_8_bytes(&hash);
+if let Some(cached) = cache.get(key) {
+    return cached;
+}
+let result = compress(input);
+cache.insert(key, result.clone());
+result
+```
+
+Set `TOKENLESS_CACHE_SIZE=0` to disable caching entirely.
+
 ### UTF-8 Safety
 
 All string truncation is character-boundary aware:
@@ -209,6 +330,7 @@ All string truncation is character-boundary aware:
 
 - **`StatsRecorder`**: `Mutex<Connection>` — single writer, thread-safe
 - **`rtk_available()`**: `OnceLock<bool>` — check-once, cache forever
+- **`PredictCache`**: `LazyLock<Mutex<PredictCache>>` — shared across all compression paths
 - **No other shared state** — each compression call is independent and immutable
 
 ## End-to-End Example
@@ -217,19 +339,27 @@ All string truncation is character-boundary aware:
 1. LLM generates: Bash(command="git log --oneline -50")
 
 2. PreToolUse hook fires:
+   ├─ PredictCache: miss (first time)
    ├─ Schema: n/a (Bash tool, not schema)
    ├─ Rewrite: "git log --oneline -50" → "rtk git log --oneline -50"
+   │   └─ PredictCache: store rewrite result
    └─ Env-check: rtk binary present ✓
 
 3. Tool executes: rtk git log --oneline -50
    Output: 5000 bytes of filtered git log
 
 4. PostToolUse hook fires:
-   ├─ Response compress: 5000 → 1200 bytes (76% reduction)
-   │   └─ truncated long commit messages, removed empty fields
-   └─ TOON encode: skipped (non-JSON output)
+   ├─ ShapeAnalyzer: detects flat object array (commit entries)
+   ├─ FormatRouter: selects ToonHrv for uniform array structure
+   ├─ Response compress + TOON HRV encode: 5000 → 1200 bytes (76% reduction)
+   ├─ Differential: first call → store baseline, return full output
+   └─ PredictCache: store compression result
 
 5. Stats recorded: CompressResponse, 5000→1200 bytes, 1250→300 tokens
 
 6. LLM receives compressed output: saves ~950 tokens
+
+7. Next poll (same command, different output):
+   ├─ PreToolUse: PredictCache hit for rewrite → skip computation
+   └─ PostToolUse: differential emits unified diff (~200 bytes vs 5000 full)
 ```

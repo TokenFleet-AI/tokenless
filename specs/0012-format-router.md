@@ -190,7 +190,43 @@ Output in `--json` mode:
 
 ### No new dependencies — all encoders use existing `serde_json::Value`.
 
-## 8. Test Strategy
+## 8. Implementation Status ✅
+
+**Completed in v0.3.0** — implemented across the following files:
+
+| File | Planned | Actual |
+|------|---------|--------|
+| `shape_analyzer.rs` | ~100 lines | ✅ Implemented — `JsonShape`, `TopType`, `analyze()` |
+| `encoding/toon_hrv.rs` | ~80 lines | ✅ Implemented — HRV encoder for uniform arrays |
+| `encoding/enhanced_toon.rs` | ~120 lines | ✅ Implemented — Type abbreviation + inline constraints |
+| `encoding/cjson_compact.rs` | ~60 lines | ✅ Implemented — Compact JSON with safe bare words |
+| `encoding/mod.rs` | ~10 lines | ✅ Implemented — Module re-exports |
+| `format_router.rs` | ~50 lines | ✅ Implemented — `select_strategy`, `compress_auto`, `strategy_name` |
+
+### Public API
+
+```rust
+// tokenless-schema/src/lib.rs — re-exports
+pub use format_router::{Strategy, compress_auto, select_strategy, strategy_name};
+pub use shape_analyzer::{JsonShape, TopType, analyze};
+```
+
+### CLI Integration
+
+- `compress-auto` subcommand implemented in `tokenless-cli`.
+- `--json` flag outputs strategy name alongside compressed result.
+- Format Router is also invoked internally by the MCP Server for all compression operations.
+
+### Strategy Selection (actual)
+
+The router algorithm matches the planned algorithm in Section 5:
+1. `< 200 chars` → ResponseCompressorOnly (skip encoding)
+2. Uniform array ≥5 items → ToonHrv
+3. Has enums/constraints → EnhancedToon
+4. Deep chains → EnhancedToon (shares dot-path logic)
+5. Fallback → CjsonCompact
+
+## 9. Test Strategy
 
 | Test | What it verifies |
 |------|-----------------|

@@ -252,17 +252,34 @@ This avoids re-downloading dependencies on every source change.
 
 ## Priority Matrix
 
-| # | Optimization | Impact | Effort | Priority |
-|---|-------------|--------|--------|---------|
-| 6 | Parallel env_check | 10x speedup | Medium | **High** |
-| 5 | Avoid double serialization | 40% less serialization | Low | **High** |
-| 1 | Reduce JSON round-trips | 20-30% faster schema | Medium | Medium |
-| 8 | Fix `.unwrap_or_default()` | Bug prevention | Low | Medium |
-| 11 | Extract `lock_conn()` helper | DRY | Trivial | Low |
-| 2 | LazyLock drop fields | ~50ns/call | Trivial | Low |
-| 7 | Reuse compressor instances | Minor | Trivial | Low |
-| 3 | Deduplicate schema paths | Code quality | Medium | Low |
-| 4 | Content-aware token est. | Accuracy | Medium | Low |
-| 9 | Narrow #[allow] scopes | Code quality | Medium | Low |
-| 10 | Enum-typed permissions | Bug prevention | Medium | Low |
-| 13 | Add cargo-audit | Security | Trivial | **High** |
+| # | Optimization | Impact | Effort | Priority | Status |
+|---|-------------|--------|--------|---------|--------|
+| 6 | Parallel env_check | 10x speedup | Medium | **High** | 🔮 待实现 |
+| 5 | Avoid double serialization | 40% less serialization | Low | **High** | 🔮 待实现 |
+| 1 | Reduce JSON round-trips | 20-30% faster schema | Medium | Medium | 🔮 待实现 |
+| 8 | Fix `.unwrap_or_default()` | Bug prevention | Low | Medium | 🔮 待实现 |
+| 11 | Extract `lock_conn()` helper | DRY | Trivial | Low | 🔮 待实现 |
+| 2 | LazyLock drop fields | ~50ns/call | Trivial | Low | ✅ 已实现 (v0.3.0) — MCP 模块使用 LazyLock 静态压缩器 |
+| 7 | Reuse compressor instances | Minor | Trivial | Low | ✅ 已实现 (v0.3.0) — MCP 模块复用 LazyLock 压缩器 |
+| 3 | Deduplicate schema paths | Code quality | Medium | Low | 🔮 待实现 |
+| 4 | Content-aware token est. | Accuracy | Medium | Low | 🔮 待实现 |
+| 9 | Narrow #[allow] scopes | Code quality | Medium | Low | 🔮 待实现 |
+| 10 | Enum-typed permissions | Bug prevention | Medium | Low | 🔮 待实现 |
+| 13 | Add cargo-audit | Security | Trivial | **High** | 🔮 待实现 |
+
+## Resolved Items (v0.3.0)
+
+The following optimizations from the original list have been addressed:
+
+### ✅ Item 2 — LazyLock drop fields / Static Compressor Reuse (merged with Item 7)
+
+**Status**: Resolved in `mcp.rs`. Schema and response compressors are initialized as `LazyLock` statics and reused across all MCP tool calls, eliminating per-request allocation overhead.
+
+```rust
+static SCHEMA_COMPRESSOR: LazyLock<SchemaCompressor> = LazyLock::new(SchemaCompressor::new);
+static RESPONSE_COMPRESSOR: LazyLock<ResponseCompressor> = LazyLock::new(ResponseCompressor::default);
+```
+
+### ✅ Predictive Cache (new, not in original list)
+
+Implemented in `crates/tokenless-cli/src/cache.rs`. LRU cache with blake3 hashing, default 512 entries. Wraps all 4 compression paths (compress-schema, compress-response, rewrite, compress-toon). Provides similar performance benefit to compressor reuse but at the operation level rather than instance level.

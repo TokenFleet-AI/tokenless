@@ -73,8 +73,9 @@ Layer 4: CLI Binary (tokenless-cli)
   └── stats *             → StatsRecorder query
 
 Layer 3: Core Libraries
-  ├── tokenless-schema    → SchemaCompressor + ResponseCompressor
-  ├── tokenless-stats     → SQLite metrics + config + token estimation
+  ├── tokenless-schema    → SchemaCompressor + ResponseCompressor + FormatRouter + ShapeAnalyzer
+  │   └── encoding/       → TOON HRV, Enhanced TOON, CJSON Compact strategies
+  ├── tokenless-stats     → SQLite metrics + config + token estimation + query layer
   └── rtk-registry        → external: command classification + rewriting rules
 
 Layer 2: Runtime Infrastructure
@@ -82,7 +83,7 @@ Layer 2: Runtime Infrastructure
   ├── RuFlo Swarm         → hierarchical-mesh, 8-15 agents
   ├── RuFlo Memory        → AgentDB hybrid backend, HNSW indexing
   ├── RuVector            → Vector embeddings + Flash Attention
-  └── MCP Server          → Model Context Protocol (stdio mode)
+  └── MCP Server          → Model Context Protocol (stdio mode, 7 tools)
 
 Layer 1: Persistence
   ├── ~/.tokenless/stats.db              → SQLite (WAL, indexed)
@@ -92,6 +93,9 @@ Layer 1: Persistence
   ├── .claude-flow/daemon-state.json     → Worker scheduling + metrics
   ├── .claude-flow/config.yaml           → Swarm topology + memory config
   └── .claude-flow/data/                 → Sessions + hooks + learning
+
+Layer 0: User Interface
+  └── tokenless-tui       → ratatui 终端仪表盘（agents/records/trends/config/help）
 ```
 
 ## 3. Crate Dependency Graph
@@ -103,24 +107,44 @@ rtk-registry (external)
     ▼
 tokenless-cli
     ├──▶ tokenless-schema (compression logic)
-    │       ├── serde_json
-    │       └── regex
+    │   ├── SchemaCompressor + ResponseCompressor
+    │   ├── format_router (Strategy auto-select)
+    │   ├── shape_analyzer (JsonShape, TopType)
+    │   ├── encoding/ (TOON HRV, Enhanced TOON, CJSON Compact)
+    │   ├── serde_json
+    │   └── regex
     │
     ├──▶ tokenless-stats (metrics tracking)
-    │       ├── rusqlite (bundled SQLite)
-    │       ├── chrono
-    │       ├── serde / serde_json
-    │       ├── thiserror
-    │       └── dirs
+    │   ├── StatsRecorder + StatsSummary + TokenlessConfig
+    │   ├── query layer (rewrites/operation/trends)
+    │   ├── tokenizer (estimate_tokens_from_bytes)
+    │   ├── config manager
+    │   ├── rusqlite (bundled SQLite)
+    │   ├── chrono
+    │   ├── serde / serde_json
+    │   ├── thiserror
+    │   └── dirs
     │
     ├──▶ rtk-registry (command rewriting)
     │
     ├── clap (CLI parsing)
     ├── toon-format (TOON encode/decode)
-    └── libc (getuid, env_check only)
+    ├── blake3 (cache fingerprinting)
+    ├── lru (predictive cache)
+    ├── libc (getuid, env_check only)
+    └── tracing (structured logging)
+
+tokenless-tui (dashboard binary)
+    ├──▶ tokenless-stats (read-only query)
+    ├── ratatui (terminal UI framework)
+    ├── crossterm (terminal control)
+    ├── compact_str (UI text)
+    └── tracing (structured logging)
 ```
 
-**编译产物**：单个静态二进制 `tokenless`（~8-12 MB release, stripped）。
+**编译产物**：
+- `tokenless` — CLI 二进制（~8-12 MB release, stripped）
+- `tokenless-tui` — TUI 仪表盘（ratatui 终端仪表盘）
 
 ## 4. RuFlo Cluster Integration
 
@@ -255,6 +279,38 @@ memory:
 
 **依赖**：`serde_json`, `regex`
 
+**ShapeAnalyzer** — JSON 结构形状检测：
+
+| 类型 | 说明 |
+|------|------|
+| `JsonShape` | 检测结果：uniform_array / flat_object / nested_object / mixed |
+| `TopType` | 主导数据类型：string / number / boolean / object / array / null |
+| `analyze(&Value) -> JsonShape` | 检测数组均匀性、嵌套深度、键基数 |
+
+**FormatRouter** — 智能编码策略路由：
+
+| 方法 | 说明 |
+|------|------|
+| `select_strategy(shape, top_type, size) -> Strategy` | 基于 JSON 形状/类型/大小自动选择 |
+| `compress_auto(value) -> (Value, Strategy)` | 自动选择 + 执行压缩 |
+| `strategy_name(Strategy) -> &str` | 策略名称映射 |
+
+**Strategy 枚举**：
+| 策略 | 适用场景 |
+|------|---------|
+| `SchemaCompressor` | 工具定义 / function calling schema |
+| `ResponseCompressor` | API 响应 JSON |
+| `ToonHrv` | 高可读性 TOON 编码 |
+| `EnhancedToon` | 结构感知增强 TOON |
+| `CjsonCompact` | 最小化紧凑格式 |
+
+**Encoding 模块**：
+| 模块 | 说明 |
+|------|------|
+| `toon_hrv` | 高可读性变体（保留人类可读的缩进） |
+| `enhanced_toon` | 结构感知增强（type-prefix + value） |
+| `cjson_compact` | 紧凑格式（最小化 whitespace） |
+
 ### 5.2 tokenless-stats
 
 **职责**：SQLite 持久化的压缩指标追踪，静默失败不影响压缩管线。
@@ -270,6 +326,14 @@ memory:
 | `TokenlessConfig` | 持久化配置（stats_enabled 开关） |
 | `estimate_tokens_from_bytes` | 快速 token 估算（4 bytes/token） |
 
+**Query 层**（新增）：
+
+| 方法 | 说明 |
+|------|------|
+| `query_rewrites(limit, offset)` | 分页查询重写记录 |
+| `query_by_operation(op, limit)` | 按操作类型查询 |
+| `query_trend_data(hours)` | 时间序列趋势数据 |
+
 **数据库索引**：`timestamp`, `operation`, `agent_id`, `session_id`
 
 **迁移策略**：`ALTER TABLE ADD COLUMN IF NOT EXISTS`（捕获 "duplicate column" 错误）。
@@ -278,7 +342,7 @@ memory:
 
 ### 5.3 tokenless-cli
 
-**职责**：CLI 二进制入口 + 11 Agent Hook 协议适配 + 环境检查 + 初始化安装。
+**职责**：CLI 二进制入口 + 11 Agent Hook 协议适配 + 环境检查 + 初始化安装 + MCP Server + 预测缓存。
 
 **子命令矩阵**：
 
@@ -308,6 +372,37 @@ memory:
 - 5 项检查：binary、version、config、permission、network
 - 自动修复：`tokenless-env-fix.sh`（配置驱动的安装引擎）
 
+**cache 模块**（新增）：
+- `PredictCache`: LRU 缓存 + blake3 哈希指纹
+- 默认 512 条目，`TOKENLESS_CACHE_SIZE=0` 禁用
+- 纯函数操作 → 相同输入产生相同输出 → 安全缓存
+- 缓存命中跳过压缩/重写/编码计算
+
+**mcp 模块**（新增）：
+- JSON-RPC 2.0 协议实现（stdio 传输）
+- 7 个 MCP tools: `compress_schema`, `compress_response`, `rewrite_command`, `compress_toon`, `decompress_toon`, `env_check`, `stats_summary`
+- 通过 `tokenless mcp` 子命令启动
+
+### 5.4 tokenless-tui（新增）
+
+**职责**：ratatui 终端仪表盘，可视化压缩指标和系统状态。
+
+**UI 模块**：
+
+| 面板 | 说明 |
+|------|------|
+| `dashboard` | 总览：总节省、今日活动、热门操作 |
+| `agents` | Agent 列表：按 agent_id 分组统计 |
+| `agent_detail` | 单个 Agent 的详细记录和趋势 |
+| `records` | 原始记录分页浏览 |
+| `trends` | 时间序列趋势图 |
+| `config` | 配置查看/编辑 |
+| `help` | 帮助/快捷键 |
+
+**语言支持**：`lang` 模块 — 多语言国际化（i18n）
+
+**依赖**：`ratatui`, `crossterm`, `compact_str`, `tokenless-stats`（只读查询）
+
 ## 6. Data Flow
 
 ```
@@ -317,9 +412,15 @@ Agent 发起工具调用
 PreToolUse Hook ──────────────────────────────────────────┐
     │                                                     │
     ├─▶ Schema Compression (BeforeModel, future)          │
+    │   ├─▶ PredictCache lookup (blake3 + LRU)            │
+    │   ├─▶ ShapeAnalyzer → detect JsonShape/TopType      │
+    │   ├─▶ FormatRouter → select optimal Strategy        │
+    │   │   ├─ auto (TOON HRV / Enhanced TOON / CJSON)    │
+    │   │   └─ manual (SchemaCompressor / ResponseCompressor)
     │   └─▶ SchemaCompressor.compress() → ~57% savings    │
     │                                                     │
     ├─▶ Command Rewriting (Bash/Shell only)               │
+    │   ├─▶ PredictCache lookup                           │
     │   └─▶ rtk_registry::rewrite_command()               │
     │       ├─ "git status" → "rtk git status"            │
     │       └─ RTK 未安装 → 透传 + 提示                    │
@@ -335,18 +436,35 @@ Tool Execution (rewritten command, if applicable)          │
 PostToolUse Hook ─────────────────────────────────────────┘
     │
     ├─▶ Response Compression
-    │   └─▶ ResponseCompressor.compress() → ~26-78% savings
-    │       ├─ Drop: debug/trace/stack/logs/null/empty
-    │       ├─ Truncate: strings>512, arrays>16, depth>8
-    │       └─ Zero-savings guard → return original
-    │
-    ├─▶ TOON Encoding (optional, opt-in)
-    │   └─▶ toon_format::encode_default() → +15-40% savings
-    │       └─ Zero-savings guard → return pre-TOON
-    │
+    │   ├─▶ PredictCache lookup                           │
+    │   ├─▶ ShapeAnalyzer → detect JsonShape/TopType      │
+    │   ├─▶ FormatRouter → select optimal Strategy        │
+    │   ├─▶ ResponseCompressor.compress() → ~26-78% savings
+    │   │   ├─ Drop: debug/trace/stack/logs/null/empty    │
+    │   │   ├─ Truncate: strings>512, arrays>16, depth>8  │
+    │   │   └─ Zero-savings guard → return original       │
+    │   │                                                 │
+    │   ├─▶ TOON Encoding (optional, opt-in)              │
+    │   │   ├─ toon_format::encode_default() → +15-40%    │
+    │   │   ├─ TOON HRV (high-readability variant)        │
+    │   │   ├─ Enhanced TOON (结构感知增强)               │
+    │   │   ├─ CJSON Compact (最小化紧凑格式)             │
+    │   │   └─ Zero-savings guard → return pre-TOON       │
+    │   └─▶ PredictCache store (on miss)                  │
+    │                                                     │
     └─▶ Stats Recording (fail-silent)
         └─▶ StatsRecorder.record() → SQLite
             └─ DB error → silently ignored
+
+MCP Server Mode (stdin/stdout JSON-RPC 2.0):
+    │
+    ├─▶ compress_schema   → SchemaCompressor + FormatRouter
+    ├─▶ compress_response → ResponseCompressor + FormatRouter
+    ├─▶ rewrite_command   → rtk_registry rewrite
+    ├─▶ compress_toon     → TOON encode
+    ├─▶ decompress_toon   → TOON decode
+    ├─▶ env_check         → environment validation
+    └─▶ stats_summary     → StatsRecorder query + summary
 ```
 
 ## 7. Agent Integration Matrix
@@ -466,21 +584,25 @@ PostToolUse Hook ─────────────────────
 | 组件 | 状态 | 备注 |
 |------|------|------|
 | tokenless-schema | ✅ 完成 | SchemaCompressor + ResponseCompressor |
-| tokenless-stats | ✅ 完成 | SQLite + 迁移 + 配置 |
+| tokenless-schema (shape_analyzer) | ✅ 完成 | JsonShape, TopType 检测 |
+| tokenless-schema (format_router) | ✅ 完成 | Strategy auto-select，基于 JSON 形状智能路由 |
+| tokenless-schema (encoding) | ✅ 完成 | TOON HRV / Enhanced TOON / CJSON Compact |
+| tokenless-stats | ✅ 完成 | SQLite + 迁移 + 配置 + query 层 + tokenizer |
 | tokenless-cli (核心命令) | ✅ 完成 | compress/rewrite/env-check/stats |
 | tokenless-cli (hook 协议) | ✅ 完成 | 5 种 Agent（Claude/Cursor/Gemini/Copilot ×2） |
 | tokenless-cli (init) | ✅ 完成 | 11 Agent 自动安装 |
+| tokenless-cli (MCP Server) | ✅ 完成 | 7 tools: compress_schema/response, rewrite, toon, env_check, stats |
+| tokenless-cli (predictive cache) | ✅ 完成 | blake3 + LRU, TOKENLESS_CACHE_SIZE 控制 |
+| tokenless-tui | ✅ 完成 | ratatui 仪表盘: agents/records/trends/config/help |
 | OpenClaw 插件 | ✅ 完成 | TypeScript 插件（3 事件） |
 | Hermes 插件 | ✅ 完成 | Python 插件（3 hooks） |
-| TOON 编解码 | ✅ 完成 | 往返一致 |
+| TOON 编解码 | ✅ 完成 | 往返一致 + TOON HRV + Enhanced TOON + CJSON |
 | RuFlo Daemon | ✅ 运行中 | 5 Workers 激活 |
 | RuFlo Swarm | ✅ 初始化 | hierarchical-mesh, 8 agents |
 | RuFlo Memory | ✅ 初始化 | hybrid backend, HNSW, AgentDB 16 controllers |
-| MCP Server | ✅ 配置完成 | stdio 模式, autoStart: false |
+| MCP Server 配置 | ✅ 完成 | stdio 模式, autoStart: false |
+| 版本 | ✅ v0.3.0 | 最新 release tag |
 | CI/CD | ⚠️ 部分 | release-please + git cliff，缺少 cargo-audit |
-| WASM Target | 🔮 规划中 | 浏览器端压缩（0010-innovation-roadmap） |
-| MCP Server 包装 | 🔮 规划中 | tokenless 作为 MCP tool 暴露（0010） |
-| 预测性缓存 | 🔮 规划中 | LRU + blake3 哈希（0010） |
 
 ## 12. Related Specs
 

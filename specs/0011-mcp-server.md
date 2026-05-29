@@ -140,7 +140,27 @@ Schema and response compressors are initialized once as `LazyLock` statics and r
 | `test_mcp_unknown_tool` | Send unknown tool name, verify error response |
 | `test_mcp_invalid_json` | Send malformed line, verify error response |
 
-## 10. Related Specs
+## 10. Implementation Status ✅
+
+**Completed in v0.3.0** — implemented in `crates/tokenless-cli/src/mcp.rs`.
+
+| Aspect | Planned | Actual |
+|--------|---------|--------|
+| File | `mcp.rs` (~200 lines) | ✅ Implemented |
+| Tools | 7 tools | ✅ 7 tools: compress_schema, compress_response, rewrite_command, compress_toon, decompress_toon, env_check, stats_summary |
+| Protocol | JSON-RPC 2.0 over stdio | ✅ Implemented |
+| Cache | Process-lifetime LRU | ✅ Via `PredictCache` |
+| Compressor reuse | LazyLock statics | ✅ `SCHEMA_COMPRESSOR` + `RESPONSE_COMPRESSOR` |
+| Agent ID extraction | From `clientInfo.name` | ✅ Implemented |
+| 10 MB input limit | Security guard | ✅ Implemented |
+| CLI subcommand | `tokenless mcp start` | ✅ Implemented |
+
+### Differences from Plan
+
+- MCP server is integrated into the main `tokenless` binary (no separate binary), as originally planned in 方案 A.
+- The `run_mcp()` function handles the full JSON-RPC 2.0 message loop with all 7 tool implementations.
+
+## 11. Related Specs
 
 - [0001 Architecture](./0001-architecture.md) — system context, RuFlo integration
 - [0003 Data Flow](./0003-data-flow-pipeline-design.md) — compression pipeline
