@@ -18,5 +18,5 @@ ratatui = "0.28"
 crossterm = "0.28"
 
 # Internal
-tokenless-stats = { path = "../tokenless-stats", version = "0.3.0" }
-tokenless-schema = { path = "../tokenless-schema", version = "0.3.0" }
+tokenless-stats = { path = "../tokenless-stats", version = "0.3.1" }
+tokenless-schema = { path = "../tokenless-schema", version = "0.3.1" }
