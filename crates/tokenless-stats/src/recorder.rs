@@ -311,6 +311,50 @@ impl StatsRecorder {
         Ok(agents)
     }
 
+    /// Query records within a time range, newest first.
+    ///
+    /// `since` and `until` should be RFC 3339 strings (e.g., from
+    /// `DateTime::to_rfc3339()`). Records with `timestamp >= since` and
+    /// `timestamp <= until` are included.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the query fails.
+    pub fn records_since(
+        &self,
+        since: Option<&str>,
+        until: Option<&str>,
+    ) -> StatsResult<Vec<StatsRecord>> {
+        let conn = self.lock_conn();
+
+        const COLS: &str = "id, timestamp, operation, agent_id, source_pid, session_id, \
+                            tool_use_id,
+             before_chars, before_tokens, after_chars, after_tokens,
+             before_text, after_text, before_output, after_output";
+
+        let mut sql = format!("SELECT {COLS} FROM stats WHERE 1=1");
+        let mut params: Vec<rusqlite::types::Value> = Vec::new();
+
+        if let Some(s) = since {
+            sql.push_str(" AND timestamp >= ?");
+            params.push(rusqlite::types::Value::Text(s.to_string()));
+        }
+        if let Some(u) = until {
+            sql.push_str(" AND timestamp <= ?");
+            params.push(rusqlite::types::Value::Text(u.to_string()));
+        }
+
+        sql.push_str(" ORDER BY timestamp DESC");
+
+        let mut stmt = conn.prepare(&sql)?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params
+            .iter()
+            .map(|v| v as &dyn rusqlite::types::ToSql)
+            .collect();
+        let rows = stmt.query_map(param_refs.as_slice(), Self::row_to_record)?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
     /// Get aggregated summary statistics for a specific agent.
     ///
     /// Returns a single [`AgentSummaryRow`] with summed counts. If the agent

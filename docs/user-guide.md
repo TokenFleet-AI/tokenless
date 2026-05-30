@@ -1,116 +1,199 @@
-# Tokenless 设计与使用指南
+# Tokenless User Guide
 
-## 一、项目概览
+> 📖 Quick links: [README](../README.md) | 中文版: [用户指南 (中文)](./user-guide-zh.md) | Just want to get started? Jump to [Quick Start](#quick-start-5-minutes)
 
-Tokenless 是一个 LLM Token 优化工具包，通过四种互补策略降低 Token 消耗：
+## Table of Contents
 
-| 策略 | 节省 | 说明 |
-|------|------|------|
-| Schema 压缩 | ~57% | 压缩 OpenAI Function Calling 工具定义 |
-| Response 压缩 | ~26-78% | 去除 debug/null/空字段，截断字符串/数组 |
-| TOON 编码 | 15-40% | JSON 转 TOON 格式 |
-| 命令重写 | 60-90% | 通过 RTK 过滤 CLI 输出 |
+- [Quick Start (5 minutes)](#quick-start-5-minutes)
+- [1. Overview](#1-overview)
+- [2. Installation](#2-installation)
+- [3. CLI Usage](#3-cli-usage)
+  - [3.8 TUI Dashboard](#38-tui-dashboard)
+- [4. Agent Integration](#4-agent-integration)
+- [5. OpenClaw Plugin](#5-openclaw-plugin)
+- [6. Hermes Agent Plugin](#6-hermes-agent-plugin)
+- [7. Workflow Comparison](#7-workflow-comparison)
+- [8. Crate API (Rust Library)](#8-crate-api-rust-library)
+- [9. Token Proxy Integration](#9-token-proxy-integration)
+- [10. Test Data](#10-test-data)
+- [11. Build & Development](#11-build--development)
 
-### 架构
+## Choose Your Path
+
+| You are... | Start here | Est. time |
+|------------|-----------|-----------|
+| 🚀 Want auto token savings in your agent | [Quick Start](#quick-start-5-minutes) → `tokenless init` | 3 min |
+| 🔍 Want to verify compression first | [CLI Usage](#3-cli-usage) → run with fixtures | 10 min |
+| 🎯 Want a one-command demo | [`tokenless demo`](#39-demo) → all strategies at once | 10 sec |
+| 📊 Want to visualize savings | [`tokenless tui`](#38-tui-dashboard) → interactive dashboard | 1 min |
+| 🔧 Integrating with OpenClaw/Hermes | [Workflow Comparison](#7-workflow-comparison) → plugin chapters | 15 min |
+| 📦 Embedding compression in your system | [Crate API](#8-crate-api-rust-library) | 5 min |
+| 🛠 Want to contribute | [Build & Development](#11-build--development) | — |
+
+---
+
+## Quick Start (5 minutes)
+
+```bash
+# 1. Install
+git clone https://github.com/TokenFleet-AI/tokenless && cd tokenless && make setup
+
+# 2. Verify environment (optional but recommended)
+tokenless env-check --checklist
+
+# 3. Run a real compression, see the result instantly
+echo '{"debug":"removed","data":{"items":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]}}' | tokenless compress-response
+
+# 4. One-click agent integration (Claude Code / Cursor / Windsurf ...)
+tokenless init
+
+# 5. Done! All shell commands are now auto-rewritten and responses compressed.
+#    Check back later to see your savings:
+tokenless stats summary
+```
+
+> `tokenless init` installs hooks into `.claude/settings.json` (or the equivalent config for your agent). Zero manual steps afterwards. Supports **12 agents**. See [Agent Integration](#4-agent-integration) for details.
+
+---
+
+## 1. Overview
+
+Tokenless is an LLM token optimization toolkit that reduces token consumption through complementary strategies:
+
+| Strategy | Savings | Description |
+|----------|---------|-------------|
+| Schema Compression | ~57% | Compresses OpenAI Function Calling tool definitions |
+| Response Compression | ~26–78% | Strips debug/null/empty fields, truncates strings/arrays |
+| TOON Encoding | 15–40% | Converts JSON to TOON format |
+| Command Rewriting | 60–90% | Filters CLI output via RTK |
+
+### Architecture
 
 ```
 tokenless/
 ├── crates/
 │   ├── tokenless-schema/   SchemaCompressor + ResponseCompressor
-│   ├── tokenless-stats/    SQLite 指标追踪
-│   └── tokenless-cli/      CLI 二进制
-├── adapters/               FHS 适配器包
+│   ├── tokenless-stats/    SQLite metrics tracking
+│   └── tokenless-cli/      CLI binary
+├── adapters/               FHS adapter bundle
 │   └── tokenless/
-│       ├── common/                工具依赖 + env-fix 脚本
-│       ├── openclaw/              OpenClaw v5 插件
-│       └── hermes/                Hermes Agent 插件
+│       ├── common/                Tool deps + env-fix scripts
+│       ├── openclaw/              OpenClaw v5 plugin
+│       └── hermes/                Hermes Agent plugin
 ├── docs/
-│   ├── design/             架构设计文档
-│   └── user-guide.md       本文件
-└── tests/fixtures/         测试数据
+│   ├── design/             Architecture design docs
+│   └── user-guide.md       This file
+└── tests/fixtures/         Test data
 ```
 
-### 依赖关系
+### Dependencies
 
 ```
-rtk-registry (外部 crate)
-    ↕ 命令文本改写
+rtk-registry (external crate)
+    ↕ command text rewriting
 tokenless-schema ← tokenless-cli → tokenless-stats
-    ↕ 压缩逻辑           ↕ CLI 入口    ↕ SQLite 存储
-                  init 模块 (11 agents)
+    ↕ compression        ↕ CLI entry    ↕ SQLite store
+                  init module (12 agents)
 ```
 
 ---
 
-## 二、安装
+## 2. Installation
 
-### 源码构建
+### Cargo Install (Recommended)
 
 ```bash
-git clone <repo>
+cargo install tokenless
+```
+
+Requires Rust >= 1.85. Installs the `tokenless` binary to `~/.cargo/bin/`.
+
+### Pre-built Binaries
+
+Download the latest binary for your platform from [GitHub Releases](https://github.com/TokenFleet-AI/tokenless/releases):
+
+| Platform | Archive |
+|----------|---------|
+| macOS (Apple Silicon) | `tokenless-aarch64-apple-darwin.tar.gz` |
+| macOS (Intel) | `tokenless-x86_64-apple-darwin.tar.gz` |
+| Linux (x86_64) | `tokenless-x86_64-unknown-linux-musl.tar.gz` |
+| Windows (x86_64) | `tokenless-x86_64-pc-windows-msvc.zip` |
+
+Extract and place the binary in your `PATH`.
+
+### Homebrew
+
+```bash
+brew install tokenfleet/tap/tokenless
+```
+
+### Build from Source
+
+```bash
+git clone https://github.com/TokenFleet-AI/tokenless
 cd tokenless
 
-# 构建 + 安装
+# Build + install
 make setup
 
-# 或手动
-make install           # 安装 binary
-make adapter-install   # 安装 adapter 文件
+# Or step by step
+make install           # Install binary
+make adapter-install   # Install adapter files
 ```
 
-安装到 `~/.local/bin/tokenless`，adapter 文件到 `~/.local/share/anolisa/adapters/tokenless/`。
+Installs binary to `~/.local/bin/tokenless`, adapter files to `~/.local/share/anolisa/adapters/tokenless/`.
 
-### 前提条件
+### Prerequisites
 
-- Rust >= 1.85
-- 命令重写需要安装 [RTK](https://github.com/TokenFleet-AI/rtk)：`cargo install rtk`
+- Rust >= 1.85 (build from source / cargo install)
+- Command rewriting requires [RTK](https://github.com/TokenFleet-AI/rtk): `cargo install rtk` (optional — core compression works without it)
 
 ---
 
-## 三、CLI 使用
+## 3. CLI Usage
 
-### 3.1 Schema 压缩
+### 3.1 Schema Compression
 
-压缩 OpenAI Function Calling 工具定义：
+Compress OpenAI Function Calling tool definitions:
 
 ```bash
-# 单文件
+# Single file
 tokenless compress-schema -f tool.json
 
-# 标准输入
+# Standard input
 cat tool.json | tokenless compress-schema
 
-# 批量（JSON 数组）
+# Batch mode (JSON array)
 tokenless compress-schema -f tools.json --batch
 ```
 
-压缩效果：移除 `title`、`examples`、截断 description、去除 markdown 格式。
+Compression effects: removes `title`, `examples`, truncates descriptions, strips markdown formatting.
 
 ```json
-// 压缩前
+// Before
 {"function": {"name": "get_weather", "description": "Very long description...", "parameters": {"properties": {"loc": {"description": "...", "examples": ["Beijing"]}}}}}
 
-// 压缩后：description 截断到 256/160 字符，examples 移除
+// After: description truncated to 256/160 chars, examples removed
 ```
 
-### 3.2 Response 压缩
+### 3.2 Response Compression
 
-压缩 API 返回的 JSON：
+Compress API response JSON:
 
 ```bash
 tokenless compress-response -f response.json
 curl -s https://api.example.com/data | tokenless compress-response
 ```
 
-压缩规则：
-- 丢弃 `debug`、`trace`、`stacktrace`、`logs` 等字段
-- 去除 `null` 值
-- 去除空字符串 `""`、空数组 `[]`、空对象 `{}`
-- 字符串截断到 512 字符
-- 数组截断到 16 项
-- 嵌套深度超过 8 层时截断
+Compression rules:
+- Drops `debug`, `trace`, `stacktrace`, `logs` fields
+- Removes `null` values
+- Removes empty strings `""`, empty arrays `[]`, empty objects `{}`
+- Truncates strings to 512 characters
+- Truncates arrays to 16 items
+- Truncates nesting depth beyond 8 levels
 
-### 3.3 TOON 编码
+### 3.3 TOON Encoding
 
 ```bash
 echo '{"name":"Alice","age":30}' | tokenless compress-toon
@@ -121,7 +204,7 @@ echo 'name: Alice\nage: 30' | tokenless decompress-toon
 # → {"name":"Alice","age":30}
 ```
 
-### 3.4 命令重写
+### 3.4 Command Rewriting
 
 ```bash
 tokenless rewrite "git status"
@@ -131,66 +214,113 @@ tokenless rewrite "cargo test && git push"
 # → rtk cargo test && rtk git push
 ```
 
-RTK 没装时回退原始命令并提示安装。
+Falls back to the original command with an install prompt when RTK is not installed.
 
-### 3.5 环境检查
+### 3.5 Environment Check
 
 ```bash
-# 检查单个工具
+# Check a specific tool
 tokenless env-check --tool Shell
 
-# 检查全部
+# Check all tools
 tokenless env-check --all
 
-# 输出清单
+# Output checklist
 tokenless env-check --checklist
 
-# 自动修复
+# Auto-fix missing dependencies
 tokenless env-check --tool Shell --fix
 ```
 
-依赖声明在 `adapters/tokenless/common/tool-ready-spec.json`，支持 6 个工具类别：Shell、WebFetch、Read、Write、Git、Python。
+Dependency declarations live in `adapters/tokenless/common/tool-ready-spec.json`, covering 6 tool categories: Shell, WebFetch, Read, Write, Git, Python.
 
-### 3.6 统计
+### 3.6 Statistics
 
 ```bash
-tokenless stats summary           # 汇总
-tokenless stats list              # 最近记录
-tokenless stats show <ID>         # 详情
-tokenless stats enable/disable    # 开关
+tokenless stats summary           # Aggregated metrics
+tokenless stats list              # Recent records
+tokenless stats show <ID>         # Record details
+tokenless stats enable/disable    # Toggle recording
 ```
 
-### 3.7 环境变量参考
+### 3.7 Environment Variables
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `TOKENLESS_CACHE_SIZE` | 512 | 预测缓存容量（设为 0 禁用缓存） |
-| `TOKENLESS_DIFF_THRESHOLD` | 0.7 | 差分响应阈值，diff 大小超过此比例时回退到全量输出 |
-| `TOKENLESS_STATS_DB` | `~/.tokenless/stats.db` | 统计数据库路径 |
-| `TOKENLESS_STATS_ENABLED` | — | 环境变量方式禁用统计（设为 `0` 或 `false`） |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TOKENLESS_CACHE_SIZE` | 512 | Predictive cache capacity (set to 0 to disable) |
+| `TOKENLESS_DIFF_THRESHOLD` | 0.7 | Diff threshold ratio — fall back to full output when diff exceeds this proportion |
+| `TOKENLESS_STATS_DB` | `~/.tokenless/stats.db` | Statistics database path |
+| `TOKENLESS_STATS_ENABLED` | — | Disable stats via env var (set to `0` or `false`) |
+| `TOKENLESS_LANG` | `zh` | TUI language (`zh` or `en`). Also resolved from `LANG` env var |
+
+### 3.8 TUI Dashboard
+
+Launch an interactive terminal dashboard for real-time compression statistics:
+
+```bash
+tokenless tui                     # Default: zh, 5s refresh
+tokenless tui --lang en           # English UI
+tokenless tui --refresh 3         # 3-second refresh interval
+```
+
+The dashboard has **4 tabs**, switchable with `Tab` or `←` / `→`:
+
+| Tab | Description |
+|-----|-------------|
+| **Dashboard** | Total tokens/chars saved, per-operation breakdown, recent activity |
+| **Records** | Scrollable record list with columns (ID, timestamp, operation, agent, before, after, savings) |
+| **Agents** | Per-agent summaries: record count, chars/tokens saved; drill down with `Enter` |
+| **Trends** | Daily chars and tokens saved over time (bar charts) |
+
+**Global keyboard shortcuts:**
+
+| Key | Action |
+|-----|--------|
+| `Tab` / `←→` | Switch tabs |
+| `↑↓` / `j``k` | Scroll / navigate |
+| `Enter` | View detail (record or agent drill-down) |
+| `d` | Back from detail view |
+| `/` | Search / filter records |
+| `t` | Cycle time range: Today → This Week → All Time |
+| `e` | Export filtered records to JSON file |
+| `c` | Toggle config panel (stats, cache, threshold) |
+| `?` | Toggle help overlay |
+| `q` / `Esc` | Quit |
+
+> The TUI reads from the same SQLite database as `tokenless stats`. Enable stats recording with `tokenless stats enable` if you don't see data.
+
+### 3.9 Demo
+
+Run a one-command demo showing all compression strategies with built-in test data:
+
+```bash
+tokenless demo
+```
+
+Outputs a formatted showcase of schema compression, response compression, TOON encoding, and command rewriting — each with before/after token counts and savings percentages. No files, no setup required.
 
 ---
 
-## 四、Agent 集成
+## 4. Agent Integration
 
-### 4.1 快速安装
+### 4.1 Quick Install
 
 ```bash
-# 当前项目安装 Claude Code hooks
+# Install Claude Code hooks (project-local)
 tokenless init
 
-# 全局安装到 ~/.claude/settings.json
+# Install globally to ~/.claude/settings.json
 tokenless init --global
 
-# 其他 agent
+# Other agents
 tokenless init --global --agent cursor
 tokenless init --agent windsurf
 ```
 
-支持的 11 个 agent：
+Supported 12 agents:
 
-| Agent | 配置文件路径 | 安装命令 |
-|-------|-------------|---------|
+| Agent | Config Path | Install Command |
+|-------|------------|-----------------|
 | Claude Code | `.claude/settings.json` | `tokenless init` |
 | Cursor | `.cursor/hooks/` | `tokenless init --global --agent cursor` |
 | Windsurf | `.windsurf/settings.json` | `tokenless init --agent windsurf` |
@@ -202,10 +332,11 @@ tokenless init --agent windsurf
 | Pi | `.pi/agent/extensions/` | `tokenless init --agent pi` |
 | Gemini CLI | `.gemini/` | `tokenless init --agent gemini` |
 | OpenCode | `~/.opencode/plugins/tokenless/` | `tokenless init --global --agent opencode` |
+| GitHub Copilot | `.github/hooks/rtk-rewrite.json` | `tokenless init --agent copilot` |
 
-### 4.2 手动配置
+### 4.2 Manual Configuration
 
-Claude Code 的完整 hooks 配置：
+Full Claude Code hooks config (auto-generated by `tokenless init`):
 
 ```json
 {
@@ -216,7 +347,7 @@ Claude Code 的完整 hooks 配置：
         "hooks": [
           {
             "type": "command",
-            "command": "tokenless rewrite {{input}}"
+            "command": "tokenless hook rewrite claude"
           }
         ]
       }
@@ -227,7 +358,7 @@ Claude Code 的完整 hooks 配置：
         "hooks": [
           {
             "type": "command",
-            "command": "tokenless compress-response"
+            "command": "tokenless hook compress"
           }
         ]
       }
@@ -236,237 +367,243 @@ Claude Code 的完整 hooks 配置：
 }
 ```
 
+> **Note**: Hooks use the `tokenless hook` subcommand, not `tokenless rewrite` or `tokenless compress-response` directly. The `hook` subcommand communicates with Claude Code via stdin/stdout JSON protocol, automatically reading the command from hook input and outputting the rewritten result. Use `tokenless hook rewrite claude` and `tokenless hook compress` when configuring manually.
+
 ---
 
-## 五、OpenClaw 插件
+## 5. OpenClaw Plugin
 
-### 5.1 概述
+> 💡 **Not sure which integration to choose?** Read [7. Workflow Comparison](#7-workflow-comparison) first to understand the differences between Claude Code hooks, OpenClaw, and Hermes.
 
-OpenClaw 插件是一个 TypeScript 插件，在 **before_tool_call** 和 **tool_result_persist** 两个事件点集成 tokenless 功能。
+### 5.1 Overview
+
+The OpenClaw plugin is a TypeScript plugin that integrates tokenless at two event points: **before_tool_call** and **tool_result_persist**.
 
 ```
-OpenClaw 会话
+OpenClaw Session
     ↓
-session_start  → 记录 sessionId 映射
+session_start  → Records sessionId mapping
     ↓
-before_tool_call (priority 5)  → Tool Ready 环境预检
-before_tool_call (priority 10) → RTK 命令重写（仅 exec 工具）
+before_tool_call (priority 5)  → Tool Ready env check
+before_tool_call (priority 10) → RTK command rewrite (exec tool only)
     ↓
-工具执行
+Tool Execution
     ↓
-tool_result_persist → Response 压缩 → TOON 编码
+tool_result_persist → Response Compression → TOON Encoding
 ```
 
-### 5.2 文件结构
+### 5.2 File Structure
 
 ```
 adapters/tokenless/openclaw/
-├── index.ts               # 插件主逻辑（TypeScript）
-├── openclaw.plugin.json   # 插件清单（配置 schema）
-├── package.json           # NPM 包
+├── index.ts               # Plugin main logic (TypeScript)
+├── openclaw.plugin.json   # Plugin manifest (config schema)
+├── package.json           # NPM package
 └── scripts/
-    ├── install.sh         # 安装到 OpenClaw
-    └── uninstall.sh       # 从 OpenClaw 移除
+    ├── install.sh         # Install to OpenClaw
+    └── uninstall.sh       # Remove from OpenClaw
 ```
 
-### 5.3 配置选项
+### 5.3 Configuration Options
 
-`openclaw.plugin.json` 中定义的可配置字段：
+Configurable fields in `openclaw.plugin.json`:
 
-| 选项 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `rtk_enabled` | boolean | true | 启用 RTK 命令重写 |
-| `response_compression_enabled` | boolean | true | 启用 response 压缩 |
-| `tool_ready_enabled` | boolean | true | 启用环境预检 |
-| `toon_compression_enabled` | boolean | false | 启用 TOON 编码（需手动开启） |
-| `skip_tools` | string[] | ["Read","read_file","Glob",...] | 不压缩的工具列表 |
-| `verbose` | boolean | false | 详细日志 |
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `rtk_enabled` | boolean | true | Enable RTK command rewriting |
+| `response_compression_enabled` | boolean | true | Enable response compression |
+| `tool_ready_enabled` | boolean | true | Enable environment readiness checks |
+| `toon_compression_enabled` | boolean | false | Enable TOON encoding (opt-in) |
+| `skip_tools` | string[] | ["Read","read_file","Glob",...] | Tools excluded from compression |
+| `verbose` | boolean | false | Verbose logging |
 
-### 5.4 安装
+### 5.4 Installation
 
 ```bash
-# 方式一：openclaw CLI 安装
+# Option 1: openclaw CLI install
 make openclaw-install
 
-# 方式二：手动注册
+# Option 2: manual registration
 openclaw plugins install adapters/tokenless/openclaw --force
 openclaw gateway restart
 ```
 
-### 5.5 事件处理
+### 5.5 Event Handling
 
-**before_tool_call（priority 5）— Tool Ready：**
-- 调用 `tokenless env-check --tool {name} --json`
-- UNKNOWN/READY → 跳过
-- NOT_READY → 自动修复（fix）→ 失败时注入 `contextPrefix` 跳过重试
+**before_tool_call (priority 5) — Tool Ready:**
+- Calls `tokenless env-check --tool {name} --json`
+- UNKNOWN/READY → skip
+- NOT_READY → auto-fix → on failure, inject `contextPrefix` to skip retry
 
-**before_tool_call（priority 10）— RTK 重写：**
-- 仅处理 `exec` 工具
-- 调用 `rtk rewrite {command}` 文本替换
-- 成功 → 用重写后的 command 替换原参数（`updatedInput`）
-- 失败/不支持 → 透传
+**before_tool_call (priority 10) — RTK Rewrite:**
+- Only processes `exec` tool
+- Calls `rtk rewrite {command}` for text replacement
+- Success → replaces command param with rewritten version (`updatedInput`)
+- Failure/unsupported → pass through
 
-**tool_result_persist — 响应压缩：**
-- 跳过小于 200 字符的响应
-- 跳过 `skip_tools` 列表中的工具
-- 跳过 skill 文件（YAML 格式）
-- 第一步：Response 压缩（去 debug/null/空，截断）
-- 第二步：TOON 编码（需配置启用）
-- 返回压缩后的 `{ message }`
+**tool_result_persist — Response Compression:**
+- Skips responses under 200 characters
+- Skips tools in the `skip_tools` list
+- Skips skill files (YAML format)
+- Step 1: Response compression (drop debug/null/empty, truncate)
+- Step 2: TOON encoding (if enabled)
+- Returns compressed `{ message }`
 
-### 5.6 行为说明
+### 5.6 Behavior Notes
 
-- 所有功能**优雅降级**：binary（tokenless/rtk）未安装时对应功能自动跳过
-- Binary 检测结果缓存，同次会话不重复检测
-- TOON 编码时保持 `toolResult` 消息结构，避免会话修复注入错误
-- sessionId 通过 `session_start` 事件构建 `sessionKey → sessionId` 映射
+- All features **gracefully degrade**: binaries (tokenless/rtk) not installed → corresponding feature auto-skipped
+- Binary detection results are cached for the session duration
+- TOON encoding preserves `toolResult` message structure to avoid session repair injection errors
+- sessionId mapped via `session_start` event: `sessionKey → sessionId`
 
 ---
 
-## 六、Hermes Agent 插件
+## 6. Hermes Agent Plugin
 
-### 6.1 概述
+### 6.1 Overview
 
-Hermes 插件是一个 Python 插件，注册三个 hooks：
+The Hermes plugin is a Python plugin that registers three hooks:
 
 ```
-Hermes 会话
+Hermes Session
     ↓
-on_session_start        → 记录 sessionId 到环境变量
+on_session_start        → Records sessionId to env var
     ↓
-pre_tool_call           → Tool Ready 预检 → RTK 命令重写
+pre_tool_call           → Tool Ready check → RTK command rewrite
     ↓
-工具执行
+Tool Execution
     ↓
-transform_tool_result   → Response 压缩 → TOON 编码
+transform_tool_result   → Response Compression → TOON Encoding
 ```
 
-### 6.2 文件结构
+### 6.2 File Structure
 
 ```
 adapters/tokenless/hermes/
-├── __init__.py           # 插件主逻辑（Python）
-├── plugin.yaml           # 插件清单
+├── __init__.py           # Plugin main logic (Python)
+├── plugin.yaml           # Plugin manifest
 └── scripts/
-    ├── install.sh        # 安装到 Hermes
-    └── uninstall.sh      # 从 Hermes 移除
+    ├── install.sh        # Install to Hermes
+    └── uninstall.sh      # Remove from Hermes
 ```
 
-### 6.3 安装
+### 6.3 Installation
 
 ```bash
-# 自动安装
+# Automatic install
 make hermes-install
 
-# 验证
+# Verify
 hermes plugins list
 # → tokenless    enabled
 
-# 如果未启用
+# If not enabled
 hermes plugins enable tokenless
 ```
 
-### 6.4 Hook 说明
+### 6.4 Hook Details
 
-**on_session_start：**
-- 记录 sessionId 到环境变量 `TOKENLESS_SESSION_ID`
-- 供后续 stats 记录使用
+**on_session_start:**
+- Records sessionId to env var `TOKENLESS_SESSION_ID`
+- For downstream stats recording
 
-**pre_tool_call：**
-- **Step 1 — Tool Ready：** 调用 `tokenless env-check --tool {name} --json`
-  - UNKNOWN/READY → 跳过
-  - NOT_READY → 自动修复 → 仍失败则返回 `{action: "block"}` 跳过重试
-- **Step 2 — RTK 重写（仅 terminal）：**
-  - 调用 `rtk rewrite {command}`
-  - 版本检查 >= 0.35.0
-  - 成功 → 返回 `{action: "block", message: "建议使用重写命令"}` 供 agent 重新执行
+**pre_tool_call:**
+- **Step 1 — Tool Ready:** Calls `tokenless env-check --tool {name} --json`
+  - UNKNOWN/READY → skip
+  - NOT_READY → auto-fix → returns `{action: "block"}` to skip retry on failure
+- **Step 2 — RTK Rewrite (terminal only):**
+  - Calls `rtk rewrite {command}`
+  - Version check >= 0.35.0
+  - Success → returns `{action: "block", message: "Suggest using rewritten command"}` for agent re-execution
 
-**transform_tool_result：**
-- 跳过 content-retrieval 工具
-- 跳过 skill 文件、非 JSON、小于 200 字符的响应
-- Step 1: Response 压缩（`tokenless compress-response`）
-- Step 2: TOON 编码（`tokenless compress-toon`）
-- 无压缩效果时返回 `None`
+**transform_tool_result:**
+- Skips content-retrieval tools
+- Skips skill files, non-JSON, responses under 200 characters
+- Step 1: Response compression (`tokenless compress-response`)
+- Step 2: TOON encoding (`tokenless compress-toon`)
+- Returns `None` when no compression effect
 
-### 6.5 命令重写的工作方式
+### 6.5 How Command Rewriting Works
 
-Hermes 的 `pre_tool_call` 不能修改命令参数，只能 block + 建议。因此 RTK 重写需要多一次 round-trip：
+Hermes' `pre_tool_call` cannot modify command arguments — it can only block + suggest. RTK rewriting therefore requires one extra round-trip:
 
 ```
-Agent 执行: kubectl get pods
+Agent executes: kubectl get pods
     ↓
 pre_tool_call hook: rtk rewrite "kubectl get pods" → "rtk kubectl get pods"
     ↓
-返回 {action: "block", message: "建议使用 rtk kubectl get pods"}
+Returns {action: "block", message: "Suggest using rtk kubectl get pods"}
     ↓
-Agent 看到提示，重新执行: rtk kubectl get pods
+Agent sees suggestion, re-executes: rtk kubectl get pods
     ↓
-RTK 过滤输出，省 85% token
+RTK filters output, saves 85% tokens
 ```
 
-这种 limitation 是 Hermes hook 系统的限制，不影响最终的 token 节省效果。
+This limitation is inherent to the Hermes hook system and does not affect the final token savings.
 
-### 6.6 优雅降级
+### 6.6 Graceful Degradation
 
-- `tokenless` 未安装 → 跳过所有 compression/toon/tool-ready
-- `rtk` 未安装 → 跳过 rewrite
-- 版本过低 → 跳过 rewrite 并记录 warning
+- `tokenless` not installed → skip all compression/toon/tool-ready
+- `rtk` not installed → skip rewrite
+- Version too low → skip rewrite with warning
 
 ---
 
-## 七、工作流程比较
+## 7. Workflow Comparison
 
-### Claude Code hooks（推荐）
+> **Recommended reading order**: review this comparison of the three integration approaches before diving into individual plugin chapters.
+
+### Claude Code Hooks (Recommended)
 
 ```
-Agent 执行 git status
+Agent executes: git status
     ↓
 PreToolUse hook → tokenless rewrite → "rtk git status"
-    ↓ 直接修改命令参数，零额外 round-trip
-Agent 执行 rtk git status
+    ↓ Zero extra round-trip — command params modified directly
+Agent executes: rtk git status
     ↓
 PostToolUse hook → tokenless compress-response
 ```
 
-### OpenClaw 插件
+### OpenClaw Plugin
 
 ```
-Agent 执行 exec("git status")
+Agent executes: exec("git status")
     ↓
-before_tool_call → rtk rewrite → 替换 command 参数
-    ↓ 直接修改参数，零额外 round-trip
-Agent 执行 rtk git status
+before_tool_call → rtk rewrite → replace command param
+    ↓ Zero extra round-trip — params modified directly
+Agent executes: rtk git status
     ↓
-tool_result_persist → compress → TOON 编码
+tool_result_persist → compress → TOON encoding
 ```
 
-### Hermes 插件
+### Hermes Plugin
 
 ```
-Agent 执行 kubectl get pods
+Agent executes: kubectl get pods
     ↓
-pre_tool_call → rtk rewrite → block + 建议
-    ↓ 一次额外 round-trip（Hermes hook 限制）
-Agent 重新执行 rtk kubectl get pods
+pre_tool_call → rtk rewrite → block + suggest
+    ↓ One extra round-trip (Hermes hook limitation)
+Agent re-executes: rtk kubectl get pods
     ↓
 transform_tool_result → compress → TOON
 ```
 
 ---
 
-## 八、Crate API（Rust 库）
+## 8. Crate API (Rust Library)
 
 ### tokenless-schema
 
 ```rust
 use tokenless_schema::{SchemaCompressor, ResponseCompressor};
 
-// 压缩 schema
+// Compress schema
 let compressed = SchemaCompressor::new()
     .with_func_desc_max_len(200)
     .compress(&tool_json);
 
-// 压缩 response
+// Compress response
 let compressed = ResponseCompressor::new()
     .with_truncate_arrays_at(10)
     .with_drop_nulls(true)
@@ -492,62 +629,62 @@ recorder.record(&record)?;
 
 ---
 
-## 九、Token Proxy 集成
+## 9. Token Proxy Integration
 
-作为 LLM API 中转 proxy 时：
+When using Tokenless as an LLM API proxy:
 
 ```rust
 use tokenless_schema::{SchemaCompressor, ResponseCompressor};
 use tokenless_stats::{StatsRecorder, StatsRecord, OperationType};
 
-// 请求阶段：压缩 tool schemas
+// Request phase: compress tool schemas
 let compressed_schemas = SchemaCompressor::new().compress(&tools);
 
-// 响应阶段：压缩 response
+// Response phase: compress response
 let compressed = ResponseCompressor::new().compress(&response);
 
-// 记录
+// Record
 recorder.record(&StatsRecord::new(
     OperationType::CompressResponse, "proxy", before, bt, after, at
 ));
 ```
 
-不需要安装 RTK 或 tokenless CLI，直接用 Rust crate 依赖。
+No RTK or tokenless CLI required — just add the Rust crate dependency.
 
 ---
 
-## 十、测试数据
+## 10. Test Data
 
 ```bash
 cd tokenless
 
-# Schema 压缩
+# Schema compression
 tokenless compress-schema -f tests/fixtures/tool-schema.json
 
-# Response 压缩
+# Response compression
 tokenless compress-response -f tests/fixtures/response.json
 tokenless compress-response -f tests/fixtures/response-large.json
 
-# TOON 编码
+# TOON encoding
 tokenless compress-toon -f tests/fixtures/response.json
 
-# 命令重写
+# Command rewriting
 tokenless rewrite "git log --oneline -10"
 tokenless rewrite "docker ps && cargo test"
 ```
 
-`tests/fixtures/tool-schema.json` — 包含长描述的 OpenAI Function Calling schema
-`tests/fixtures/response.json` — 含 debug/logs 字段的 API 响应
-`tests/fixtures/response-large.json` — 含 null/空/数组的大型响应
+`tests/fixtures/tool-schema.json` — OpenAI Function Calling schema with long descriptions
+`tests/fixtures/response.json` — API response with debug/logs fields
+`tests/fixtures/response-large.json` — Large response with nulls/empties/arrays
 
 ---
 
-## 十一、构建与开发
+## 11. Build & Development
 
 ```bash
-make build     # release 构建
-make test      # 运行全部测试
+make build     # Release build
+make test      # Run all tests
 make lint      # fmt + clippy
-make install   # 安装到 ~/.local/bin
-make setup     # 构建 + 安装 + adapter
+make install   # Install to ~/.local/bin
+make setup     # Build + install + adapter
 ```

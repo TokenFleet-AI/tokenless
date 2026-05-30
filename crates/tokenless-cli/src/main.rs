@@ -43,7 +43,7 @@ use tokenless_schema::{
 };
 use tokenless_stats::{
     OperationType, StatsRecord, StatsRecorder, TokenlessConfig, estimate_tokens_from_bytes,
-    format_list, format_rewrites, format_show, format_summary,
+    format_diff, format_list, format_rewrites, format_show, format_summary, parse_time_range,
 };
 
 /// Reusable schema compressor instance (immutable after construction).
@@ -89,6 +89,9 @@ enum Commands {
         /// Compress a JSON array of schemas.
         #[arg(long)]
         batch: bool,
+        /// Print before/after token comparison to stderr.
+        #[arg(long)]
+        report: bool,
         /// Agent ID for stats (e.g., "copilot-shell").
         #[arg(long)]
         agent_id: Option<String>,
@@ -103,6 +106,9 @@ enum Commands {
     CompressResponse {
         #[arg(short, long)]
         file: Option<String>,
+        /// Print before/after token comparison to stderr.
+        #[arg(long)]
+        report: bool,
         /// Agent ID for stats.
         #[arg(long)]
         agent_id: Option<String>,
@@ -120,6 +126,9 @@ enum Commands {
         /// Output JSON with strategy info and savings.
         #[arg(long)]
         json: bool,
+        /// Print before/after token comparison to stderr.
+        #[arg(long)]
+        report: bool,
         /// Agent ID for stats.
         #[arg(long)]
         agent_id: Option<String>,
@@ -134,6 +143,9 @@ enum Commands {
     CompressToon {
         #[arg(short, long)]
         file: Option<String>,
+        /// Print before/after token comparison to stderr.
+        #[arg(long)]
+        report: bool,
         /// Agent ID for stats.
         #[arg(long)]
         agent_id: Option<String>,
@@ -207,6 +219,8 @@ enum Commands {
     /// Start MCP (Model Context Protocol) server over stdin/stdout.
     #[command(subcommand)]
     Mcp(McpAction),
+    /// Run interactive demo of all compression strategies with embedded test data.
+    Demo,
     /// Launch interactive TUI dashboard for compression statistics.
     Tui {
         /// Refresh interval in seconds (default: 5).
@@ -284,6 +298,15 @@ enum StatsCommands {
     Enable,
     /// Disable stats recording.
     Disable,
+    /// Show cumulative savings for a time period.
+    Diff {
+        /// Start date (e.g., "2026-05-01" or "yesterday" or "7d").
+        #[arg(long)]
+        since: Option<String>,
+        /// End date (e.g., "2026-05-30" or "today", default: now).
+        #[arg(long)]
+        until: Option<String>,
+    },
 }
 
 /// Read input from a file or stdin.
@@ -388,6 +411,113 @@ fn record_compression_stats(
     }
 }
 
+/// Print a before/after comparison report to stderr.
+fn eprint_report(before_chars: usize, before_tokens: usize, after_chars: usize, after_tokens: usize) {
+    let saved_pct = if before_tokens > 0 {
+        ((before_tokens.saturating_sub(after_tokens)) as f64 / before_tokens as f64) * 100.0
+    } else {
+        0.0
+    };
+    eprintln!(
+        "before: {before_chars} chars (~{before_tokens} tokens) → after: {after_chars} chars (~{after_tokens} tokens) — saved {saved_pct:.1}%",
+    );
+}
+
+fn run_demo() -> String {
+    let mut out = String::new();
+    out.push_str("╔══════════════════════════════════════════╗\n");
+    out.push_str("║     Tokenless Compression Demo           ║\n");
+    out.push_str("╚══════════════════════════════════════════╝\n\n");
+
+    // ── 1. Schema Compression ──
+    let schema_input = r#"{"function":{"name":"get_weather","description":"Get the current weather conditions for a specified city including temperature, humidity, wind speed, and precipitation forecast for the next 24 hours.","parameters":{"type":"object","properties":{"city":{"type":"string","description":"The city name to get weather for","examples":["Beijing","Tokyo","London"]},"units":{"type":"string","description":"Temperature unit: celsius or fahrenheit","examples":["celsius"]}}}}}"#;
+    out.push_str("1. Schema Compression\n");
+    out.push_str("─────────────────────\n");
+    let result = SCHEMA_COMPRESSOR.compress(
+        &serde_json::from_str::<serde_json::Value>(schema_input).unwrap(),
+    );
+    let after = serde_json::to_string(&result).unwrap_or_default();
+    let bt = estimate_tokens_from_bytes(schema_input.len());
+    let at = estimate_tokens_from_bytes(after.len());
+    out.push_str(&format!(
+        "   chars: {} → {}  tokens: ~{bt} → ~{at}  saved: {pct:.1}%\n\n",
+        schema_input.len(),
+        after.len(),
+        pct = if bt > 0 {
+            (bt.saturating_sub(at) as f64 / bt as f64) * 100.0
+        } else {
+            0.0
+        },
+    ));
+
+    // ── 2. Response Compression ──
+    let response_input = r#"{"status":"ok","data":{"id":12345,"name":"Alice","email":"alice@example.com"},"debug":{"query_time_ms":42,"cache_hit":false},"trace":"request-id-abc-123","logs":["step1","step2","step3"],"null_field":null,"empty_array":[]}"#;
+    out.push_str("2. Response Compression\n");
+    out.push_str("───────────────────────\n");
+    let val: serde_json::Value = serde_json::from_str(response_input).unwrap();
+    let result = RESPONSE_COMPRESSOR.compress(&val);
+    let after = serde_json::to_string(&result).unwrap_or_default();
+    let bt = estimate_tokens_from_bytes(response_input.len());
+    let at = estimate_tokens_from_bytes(after.len());
+    out.push_str(&format!(
+        "   drops: debug, trace, logs, null, empty[]\n   chars: {} → {}  tokens: ~{bt} → ~{at}  saved: {pct:.1}%\n\n",
+        response_input.len(),
+        after.len(),
+        pct = if bt > 0 {
+            (bt.saturating_sub(at) as f64 / bt as f64) * 100.0
+        } else {
+            0.0
+        },
+    ));
+
+    // ── 3. TOON Encoding ──
+    let toon_input = r#"{"name":"Alice","age":30,"hobbies":["reading","coding","hiking"],"address":{"city":"Beijing","zip":"100000"}}"#;
+    out.push_str("3. TOON Encoding\n");
+    out.push_str("─────────────────\n");
+    let before = toon_input.len();
+    let bt = estimate_tokens_from_bytes(before);
+    if let Ok(encoded) = toon_format::encode_default(
+        &serde_json::from_str::<serde_json::Value>(toon_input).unwrap(),
+    ) {
+        let encoded = encoded.trim_end();
+        let at = estimate_tokens_from_bytes(encoded.len());
+        out.push_str(&format!(
+            "   JSON → TOON\n   chars: {before} → {}  tokens: ~{bt} → ~{at}  saved: {pct:.1}%\n\n",
+            encoded.len(),
+            pct = if bt > 0 {
+                (bt.saturating_sub(at) as f64 / bt as f64) * 100.0
+            } else {
+                0.0
+            },
+        ));
+    }
+
+    // ── 4. Command Rewriting ──
+    out.push_str("4. Command Rewriting\n");
+    out.push_str("─────────────────────\n");
+    let examples = ["git status", "kubectl get pods", "cargo test", "docker ps"];
+    if rtk_available() {
+        for cmd in &examples {
+            if let Some(rewritten) = rtk_registry::rewrite_command(cmd, &[], &[]) {
+                out.push_str(&format!("   {cmd} → {rewritten}\n"));
+            } else {
+                out.push_str(&format!("   {cmd} → (no rewrite)\n"));
+            }
+        }
+    } else {
+        for cmd in &examples {
+            out.push_str(&format!("   {cmd} → rtk {cmd}\n"));
+        }
+        out.push_str("\n   (RTK not installed; showing expected output)\n");
+    }
+    out.push('\n');
+
+    out.push_str("──────────────────────────\n");
+    out.push_str("Demo complete. To enable automatic optimization:\n");
+    out.push_str("  tokenless init\n");
+    out
+}
+
 fn run() -> Result<(), (String, i32)> {
     let cli = Cli::parse();
 
@@ -395,6 +525,7 @@ fn run() -> Result<(), (String, i32)> {
         Commands::CompressSchema {
             file,
             batch,
+            report,
             agent_id,
             session_id,
             tool_use_id,
@@ -435,6 +566,10 @@ fn run() -> Result<(), (String, i32)> {
                 result_json
             };
 
+            if report {
+                eprint_report(input.len(), before_tokens, after_compact.len(), after_tokens);
+            }
+
             cache::cache_insert(&input, &output_text);
             println!("{output_text}");
 
@@ -449,6 +584,7 @@ fn run() -> Result<(), (String, i32)> {
         }
         Commands::CompressResponse {
             file,
+            report,
             agent_id,
             session_id,
             tool_use_id,
@@ -475,6 +611,10 @@ fn run() -> Result<(), (String, i32)> {
                 result_json
             };
 
+            if report {
+                eprint_report(input.len(), before_tokens, after_compact.len(), after_tokens);
+            }
+
             cache::cache_insert(&input, &output_text);
             println!("{output_text}");
 
@@ -490,6 +630,7 @@ fn run() -> Result<(), (String, i32)> {
         Commands::CompressAuto {
             file,
             json,
+            report,
             agent_id,
             session_id,
             tool_use_id,
@@ -505,7 +646,8 @@ fn run() -> Result<(), (String, i32)> {
             let (strategy, compressed) = schema_compress_auto(&value, &input);
 
             let before_tokens = estimate_tokens_from_bytes(input.len());
-            let after_tokens = estimate_tokens_from_bytes(compressed.len());
+            let after_chars = compressed.len();
+            let after_tokens = estimate_tokens_from_bytes(after_chars);
 
             let output_text = if after_tokens >= before_tokens {
                 input.clone()
@@ -513,14 +655,14 @@ fn run() -> Result<(), (String, i32)> {
                 let savings_pct = if input.is_empty() {
                     0.0
                 } else {
-                    ((input.len() - compressed.len()) as f64 / input.len() as f64) * 100.0
+                    ((input.len() - after_chars) as f64 / input.len() as f64) * 100.0
                 };
                 serde_json::to_string_pretty(&serde_json::json!({
                     "strategy": strategy_name(&strategy),
                     "compressed": compressed,
                     "savings": {
                         "chars_before": input.len(),
-                        "chars_after": compressed.len(),
+                        "chars_after": after_chars,
                         "pct": (savings_pct * 10.0).round() / 10.0
                     }
                 }))
@@ -528,6 +670,10 @@ fn run() -> Result<(), (String, i32)> {
             } else {
                 compressed
             };
+
+            if report {
+                eprint_report(input.len(), before_tokens, after_chars, after_tokens);
+            }
 
             cache::cache_insert(&input, &output_text);
             println!("{output_text}");
@@ -543,6 +689,7 @@ fn run() -> Result<(), (String, i32)> {
         }
         Commands::CompressToon {
             file,
+            report,
             agent_id,
             session_id,
             tool_use_id,
@@ -559,12 +706,18 @@ fn run() -> Result<(), (String, i32)> {
             let output = output.trim_end().to_string();
 
             let before_tokens = estimate_tokens_from_bytes(input.len());
-            let after_tokens = estimate_tokens_from_bytes(output.len());
+            let after_chars = output.len();
+            let after_tokens = estimate_tokens_from_bytes(after_chars);
             let display = if output.is_empty() || after_tokens >= before_tokens {
                 input.clone()
             } else {
                 output
             };
+
+            if report {
+                eprint_report(input.len(), before_tokens, after_chars, after_tokens);
+            }
+
             cache::cache_insert(&input, &display);
             println!("{display}");
 
@@ -895,6 +1048,9 @@ fn run() -> Result<(), (String, i32)> {
         Commands::Mcp(McpAction::Start) => {
             mcp::run_mcp();
         }
+        Commands::Demo => {
+            println!("{}", run_demo());
+        }
         Commands::Tui { refresh, lang } => {
             let lang = match lang.as_str() {
                 "en" => tokenless_tui::Lang::En,
@@ -944,7 +1100,7 @@ fn run() -> Result<(), (String, i32)> {
                             (cmd, count, savings)
                         })
                         .collect();
-                    entries.sort_by(|a, b| b.1.cmp(&a.1));
+                    entries.sort_by_key(|a| std::cmp::Reverse(a.1));
                     let slice: Vec<(&str, usize, Option<f64>)> =
                         entries.iter().map(|(c, n, s)| (*c, *n, *s)).collect();
                     println!("{}", format_rewrites(&slice, limit, offset));
@@ -1013,6 +1169,28 @@ fn run() -> Result<(), (String, i32)> {
                         .save()
                         .map_err(|e| (format!("Failed to save config: {e}"), 1))?;
                     println!("Stats recording disabled.");
+                }
+                StatsCommands::Diff { since, until } => {
+                    let until_str = until
+                        .as_deref()
+                        .and_then(parse_time_range)
+                        .unwrap_or_else(|| chrono::Local::now().to_rfc3339());
+                    let since_str = since
+                        .as_deref()
+                        .and_then(parse_time_range)
+                        .unwrap_or_else(|| {
+                            // Default: 7 days ago
+                            let d = chrono::Local::now() - chrono::Duration::days(7);
+                            d.to_rfc3339()
+                        });
+
+                    let records = recorder
+                        .records_since(Some(&since_str), Some(&until_str))
+                        .map_err(|e| (format!("Failed to query records: {e}"), 1))?;
+
+                    let since_label = since.as_deref().unwrap_or("7d ago");
+                    let until_label = until.as_deref().unwrap_or("now");
+                    println!("{}", format_diff(&records, since_label, until_label));
                 }
             }
         }
@@ -1100,5 +1278,54 @@ mod tests {
         let input = "\u{feff}你好世界";
         let result = strip_leading_bom(input);
         assert_eq!(result, "你好世界", "BOM before CJK should be stripped");
+    }
+
+    // ── Demo command ───────────────────────────────────────────
+
+    #[test]
+    fn test_demo_output_contains_all_four_strategies() {
+        let output = run_demo();
+        assert!(
+            output.contains("Schema Compression"),
+            "demo should include schema compression"
+        );
+        assert!(
+            output.contains("Response Compression"),
+            "demo should include response compression"
+        );
+        assert!(
+            output.contains("TOON Encoding"),
+            "demo should include TOON encoding"
+        );
+        assert!(
+            output.contains("Command Rewriting"),
+            "demo should include command rewriting"
+        );
+    }
+
+    #[test]
+    fn test_demo_output_contains_savings() {
+        let output = run_demo();
+        assert!(
+            output.contains("saved:"),
+            "demo should show savings percentages"
+        );
+        assert!(
+            output.contains("tokenless init"),
+            "demo should point to init at the end"
+        );
+    }
+
+    #[test]
+    fn test_demo_output_contains_cta() {
+        let output = run_demo();
+        assert!(
+            output.contains("Demo complete"),
+            "demo should have completion message"
+        );
+        assert!(
+            output.contains("tokenless init"),
+            "demo should recommend tokenless init"
+        );
     }
 }

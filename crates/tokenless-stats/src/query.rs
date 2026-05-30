@@ -211,12 +211,144 @@ pub fn format_rewrites(
     output
 }
 
+/// Format a cumulative diff report for a time range.
+#[must_use]
+pub fn format_diff(records: &[StatsRecord], since: &str, until: &str) -> String {
+    let summary = crate::recorder::StatsSummary::from_records(records);
+    let mut output = String::new();
+
+    output.push_str("Tokenless Savings Report\n");
+    output.push_str("========================\n");
+    output.push_str(&format!("Period: {since} → {until}\n\n"));
+
+    if records.is_empty() {
+        output.push_str("No records found for this period.\n");
+        return output;
+    }
+
+    output.push_str(&format!(
+        "Total records:   {count}\n",
+        count = summary.total_records
+    ));
+    output.push_str(&format!(
+        "Chars:   {bc} → {ac}  (-{cs}, {cp:.1}%)\n",
+        bc = format_number(summary.total_before_chars),
+        ac = format_number(summary.total_after_chars),
+        cs = format_number(summary.chars_saved()),
+        cp = summary.chars_percent(),
+    ));
+    output.push_str(&format!(
+        "Tokens:  {bt} → {at}  (-{ts}, {tp:.1}%)\n",
+        bt = format_number(summary.total_before_tokens),
+        at = format_number(summary.total_after_tokens),
+        ts = format_number(summary.tokens_saved()),
+        tp = summary.tokens_percent(),
+    ));
+
+    // Estimated cost savings (assuming $3/1M input tokens, $15/1M output tokens blended ~$8/1M)
+    let est_cost = summary.tokens_saved() as f64 * 8.0 / 1_000_000.0;
+    output.push_str(&format!(
+        "Est. cost saved: ~${est_cost:.2}\n",
+    ));
+
+    // Per-agent breakdown
+    let mut by_agent: std::collections::BTreeMap<&str, (usize, usize)> =
+        std::collections::BTreeMap::new();
+    for r in records {
+        let e = by_agent.entry(&r.agent_id).or_default();
+        e.0 += r.before_tokens.saturating_sub(r.after_tokens);
+        e.1 += 1;
+    }
+    if by_agent.len() > 1 {
+        output.push_str("\nPer-Agent:\n");
+        for (agent, (tokens, count)) in &by_agent {
+            output.push_str(&format!(
+                "  {agent}: -{tokens} tokens ({count} ops)\n",
+                tokens = format_number(*tokens)
+            ));
+        }
+    }
+
+    output
+}
+
+/// Parse a human-readable time range string to an RFC 3339 timestamp.
+///
+/// Supported formats:
+/// - `"today"` → start of today (00:00:00 local)
+/// - `"yesterday"` → start of yesterday
+/// - `"{N}d"` (e.g., `"7d"`) → N days ago
+/// - `"YYYY-MM-DD"` → start of that day
+/// - `"now"` → current time
+///
+/// # Panics
+///
+/// Does not panic; returns `None` for unparseable input.
+#[must_use]
+pub fn parse_time_range(input: &str) -> Option<String> {
+    use chrono::{Datelike, Local, TimeZone};
+
+    let now = Local::now();
+
+    match input {
+        "today" => {
+            let start = Local
+                .with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 0)
+                .single()?;
+            Some(start.to_rfc3339())
+        }
+        "yesterday" => {
+            let yesterday = now - chrono::Duration::days(1);
+            let start = Local
+                .with_ymd_and_hms(
+                    yesterday.year(),
+                    yesterday.month(),
+                    yesterday.day(),
+                    0,
+                    0,
+                    0,
+                )
+                .single()?;
+            Some(start.to_rfc3339())
+        }
+        "now" => Some(now.to_rfc3339()),
+        s if s.ends_with('d') => {
+            let days: i64 = s.strip_suffix('d')?.parse().ok()?;
+            let target = now - chrono::Duration::days(days);
+            let start = Local
+                .with_ymd_and_hms(
+                    target.year(),
+                    target.month(),
+                    target.day(),
+                    0,
+                    0,
+                    0,
+                )
+                .single()?;
+            Some(start.to_rfc3339())
+        }
+        // YYYY-MM-DD
+        s if s.len() == 10 && s.chars().nth(4) == Some('-') => {
+            let parts: Vec<&str> = s.split('-').collect();
+            if parts.len() != 3 {
+                return None;
+            }
+            let y: i32 = parts[0].parse().ok()?;
+            let m: u32 = parts[1].parse().ok()?;
+            let d: u32 = parts[2].parse().ok()?;
+            let start = Local.with_ymd_and_hms(y, m, d, 0, 0, 0).single()?;
+            Some(start.to_rfc3339())
+        }
+        _ => None,
+    }
+}
+
 /// Format a number with thousands separators.
 fn format_number(n: usize) -> String {
     let s = n.to_string();
     let mut result = String::with_capacity(s.len() + s.len() / 3);
     for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i) % 3 == 0 {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
             result.push(',');
         }
         result.push(c);

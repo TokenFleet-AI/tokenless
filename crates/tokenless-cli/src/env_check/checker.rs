@@ -111,7 +111,7 @@ pub(crate) fn version_ge(installed: &str, required: &str) -> bool {
 
 pub(crate) fn check_dep(dep: &DepEntry) -> DepStatus {
     let found = Command::new("sh")
-        .args(["-c", &format!("command -v \"$1\"",), "--", &dep.binary])
+        .args(["-c", &format!("command -v \"$1\""), "--", &dep.binary])
         .output();
 
     match found {

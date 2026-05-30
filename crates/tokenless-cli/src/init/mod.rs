@@ -81,7 +81,7 @@ const DEFAULT_HOOKS_JSON: &str = r#"{
         "hooks": [
           {
             "type": "command",
-            "command": "tokenless rewrite {{input}}"
+            "command": "tokenless hook rewrite claude"
           }
         ]
       }
@@ -479,7 +479,7 @@ mod tests {
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("PreToolUse"));
         assert!(content.contains("PostToolUse"));
-        assert!(content.contains("tokenless rewrite"));
+        assert!(content.contains("tokenless hook rewrite claude"));
         std::fs::remove_file(&path).ok();
     }
 

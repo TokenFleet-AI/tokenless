@@ -176,7 +176,7 @@ impl App {
         }
 
         let mut result: Vec<AgentSummary> = map.into_values().collect();
-        result.sort_by(|a, b| b.record_count.cmp(&a.record_count));
+        result.sort_by_key(|a| std::cmp::Reverse(a.record_count));
         result
     }
 

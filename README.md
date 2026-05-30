@@ -29,6 +29,23 @@ Token-Less combines complementary strategies to minimize LLM token consumption:
 | Tool Ready | reduces retry waste | Pre-check env, auto-fix deps, failure attribution |
 | Zero runtime deps | — | Pure Rust, single static binary |
 
+## Quick Start
+
+```bash
+# 1. Install
+git clone https://github.com/TokenFleet-AI/tokenless && cd tokenless && make setup
+
+# 2. One-click agent integration (Claude Code, Cursor, Windsurf, etc.)
+tokenless init
+
+# 3. Done! All shell commands are now auto-rewritten and responses compressed.
+#    Run stats later to see your savings:
+tokenless stats summary
+```
+
+> Supports **12 agents**: Claude Code, Cursor, Windsurf, Cline, Kilo Code, Antigravity, Augment, Hermes CLI, Pi, Gemini CLI, OpenCode, GitHub Copilot.  
+> `tokenless init` auto-installs hooks. See [user guide](./docs/user-guide.md) for full agent table and manual setup.
+
 ## Architecture
 
 ```
@@ -64,6 +81,18 @@ let rewritten = rewrite_command("git status", &[], &[]);
 The actual RTK binary is still required at runtime for output filtering — the registry only handles command transformation.
 
 ## CLI Usage
+
+### init (Agent Integration)
+
+```bash
+tokenless init                  # Install hooks for Claude Code (project-local)
+tokenless init --global         # Install globally for all projects
+tokenless init --agent cursor   # Install for Cursor editor
+```
+
+Auto-installs hooks into `.claude/settings.json` (or the equivalent for other agents). Once installed, all shell commands are automatically rewritten and responses compressed — zero manual steps after `init`.
+
+> See [user guide §4](./docs/user-guide.md#四agent-集成) for all 12 agents and manual configuration.
 
 ### compress-schema / compress-response
 
@@ -105,6 +134,12 @@ tokenless mcp start    # Start JSON-RPC 2.0 server over stdin/stdout
 # compress_toon, decompress_toon, env_check, stats_summary
 ```
 
+### demo
+
+```bash
+tokenless demo    # Run all 4 compression demos with embedded test data
+```
+
 ### env-check
 
 ```bash
@@ -121,6 +156,16 @@ tokenless stats list --limit 20      # Recent records
 tokenless stats show 5               # Record details
 ```
 
+### tui (Interactive Dashboard)
+
+```bash
+tokenless tui                        # Launch TUI dashboard (zh, 5s refresh)
+tokenless tui --lang en              # English UI
+tokenless tui --refresh 3            # 3-second refresh
+```
+
+4-tab terminal dashboard: Dashboard · Records · Agents · Trends. Keyboard-driven with search, export, time-range filtering. See [user guide §3.8](./docs/user-guide.md#38-tui-dashboard) for full keybindings.
+
 ## Build
 
 | Target | Description |
@@ -131,10 +176,26 @@ tokenless stats show 5               # Record details
 | `make fmt` | Format code |
 | `make clean` | Clean build artifacts |
 
+## Install
+
+```bash
+cargo install tokenless              # From crates.io (recommended)
+# or download pre-built binaries from GitHub Releases
+# or: brew install tokenfleet/tap/tokenless
+```
+
 ## Prerequisites
 
-- **Rust** toolchain >= 1.85 (Rust 2024 edition)
-- **RTK** binary — required for command rewriting output filtering
+- **Rust** toolchain >= 1.85 (Rust 2024 edition) — for `cargo install` or source build
+- **RTK** binary — optional, only needed for command rewriting (`cargo install rtk`). Core compression works without it.
+
+## Further Reading
+
+| What | Where |
+|---|---|
+| Full usage guide (installation, CLI, plugins, API) | [docs/user-guide.md](./docs/user-guide.md) |
+| Design specs (14 docs) | [specs/](./specs/) |
+| Contribution guidelines | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
 ## Design Specs
 

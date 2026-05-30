@@ -1,6 +1,6 @@
 # Tokenless Innovation Roadmap
 
-> Last updated: 2026-05-27
+> Last updated: 2026-05-30
 
 ## Status Summary
 
@@ -18,8 +18,9 @@
 | 10 | WASM Build | 🔮 未来 | — | — | 新市场 |
 | 11 | MCP Server | ✅ 已完成 | [0011](./0011-mcp-server.md) | ✅ | 7 个 Tool，JSON-RPC stdio |
 | 12 | RL Compression Policy | 🔮 未来 | — | — | 研究级 |
+| 13 | CLI UX Enhancements | 📋 待实施 | — | — | 用户验证与留存优化 |
 
-✅ 已完成：4 项 &emsp; 📝 已 Spec：1 项 &emsp; 🔄 其他项目：1 项 &emsp; ❌ 放弃：1 项 &emsp; 🔮 未来：5 项
+✅ 已完成：4 项 &emsp; 📝 已 Spec：1 项 &emsp; 📋 待实施：1 项 &emsp; 🔄 其他项目：1 项 &emsp; ❌ 放弃：1 项 &emsp; 🔮 未来：5 项
 
 ---
 
@@ -110,3 +111,54 @@ Compile tokenless-schema to WASM for browser use. Would require replacing rusqli
 ## 12. Reinforcement Learning Compression Policy 🔮
 
 Train a small RL policy to make per-field keep/drop decisions. Academic research direction — requires training infrastructure, reward modeling, and offline evaluation framework.
+
+---
+
+## 13. CLI UX Enhancements 📋
+
+> 来源：2026-05-30 多角色 UX 评审（新用户体验、文档结构、DevRel、PM）
+
+基于 `docs/user-guide.md` 的多角色评审，识别出以下 CLI 层面改进，可显著降低用户上手门槛和留存率。
+
+### P0 — Before/After Token 对比输出
+
+**问题**：`compress-response` / `compress-schema` 静默输出，用户无法亲眼看到压缩效果。文档宣称 60-90% 节省，但用户无法在自己的环境中复现。
+
+**方案**：
+- 每个压缩命令默认输出对比行：`before: 1234 bytes (~308 tokens) → after: 456 bytes (~114 tokens) — saved 62.9%`
+- 新增 `--report` 标志，输出详细对比报告（JSON / 人类可读）
+- 新增 `--quiet` 标志，恢复到当前静默行为（脚本/管道场景）
+
+### P0 — `tokenless stats diff` 累计节省
+
+**问题**：`tokenless stats summary` 只显示计数和汇总，无法直观回答"这周省了多少 Token = 省了多少钱"。
+
+**方案**：
+- `tokenless stats diff --since yesterday` / `--since 7d` / `--range 2026-05-01..2026-05-30`
+- 输出：`累计节省 1,234,567 bytes / 308,642 tokens / ≈ $9.26 API 费用`
+- 显示 by-agent 和 by-operation 分组
+- 可选输出 JSON 用于 CI/仪表盘集成
+
+### P1 — `tokenless demo` 一键演示
+
+**问题**：新用户安装后需手动构造测试 JSON 或找 fixture 文件，跑第一个压缩命令门槛高。
+
+**方案**：
+- `tokenless demo` 使用内嵌测试数据一键跑 4 种压缩 + 输出对比
+- `tokenless demo --interactive` 逐步引导用户体验每个功能
+- 替代方案：将 `tests/fixtures/` 路径暴露为内置命令，消除文件路径依赖
+
+### P2 — 安装方式多样化
+
+**问题**：当前仅支持源码构建（需 Rust 工具链），对非 Rust 开发者门槛高。
+
+**方案**：
+- `cargo install tokenless`（需 crates.io 发布）
+- GitHub Releases 预编译二进制（macOS/Linux x86_64 + ARM64）
+- Homebrew formula：`brew install tokenfleet/tap/tokenless`
+
+### 预期影响
+
+- **转化率**：P0 改动让用户 1 条命令看到效果，大幅降低安装→验证→放弃的转化漏斗
+- **留存率**：`stats diff` 提供定期回访的量化锚点（"这周省了 $12"）
+- **传播性**：`demo` + `--report` 输出天然适合截图分享、社交媒体传播
