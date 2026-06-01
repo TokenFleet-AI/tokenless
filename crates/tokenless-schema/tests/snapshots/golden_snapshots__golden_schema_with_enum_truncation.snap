@@ -53,10 +53,10 @@ expression: result
           "enum": [
             "dog",
             "cat",
-            "bird",
-            "<... 1 more enum values omitted>"
+            "bird"
           ],
-          "type": "string"
+          "type": "string",
+          "x-tokenless-enum-truncated": 3
         }
       },
       "required": [

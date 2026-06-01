@@ -5,6 +5,8 @@
 
 use serde_json::Value;
 
+use crate::encoding::is_schema_object;
+
 /// Detected structural shape of a JSON value.
 #[derive(Debug, Clone)]
 pub struct JsonShape {
@@ -96,12 +98,21 @@ fn analyze_value(value: &Value, shape: &mut JsonShape, depth: usize) {
 }
 
 fn analyze_object(obj: &serde_json::Map<String, Value>, shape: &mut JsonShape, depth: usize) {
-    // Check for enum/constraints at this level.
-    if obj.contains_key("enum") {
-        shape.has_enums = true;
-    }
-    if obj.contains_key("minimum") || obj.contains_key("maximum") || obj.contains_key("pattern") {
-        shape.has_constraints = true;
+    // Check for enum/constraints at this level, but only when the object
+    // looks like a JSON Schema definition — not when a data object merely
+    // shares key names with schema keywords.
+    //
+    // Without this guard, a data object such as:
+    //   {"type": "premium", "pattern": "striped"}
+    // would be flagged as has_enums/has_constraints and routed to Enhanced
+    // TOON encoding, which would then flatten it incorrectly.
+    if is_schema_object(obj) {
+        if obj.contains_key("enum") {
+            shape.has_enums = true;
+        }
+        if obj.contains_key("minimum") || obj.contains_key("maximum") || obj.contains_key("pattern") {
+            shape.has_constraints = true;
+        }
     }
 
     // Check chain depth: object with exactly 1 key whose value is also an object.
@@ -190,7 +201,8 @@ mod tests {
 
     #[test]
     fn test_analyze_has_constraints() {
-        let value = json!({"minimum": 1, "maximum": 100});
+        // Must include a valid schema type to be recognized as schema-like.
+        let value = json!({"type": "integer", "minimum": 1, "maximum": 100});
         let shape = analyze(&value, "");
         assert!(shape.has_constraints);
     }
@@ -201,6 +213,75 @@ mod tests {
         let shape = analyze(&value, "");
         assert!(shape.max_chain_depth >= 3);
         assert!(!shape.has_enums);
+    }
+
+    // ── Security: shape_analyzer false-positive guards ──────────────────
+
+    #[test]
+    fn test_analyze_data_object_no_false_enum() {
+        // A data object with `"type": "premium"` is NOT a schema.
+        let value = json!({"product": {"type": "premium", "color": "blue"}});
+        let shape = analyze(&value, "");
+        assert!(!shape.has_enums, "data object should not trigger has_enums");
+        assert!(
+            !shape.has_constraints,
+            "data object should not trigger has_constraints"
+        );
+    }
+
+    #[test]
+    fn test_analyze_data_object_with_enum_key_no_false_positive() {
+        // A data object where "enum" is a key but it's not a schema.
+        let value = json!({"config": {"enum": ["a", "b"], "color": "red"}});
+        let shape = analyze(&value, "");
+        assert!(
+            !shape.has_enums,
+            "data object with 'enum' key should not trigger has_enums"
+        );
+    }
+
+    #[test]
+    fn test_analyze_data_object_with_pattern_key_no_false_positive() {
+        // A data object with "pattern" and "minimum" keys but not a schema.
+        let value = json!({"filter": {"pattern": "*.js", "minimum": 1, "unit": "files"}});
+        let shape = analyze(&value, "");
+        assert!(
+            !shape.has_constraints,
+            "data object with 'pattern'/'minimum' keys should not trigger has_constraints"
+        );
+    }
+
+    #[test]
+    fn test_analyze_actual_schema_still_detected() {
+        // A real schema should still be detected.
+        let value = json!({
+            "name": {"type": "string", "description": "User's name"},
+            "role": {"type": "string", "enum": ["admin", "user"]}
+        });
+        let shape = analyze(&value, "");
+        assert!(shape.has_enums, "actual schema with enum should be detected");
+    }
+
+    #[test]
+    fn test_analyze_is_schema_object_rejects_non_schema() {
+        let obj: serde_json::Map<String, Value> = [
+            ("type".to_string(), json!("premium")),
+            ("color".to_string(), json!("blue")),
+        ]
+        .into_iter()
+        .collect();
+        assert!(!is_schema_object(&obj));
+    }
+
+    #[test]
+    fn test_analyze_is_schema_object_accepts_schema() {
+        let obj: serde_json::Map<String, Value> = [
+            ("type".to_string(), json!("string")),
+            ("enum".to_string(), json!(["a", "b"])),
+        ]
+        .into_iter()
+        .collect();
+        assert!(is_schema_object(&obj));
     }
 
     #[test]

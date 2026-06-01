@@ -281,9 +281,21 @@ impl SchemaCompressor {
                 if original_len > self.max_enum_items {
                     let remaining = original_len - self.max_enum_items;
                     enum_arr.truncate(self.max_enum_items);
-                    enum_arr.push(Value::String(format!(
-                        "<... {remaining} more enum values omitted>"
-                    )));
+                    // Security: Do NOT inject fake sentinel strings into the enum
+                    // array. LLMs and validators treat every array element as a
+                    // legitimate enum value — a sentinel like "<... N more omitted>"
+                    // would be interpreted as a selectable option, leading to
+                    // parameter hallucination and downstream validation failures.
+                    //
+                    // Instead, signal truncation via an extension field at the
+                    // object level. Extensions prefixed with "x-" are compatible
+                    // with OpenAPI / JSON Schema extension conventions and are
+                    // ignored by validators that don't recognize them.
+                    #[allow(clippy::cast_possible_truncation)]
+                    obj.insert(
+                        "x-tokenless-enum-truncated".into(),
+                        Value::Number(serde_json::Number::from(remaining as u64)),
+                    );
                 }
             }
         }
@@ -769,14 +781,20 @@ mod tests {
             }
         });
         let result = compressor.compress(&schema);
-        let enum_arr = &result["function"]["parameters"]["properties"]["color"]["enum"];
-        let arr = enum_arr.as_array().unwrap();
-        assert_eq!(arr.len(), 21, "20 values + 1 marker = 21 items");
-        let last = arr.last().unwrap().as_str().unwrap();
-        assert!(
-            last.contains("30 more enum values omitted"),
-            "marker: {last}"
+        let color = &result["function"]["parameters"]["properties"]["color"];
+        let arr = color["enum"].as_array().unwrap();
+        // 20 items exactly — no sentinel in the array
+        assert_eq!(arr.len(), 20, "20 values only, no sentinel injected");
+        // Verify extension field signals truncation
+        assert_eq!(
+            color["x-tokenless-enum-truncated"].as_u64().unwrap(),
+            30,
+            "extension field should record 30 omitted values"
         );
+        // Verify all items are real enum values
+        for (i, item) in arr.iter().enumerate() {
+            assert_eq!(*item, json!(format!("v{i}")));
+        }
     }
 
     #[test]
@@ -848,12 +866,11 @@ mod tests {
             }
         });
         let result = compressor.compress(&schema);
-        let arr = result["function"]["parameters"]["properties"]["color"]["enum"]
-            .as_array()
-            .unwrap();
-        assert_eq!(arr.len(), 1, "all values truncated, only marker remains");
-        let marker = arr[0].as_str().unwrap();
-        assert!(marker.contains("5 more enum values omitted"));
+        let color = &result["function"]["parameters"]["properties"]["color"];
+        let arr = color["enum"].as_array().unwrap();
+        assert_eq!(arr.len(), 0, "all values truncated, no sentinel in array");
+        let omitted = color["x-tokenless-enum-truncated"].as_u64().unwrap();
+        assert_eq!(omitted, 5, "extension field records 5 omitted values");
     }
 
     #[test]
@@ -909,19 +926,18 @@ mod tests {
             }
         });
         let result = compressor.compress(&schema);
-        let arr = &result["function"]["parameters"]["properties"]["level1"]["properties"]["level2"]
-            ["properties"]["color"]["enum"];
-        let arr = arr.as_array().unwrap();
-        assert_eq!(arr.len(), 6, "5 values + 1 marker");
-        assert!(
-            arr.last()
-                .unwrap()
-                .as_str()
-                .unwrap()
-                .contains("25 more enum values omitted")
+        let color = &result["function"]["parameters"]["properties"]["level1"]
+            ["properties"]["level2"]["properties"]["color"];
+        let arr = color["enum"].as_array().unwrap();
+        assert_eq!(arr.len(), 5, "5 values only, no sentinel in array");
+        // Verify extension field
+        assert_eq!(
+            color["x-tokenless-enum-truncated"].as_u64().unwrap(),
+            25,
+            "extension field records 25 omitted values"
         );
         // Verify first 5 values are the original first 5
-        for (i, item) in arr.iter().take(5).enumerate() {
+        for (i, item) in arr.iter().enumerate() {
             assert_eq!(*item, json!(format!("v{i}")));
         }
     }

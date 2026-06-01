@@ -115,18 +115,18 @@ fn test_large_string_array_truncation() {
         })
         .collect();
 
-    let input = json!({"data": arr});
+    let input = json!({"items": arr});
     let compressor = ResponseCompressor::new().with_truncate_arrays_at(16);
     let result = compressor.compress(&input);
 
-    let data = result["data"].as_array().expect("data should be an array");
+    let items = result["items"].as_array().expect("items should be an array");
     assert!(
-        data.len() <= 17, // 16 items + 1 marker
+        items.len() <= 17, // 16 items + 1 marker
         "truncated array should have <= 17 elements"
     );
 
     // Each string should be within the truncation limit
-    for item in data.iter().take(16) {
+    for item in items.iter().take(16) {
         let s = item.as_str().expect("array item should be string");
         assert!(
             s.len() <= 530, // 512 + "… (truncated)" overhead

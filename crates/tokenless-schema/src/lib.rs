@@ -23,6 +23,6 @@ pub mod encoding;
 pub mod format_router;
 
 pub use format_router::{Strategy, compress_auto, select_strategy, strategy_name};
-pub use response_compressor::ResponseCompressor;
+pub use response_compressor::{CompressionProfile, ResponseCompressor};
 pub use schema_compressor::SchemaCompressor;
 pub use shape_analyzer::{JsonShape, TopType, analyze};

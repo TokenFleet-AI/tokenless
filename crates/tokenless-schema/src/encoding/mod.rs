@@ -11,4 +11,5 @@ mod toon_hrv;
 
 pub use cjson_compact::encode as encode_cjson;
 pub use enhanced_toon::encode as encode_enhanced;
+pub(crate) use enhanced_toon::is_schema_object;
 pub use toon_hrv::encode as encode_toon_hrv;

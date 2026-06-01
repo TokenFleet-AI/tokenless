@@ -23,9 +23,9 @@ use crate::env_check;
 use crate::init;
 use crate::mcp;
 use crate::{
-    open_recorder, read_input, record_compression_stats, rtk_available, strip_leading_bom,
-    HookCommands, McpAction, RewriteTarget, SCHEMA_COMPRESSOR, StatsCommands,
-    RESPONSE_COMPRESSOR,
+    compressor_for_tool, open_recorder, read_input, record_compression_stats, rtk_available,
+    strip_leading_bom, HookCommands, McpAction, RewriteTarget, SCHEMA_COMPRESSOR,
+    StatsCommands, RESPONSE_COMPRESSOR,
 };
 
 // ── Schema compression ─────────────────────────────────────────────────────
@@ -506,7 +506,12 @@ fn handle_hook_compress() -> Result<(), (String, i32)> {
     let input = read_input(&None).map_err(|e| (e, 2))?;
     let value: serde_json::Value =
         serde_json::from_str(&input).map_err(|e| (format!("JSON parse error: {e}"), 2))?;
-    let compressor = &*RESPONSE_COMPRESSOR;
+    let tool_name = value
+        .get("tool_name")
+        .or_else(|| value.get("toolName"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let compressor = compressor_for_tool(tool_name);
     let result = compressor.compress(&value);
     let after_compact = serde_json::to_string(&result).unwrap_or_default();
     let result_json = serde_json::to_string_pretty(&result)

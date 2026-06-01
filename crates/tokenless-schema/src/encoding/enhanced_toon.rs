@@ -110,13 +110,91 @@ fn encode_array(arr: &[Value], indent_level: usize) -> String {
     items.join("\n")
 }
 
-/// Check if an object looks like a JSON Schema property definition.
-fn is_schema_object(obj: &serde_json::Map<String, Value>) -> bool {
-    obj.contains_key("type")
-        || obj.contains_key("enum")
-        || obj.contains_key("minimum")
-        || obj.contains_key("maximum")
-        || obj.contains_key("pattern")
+/// Recognized JSON Schema `type` values.
+const SCHEMA_TYPE_VALUES: &[&str] = &[
+    "string", "number", "integer", "object", "array", "boolean", "null",
+];
+
+/// Keys that are typical of JSON Schema property definitions.
+/// Used to distinguish schema objects from data objects that happen to share
+/// a key name (e.g. a data object with a `type` field set to `"premium"`).
+const SCHEMA_TYPICAL_KEYS: &[&str] = &[
+    "type",
+    "enum",
+    "const",
+    "description",
+    "title",
+    "default",
+    "examples",
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "multipleOf",
+    "minLength",
+    "maxLength",
+    "pattern",
+    "format",
+    "properties",
+    "items",
+    "required",
+    "anyOf",
+    "oneOf",
+    "allOf",
+    "not",
+    "$ref",
+    "$defs",
+    "definitions",
+    "additionalProperties",
+    "patternProperties",
+    "minItems",
+    "maxItems",
+    "uniqueItems",
+    "x-tokenless-enum-truncated",
+];
+
+/// Check whether an object is a JSON Schema property definition, as opposed to
+/// a regular data object that merely shares key names with schema keywords.
+///
+/// # Safety against false positives
+///
+/// A naive check for the presence of keys like `"type"` or `"enum"` would
+/// misclassify data objects such as:
+///
+/// ```json
+/// {"type": "premium", "color": "blue"}
+/// {"pattern": "striped", "material": "cotton"}
+/// {"minimum": 10, "maximum": 50, "unit": "kg"}
+/// ```
+///
+/// This function requires:
+/// - `type` to have a value that is a recognized JSON Schema type, OR
+/// - `enum` present and ALL keys in the object are schema-typical.
+///
+/// Constraint keys (`minimum`, `maximum`, `pattern`) alone are NOT sufficient
+/// to classify an object as a schema definition.
+///
+/// Also used by [`crate::shape_analyzer`] to avoid routing data objects to
+/// Enhanced TOON encoding.
+#[must_use]
+pub(crate) fn is_schema_object(obj: &serde_json::Map<String, Value>) -> bool {
+    // Criterion 1: `type` with a recognized JSON Schema type value.
+    if let Some(type_val) = obj.get("type")
+        && let Some(type_str) = type_val.as_str()
+        && SCHEMA_TYPE_VALUES.contains(&type_str)
+    {
+        return true;
+    }
+
+    // Criterion 2: `enum` present and ALL keys are schema-typical.
+    // This is more permissive because JSON Schema allows `{"enum": [...]}`
+    // without a `type` field, but we guard against false positives by
+    // requiring every key to be a recognized schema keyword.
+    if obj.contains_key("enum") && obj.keys().all(|k| SCHEMA_TYPICAL_KEYS.contains(&k.as_str())) {
+        return true;
+    }
+
+    false
 }
 
 /// Encode a schema-style property definition value.
@@ -344,5 +422,103 @@ mod tests {
         let value = json!(null);
         let output = encode(&value, 0);
         assert_eq!(output, "null");
+    }
+
+    // ── Security: is_schema_object false-positive guards ────────────────
+
+    /// Helper: build a `serde_json::Map` from key-value pairs.
+    fn make_map(pairs: &[(&str, Value)]) -> serde_json::Map<String, Value> {
+        pairs.iter().map(|(k, v)| ((*k).to_string(), v.clone())).collect()
+    }
+
+    #[test]
+    fn test_is_schema_object_rejects_data_type_field() {
+        // A data object with `"type": "premium"` is NOT a schema — "premium"
+        // is not a recognized JSON Schema type.
+        let obj = make_map(&[("type", json!("premium")), ("color", json!("blue"))]);
+        assert!(
+            !is_schema_object(&obj),
+            "data object with non-schema type value should NOT be treated as schema"
+        );
+    }
+
+    #[test]
+    fn test_is_schema_object_rejects_data_pattern_field() {
+        // A data object with key "pattern" but without a valid schema type.
+        let obj = make_map(&[("pattern", json!("striped")), ("material", json!("cotton"))]);
+        assert!(
+            !is_schema_object(&obj),
+            "data object with 'pattern' key alone should NOT be treated as schema"
+        );
+    }
+
+    #[test]
+    fn test_is_schema_object_rejects_data_min_max() {
+        // A data object with min/max but not a schema type.
+        let obj = make_map(&[
+            ("minimum", json!(10)),
+            ("maximum", json!(50)),
+            ("unit", json!("kg")),
+        ]);
+        assert!(
+            !is_schema_object(&obj),
+            "data object with min/max alone should NOT be treated as schema"
+        );
+    }
+
+    #[test]
+    fn test_is_schema_object_accepts_valid_schema_type() {
+        // A schema object with a recognized JSON Schema type value.
+        let obj = make_map(&[
+            ("type", json!("string")),
+            ("description", json!("User's full name")),
+        ]);
+        assert!(
+            is_schema_object(&obj),
+            "schema object with valid type should be recognized"
+        );
+    }
+
+    #[test]
+    fn test_is_schema_object_accepts_enum_with_schema_keys() {
+        // enum without type but all keys are schema-typical.
+        let obj = make_map(&[
+            ("enum", json!(["admin", "user"])),
+            ("description", json!("User role")),
+        ]);
+        assert!(
+            is_schema_object(&obj),
+            "enum with only schema-typical keys should be recognized"
+        );
+    }
+
+    #[test]
+    fn test_is_schema_object_rejects_enum_with_data_keys() {
+        // enum with a non-schema key (e.g. data field alongside enum).
+        let obj = make_map(&[("enum", json!(["a", "b"])), ("color", json!("red"))]);
+        assert!(
+            !is_schema_object(&obj),
+            "enum with non-schema keys should NOT be treated as schema"
+        );
+    }
+
+    #[test]
+    fn test_encode_data_object_not_flattened_as_schema() {
+        // A data object that looks like a schema under the old naive check
+        // should now be encoded as a regular nested object, not flattened.
+        let value = json!({"product": {"type": "premium", "color": "blue"}});
+        let output = encode(&value, 0);
+        // Should be nested output, not flattened schema-like output.
+        // Old bug: would output "product: premium" (flattened, lossy).
+        // Fixed: keeps nested structure.
+        assert!(
+            output.contains("color: blue") || output.contains("product:"),
+            "data object should not be flattened as schema, got: {output}"
+        );
+        // Must NOT contain the flattened format (e.g., "product: premium")
+        assert!(
+            !output.starts_with("product: premium"),
+            "data object MUST NOT be flattened, got: {output}"
+        );
     }
 }

@@ -39,7 +39,8 @@ use rtk_registry::{
     Classification, RtkInstallStatus, classify_command, is_rtk_installed, rewrite_command,
 };
 use tokenless_schema::{
-    ResponseCompressor, SchemaCompressor, compress_auto as schema_compress_auto, strategy_name,
+    CompressionProfile, ResponseCompressor, SchemaCompressor, compress_auto as schema_compress_auto,
+    strategy_name,
 };
 use tokenless_stats::{
     OperationType, StatsRecord, StatsRecorder, TokenlessConfig, estimate_tokens_from_bytes,
@@ -50,6 +51,18 @@ use tokenless_stats::{
 static SCHEMA_COMPRESSOR: LazyLock<SchemaCompressor> = LazyLock::new(SchemaCompressor::new);
 /// Reusable response compressor instance (immutable after construction).
 static RESPONSE_COMPRESSOR: LazyLock<ResponseCompressor> = LazyLock::new(ResponseCompressor::new);
+/// Response compressor for shell commands / high-fidelity output (4096 chars, 128 items).
+static RESPONSE_COMPRESSOR_HF: LazyLock<ResponseCompressor> = LazyLock::new(|| {
+    ResponseCompressor::new().with_profile(CompressionProfile::HighFidelity)
+});
+
+/// Select a response compressor based on the tool name from a hook payload.
+fn compressor_for_tool(tool_name: &str) -> &ResponseCompressor {
+    match tool_name {
+        "Bash" | "bash" => &RESPONSE_COMPRESSOR_HF,
+        _ => &RESPONSE_COMPRESSOR,
+    }
+}
 
 /// Strip leading UTF-8 BOM bytes (Cursor on Windows may prepend one or two).
 fn strip_leading_bom(input: &str) -> String {
@@ -987,7 +1000,12 @@ fn run() -> Result<(), (String, i32)> {
                 let input = read_input(&None).map_err(|e| (e, 2))?;
                 let value: serde_json::Value = serde_json::from_str(&input)
                     .map_err(|e| (format!("JSON parse error: {e}"), 2))?;
-                let compressor = &*RESPONSE_COMPRESSOR;
+                let tool_name = value
+                    .get("tool_name")
+                    .or_else(|| value.get("toolName"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let compressor = compressor_for_tool(tool_name);
                 let result = compressor.compress(&value);
                 let after_compact = serde_json::to_string(&result).unwrap_or_default();
                 let result_json = serde_json::to_string_pretty(&result)

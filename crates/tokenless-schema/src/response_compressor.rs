@@ -2,6 +2,17 @@ use std::collections::HashSet;
 
 use serde_json::{Map, Value};
 
+/// Compression profile for different tool output types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompressionProfile {
+    /// Shell commands, error/diff output — minimal filtering, large limits.
+    HighFidelity,
+    /// API JSON responses — balanced defaults.
+    Standard,
+    /// Large logs — aggressive truncation and key capping.
+    Aggressive,
+}
+
 /// Compresses JSON API responses by truncating strings, limiting arrays,
 /// removing nulls, and dropping debug fields.
 #[derive(Debug)]
@@ -14,6 +25,9 @@ pub struct ResponseCompressor {
     max_depth: usize,
     add_truncation_marker: bool,
     max_keys_per_object: usize,
+    /// Fields whose values are never truncated — critical information
+    /// (error, stderr, output, etc.) should survive compression intact.
+    preserve_fields: HashSet<String>,
 }
 
 impl Default for ResponseCompressor {
@@ -46,6 +60,13 @@ impl Default for ResponseCompressor {
             max_depth: 8,
             add_truncation_marker: true,
             max_keys_per_object: usize::MAX,
+            preserve_fields: {
+                let mut pf = HashSet::new();
+                for f in &["error", "stderr", "output", "message", "data", "result"] {
+                    pf.insert((*f).to_string());
+                }
+                pf
+            },
         }
     }
 }
@@ -110,6 +131,48 @@ impl ResponseCompressor {
     #[must_use]
     pub fn with_drop_field(mut self, field: impl Into<String>) -> Self {
         self.drop_fields.insert(field.into());
+        self
+    }
+
+    /// Add a field name to the preserve list — values under these keys
+    /// are never truncated regardless of the compression profile.
+    #[must_use]
+    pub fn with_preserve_field(mut self, field: impl Into<String>) -> Self {
+        self.preserve_fields.insert(field.into());
+        self
+    }
+
+    /// Set the entire preserve-fields set, replacing the defaults.
+    #[must_use]
+    pub fn with_preserve_fields(mut self, fields: HashSet<String>) -> Self {
+        self.preserve_fields = fields;
+        self
+    }
+
+    /// Apply a compression profile preset, overriding current settings.
+    #[must_use]
+    pub fn with_profile(mut self, profile: CompressionProfile) -> Self {
+        match profile {
+            CompressionProfile::HighFidelity => {
+                self.truncate_strings_at = 4096;
+                self.truncate_arrays_at = 128;
+                self.drop_nulls = false;
+                self.drop_empty_fields = false;
+            }
+            CompressionProfile::Standard => {
+                self.truncate_strings_at = 512;
+                self.truncate_arrays_at = 16;
+                self.drop_nulls = true;
+                self.drop_empty_fields = true;
+            }
+            CompressionProfile::Aggressive => {
+                self.truncate_strings_at = 256;
+                self.truncate_arrays_at = 8;
+                self.drop_nulls = true;
+                self.drop_empty_fields = true;
+                self.max_keys_per_object = 20;
+            }
+        }
         self
     }
 
@@ -212,6 +275,19 @@ impl ResponseCompressor {
         let mut truncated: usize = 0;
         for (key, value) in obj {
             if self.drop_fields.contains(key) {
+                continue;
+            }
+            // Preserved fields bypass all truncation — critical information
+            // like error messages, stderr output, and data payloads survive intact.
+            if self.preserve_fields.contains(key) {
+                if self.drop_nulls && value.is_null() {
+                    continue;
+                }
+                if self.drop_empty_fields && Self::is_empty_value(value) {
+                    continue;
+                }
+                result.insert(key.clone(), value.clone());
+                count += 1;
                 continue;
             }
             if count >= self.max_keys_per_object {
@@ -597,5 +673,99 @@ mod tests {
                 "CJK string should be truncated: {s}"
             );
         }
+    }
+
+    // ── Preserve fields ───────────────────────────────────────────────
+
+    #[test]
+    fn test_preserve_fields_not_truncated() {
+        let compressor = ResponseCompressor::new()
+            .with_truncate_strings_at(10)
+            .with_truncate_arrays_at(2);
+        let obj = json!({
+            "error": "This is a very long error message that would normally be truncated",
+            "data": [1, 2, 3, 4, 5, 6],
+            "unimportant": "short"
+        });
+        let result = compressor.compress(&obj);
+        let r = result.as_object().unwrap();
+        // error should be preserved in full
+        assert_eq!(
+            r["error"].as_str().unwrap(),
+            "This is a very long error message that would normally be truncated"
+        );
+        // data array should be preserved in full
+        assert_eq!(r["data"].as_array().unwrap().len(), 6);
+    }
+
+    #[test]
+    fn test_preserve_fields_drops_null_when_configured() {
+        let compressor = ResponseCompressor::new().with_drop_nulls(true);
+        let obj = json!({"error": null, "keep": "yes"});
+        let result = compressor.compress(&obj);
+        assert!(!result.as_object().unwrap().contains_key("error"));
+    }
+
+    #[test]
+    fn test_preserve_fields_keeps_null_when_disabled() {
+        let compressor = ResponseCompressor::new().with_drop_nulls(false);
+        let obj = json!({"error": null});
+        let result = compressor.compress(&obj);
+        assert!(result.as_object().unwrap().contains_key("error"));
+    }
+
+    #[test]
+    fn test_preserve_fields_stderr_output() {
+        let compressor = ResponseCompressor::new()
+            .with_truncate_strings_at(20)
+            .with_truncate_arrays_at(3);
+        let obj = json!({
+            "stderr": "error: cannot find module '.internal/models/user'\n  --> src/main.rs:42",
+            "output": ["file1.txt", "file2.txt", "file3.txt", "file4.txt", "file5.txt"],
+            "status": 1
+        });
+        let result = compressor.compress(&obj);
+        let r = result.as_object().unwrap();
+        // stderr is preserved full
+        assert!(r["stderr"].as_str().unwrap().contains(".internal/models/user"));
+        // output array preserved full
+        assert_eq!(r["output"].as_array().unwrap().len(), 5);
+    }
+
+    // ── Compression profiles ──────────────────────────────────────────
+
+    #[test]
+    fn test_high_fidelity_profile() {
+        let compressor = ResponseCompressor::new().with_profile(CompressionProfile::HighFidelity);
+        assert_eq!(compressor.truncate_strings_at, 4096);
+        assert_eq!(compressor.truncate_arrays_at, 128);
+        assert!(!compressor.drop_nulls);
+        assert!(!compressor.drop_empty_fields);
+    }
+
+    #[test]
+    fn test_aggressive_profile() {
+        let compressor = ResponseCompressor::new().with_profile(CompressionProfile::Aggressive);
+        assert_eq!(compressor.truncate_strings_at, 256);
+        assert_eq!(compressor.truncate_arrays_at, 8);
+        assert_eq!(compressor.max_keys_per_object, 20);
+        assert!(compressor.drop_nulls);
+        assert!(compressor.drop_empty_fields);
+    }
+
+    #[test]
+    fn test_standard_profile_is_default() {
+        let standard = ResponseCompressor::new().with_profile(CompressionProfile::Standard);
+        let default = ResponseCompressor::new();
+        assert_eq!(standard.truncate_strings_at, default.truncate_strings_at);
+        assert_eq!(standard.truncate_arrays_at, default.truncate_arrays_at);
+    }
+
+    #[test]
+    fn test_preserve_field_builder() {
+        let compressor = ResponseCompressor::new().with_preserve_field("custom_key");
+        assert!(compressor.preserve_fields.contains("custom_key"));
+        // Default preserved fields still present
+        assert!(compressor.preserve_fields.contains("error"));
     }
 }
