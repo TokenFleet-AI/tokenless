@@ -6,10 +6,12 @@
 //!
 //! Set `TOKENLESS_CACHE_SIZE=0` to disable caching (default: 512 entries).
 
-use std::collections::HashMap;
-use std::fmt::Write as FmtWrite;
-use std::sync::{LazyLock, Mutex};
-use std::time::Instant;
+use std::{
+    collections::HashMap,
+    fmt::Write as FmtWrite,
+    sync::{LazyLock, Mutex},
+    time::Instant,
+};
 
 /// An LRU cache keyed by blake3 hash (first 8 bytes as u64).
 ///

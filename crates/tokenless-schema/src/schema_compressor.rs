@@ -967,8 +967,8 @@ mod tests {
             }
         });
         let result = compressor.compress(&schema);
-        let color = &result["function"]["parameters"]["properties"]["level1"]["properties"]["level2"]
-            ["properties"]["color"];
+        let color = &result["function"]["parameters"]["properties"]["level1"]["properties"]
+            ["level2"]["properties"]["color"];
         let arr = color["enum"].as_array().unwrap();
         assert_eq!(arr.len(), 5, "5 values only, no sentinel in array");
         // Verify extension field

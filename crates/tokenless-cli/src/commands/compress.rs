@@ -1,12 +1,15 @@
 //! Handlers for `compress-schema`, `compress-response`, `compress-auto`.
 
-use crate::cache;
-use crate::shared::{
-    RESPONSE_COMPRESSOR, SCHEMA_COMPRESSOR, SEMANTIC_COMPRESSOR, eprint_report, read_input,
-    record_compression_stats,
-};
 use tokenless_schema::compress_auto as schema_compress_auto;
 use tokenless_stats::estimate_tokens_from_bytes;
+
+use crate::{
+    cache,
+    shared::{
+        RESPONSE_COMPRESSOR, SCHEMA_COMPRESSOR, SEMANTIC_COMPRESSOR, eprint_report, read_input,
+        record_compression_stats,
+    },
+};
 
 /// Handle `tokenless compress-schema`.
 pub(crate) fn compress_schema(

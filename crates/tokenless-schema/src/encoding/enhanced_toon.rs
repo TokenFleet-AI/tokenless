@@ -351,8 +351,9 @@ fn find_chain_leaf(obj: &serde_json::Map<String, Value>) -> Option<(&String, &Va
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn test_encode_simple_object() {

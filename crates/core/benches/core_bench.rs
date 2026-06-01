@@ -1,6 +1,6 @@
 //! Criterion benchmarks for `tokenless-core`.
 #![allow(missing_docs)]
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::pedantic)]
 
 use criterion::{Criterion, black_box};
 use tokenless_core::Config;

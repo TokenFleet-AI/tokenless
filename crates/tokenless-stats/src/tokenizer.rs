@@ -117,7 +117,8 @@ mod tests {
 
     #[test]
     fn test_estimate_tokens_cjk_aware_mixed() {
-        // "hello" (5 ascii -> 2 tokens) + "你好" (2 CJK -> 2 tokens) + "world" (5 ascii -> 2 tokens) = 6
+        // "hello" (5 ascii -> 2 tokens) + "你好" (2 CJK -> 2 tokens) + "world" (5 ascii -> 2
+        // tokens) = 6
         assert_eq!(estimate_tokens_cjk_aware("hello你好world"), 6);
     }
 

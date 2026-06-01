@@ -234,7 +234,8 @@ fn test_handler_compress_schema_no_savings_returns_original() {
     // but shouldn't significantly inflate either
     assert!(
         output_bytes <= input_bytes + 10,
-        "compressor should not significantly inflate output: input={input_bytes}, output={output_bytes}"
+        "compressor should not significantly inflate output: input={input_bytes}, \
+         output={output_bytes}"
     );
 }
 

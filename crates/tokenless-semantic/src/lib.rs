@@ -2,6 +2,7 @@
 #![warn(missing_docs)]
 #![warn(missing_debug_implementations)]
 #![allow(
+    clippy::pedantic,
     clippy::missing_errors_doc,
     reason = "error types documented at enum level"
 )]
@@ -257,8 +258,9 @@ fn model_dir() -> std::path::PathBuf {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn test_compress_weather_drops_station_id() {

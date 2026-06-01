@@ -166,6 +166,7 @@ pub(crate) fn eprint_report(
         0.0
     };
     eprintln!(
-        "chars: {before_chars} → {after_chars}  tokens: ~{before_tokens} → ~{after_tokens}  saved: {saved_pct:.1}%",
+        "chars: {before_chars} → {after_chars}  tokens: ~{before_tokens} → ~{after_tokens}  \
+         saved: {saved_pct:.1}%",
     );
 }

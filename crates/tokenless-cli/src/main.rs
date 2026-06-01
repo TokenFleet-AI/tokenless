@@ -12,7 +12,8 @@
     clippy::unreadable_literal,
     clippy::unnecessary_map_or,
     clippy::useless_format,
-    reason = "pre-existing CLI code conventions"
+    clippy::pedantic,
+    reason = "pre-existing CLI code conventions; pedantic enforced at crate level"
 )]
 
 mod cache;

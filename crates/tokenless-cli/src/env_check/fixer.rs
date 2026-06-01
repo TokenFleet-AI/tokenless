@@ -7,8 +7,10 @@ use std::process::Command;
 
 use serde_json::Value;
 
-use crate::env_check::checker::{DepStatus, ReadyStatus, ToolReadyResult};
-use crate::env_check::spec::DepEntry;
+use crate::env_check::{
+    checker::{DepStatus, ReadyStatus, ToolReadyResult},
+    spec::DepEntry,
+};
 
 pub(crate) fn format_status(status: &ReadyStatus) -> &'static str {
     match status {

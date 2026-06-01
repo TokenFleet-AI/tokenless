@@ -1,8 +1,11 @@
 //! Handlers for `compress-toon` and `decompress-toon`.
 
-use crate::cache;
-use crate::shared::{read_input, record_compression_stats};
 use tokenless_stats::OperationType;
+
+use crate::{
+    cache,
+    shared::{read_input, record_compression_stats},
+};
 
 /// Handle `tokenless compress-toon`.
 pub(crate) fn compress_toon(

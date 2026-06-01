@@ -1,8 +1,9 @@
 //! Handler for `tokenless rewrite`.
 
-use crate::shared::{read_input, record_compression_stats, rtk_available};
 use rtk_registry::{Classification, classify_command, rewrite_command};
 use tokenless_stats::{OperationType, estimate_tokens_from_bytes};
+
+use crate::shared::{read_input, record_compression_stats, rtk_available};
 
 /// Handle `tokenless rewrite`.
 pub(crate) fn rewrite(
@@ -38,7 +39,8 @@ pub(crate) fn rewrite(
                 };
                 println!("   {input} → {rewritten}");
                 println!(
-                    "   tokens: ~{before_tokens} → ~{after_tokens}  saved: {saved_pct:.1}%{rtk_status}"
+                    "   tokens: ~{before_tokens} → ~{after_tokens}  saved: \
+                     {saved_pct:.1}%{rtk_status}"
                 );
 
                 record_compression_stats(

@@ -9,9 +9,8 @@ use ratatui::{
 };
 use tokenless_stats::StatsRecord;
 
-use crate::lang::Lang;
-
 use super::{format_bytes, render_records_tabs, render_status_bar};
+use crate::lang::Lang;
 
 /// Render the records tab.
 pub fn render(

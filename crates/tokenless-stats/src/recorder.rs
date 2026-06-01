@@ -367,10 +367,9 @@ impl StatsRecorder {
         let conn = self.lock_conn();
 
         let row = conn.query_row(
-            "SELECT ?1, COUNT(*), COALESCE(SUM(before_chars), 0), \
-                    COALESCE(SUM(after_chars), 0), COALESCE(SUM(before_tokens), 0), \
-                    COALESCE(SUM(after_tokens), 0) \
-             FROM stats WHERE agent_id = ?1",
+            "SELECT ?1, COUNT(*), COALESCE(SUM(before_chars), 0), COALESCE(SUM(after_chars), 0), \
+             COALESCE(SUM(before_tokens), 0), COALESCE(SUM(after_tokens), 0) FROM stats WHERE \
+             agent_id = ?1",
             [agent_id],
             |row| {
                 Ok(AgentSummaryRow {
@@ -730,7 +729,8 @@ mod tests {
 
         // Insert a row into the old schema
         conn.execute(
-            "INSERT INTO stats (timestamp, operation, agent_id, before_chars, before_tokens, after_chars, after_tokens)
+            "INSERT INTO stats (timestamp, operation, agent_id, before_chars, before_tokens, \
+             after_chars, after_tokens)
              VALUES ('2025-01-01T00:00:00+00:00', 'compress-schema', 'test', 100, 10, 50, 5)",
             [],
         )

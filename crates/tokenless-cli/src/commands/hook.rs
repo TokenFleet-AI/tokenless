@@ -1,9 +1,11 @@
 //! Handlers for `tokenless hook` subcommands.
 
-use crate::cache;
-use crate::shared::{
-    SEMANTIC_COMPRESSOR, compressor_for_tool, read_input, record_compression_stats,
-    strip_leading_bom,
+use crate::{
+    cache,
+    shared::{
+        SEMANTIC_COMPRESSOR, compressor_for_tool, read_input, record_compression_stats,
+        strip_leading_bom,
+    },
 };
 
 /// Handle `tokenless hook rewrite` for a specific agent target.

@@ -1,7 +1,8 @@
 //! Handler and rendering for `tokenless demo`.
 
-use crate::shared::{RESPONSE_COMPRESSOR, SCHEMA_COMPRESSOR, rtk_available};
 use tokenless_stats::estimate_tokens_from_bytes;
+
+use crate::shared::{RESPONSE_COMPRESSOR, SCHEMA_COMPRESSOR, rtk_available};
 
 /// Generate and return the demo output string.
 pub(crate) fn generate() -> String {
@@ -38,9 +39,15 @@ pub(crate) fn generate() -> String {
     let bt = estimate_tokens_from_bytes(response_input.len());
     let at = estimate_tokens_from_bytes(after.len());
     out.push_str(&format!(
-        "   drops: debug, trace, logs, null, empty[]\n   chars: {} → {}  tokens: ~{bt} → ~{at}  saved: {pct:.1}%\n\n",
-        response_input.len(), after.len(),
-        pct = if bt > 0 { (bt.saturating_sub(at) as f64 / bt as f64) * 100.0 } else { 0.0 },
+        "   drops: debug, trace, logs, null, empty[]\n   chars: {} → {}  tokens: ~{bt} → ~{at}  \
+         saved: {pct:.1}%\n\n",
+        response_input.len(),
+        after.len(),
+        pct = if bt > 0 {
+            (bt.saturating_sub(at) as f64 / bt as f64) * 100.0
+        } else {
+            0.0
+        },
     ));
 
     // TOON

@@ -1,14 +1,17 @@
 //! Handler for `tokenless stats` subcommands.
 
-use std::collections::BTreeMap;
-use std::io::{self, Write};
+use std::{
+    collections::BTreeMap,
+    io::{self, Write},
+};
 
-use crate::shared::open_recorder;
 use rtk_registry::{Classification, classify_command};
 use tokenless_stats::{
     OperationType, TokenlessConfig, format_diff, format_list, format_rewrites, format_show,
     format_summary, parse_time_range,
 };
+
+use crate::shared::open_recorder;
 
 pub(crate) fn stats_summary(limit: Option<usize>) -> Result<(), (String, i32)> {
     let recorder = open_recorder()?;

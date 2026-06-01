@@ -139,8 +139,9 @@ pub fn format_bytes(n: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use ratatui::backend::TestBackend;
+
+    use super::*;
 
     /// Returns the concatenated text of every non-empty, non-border cell.
     fn collect_text(buf: &ratatui::buffer::Buffer) -> String {

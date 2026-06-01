@@ -8,10 +8,11 @@ use ratatui::{
 };
 use tokenless_stats::{StatsRecorder, StatsSummary};
 
-use crate::lang::Lang;
-use crate::ui;
-use crate::ui::agents::AgentSummary;
-use crate::ui::trends::DailyTotal;
+use crate::{
+    lang::Lang,
+    ui,
+    ui::{agents::AgentSummary, trends::DailyTotal},
+};
 
 /// Active tab in the TUI.
 #[derive(Debug, Clone, Copy, PartialEq)]

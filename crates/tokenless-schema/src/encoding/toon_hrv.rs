@@ -128,8 +128,9 @@ fn fallback_encode(value: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn test_encode_uniform_array_basic() {

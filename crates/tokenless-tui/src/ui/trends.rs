@@ -8,9 +8,8 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Sparkline},
 };
 
-use crate::lang::Lang;
-
 use super::{render_status_bar, render_trends_tabs};
+use crate::lang::Lang;
 
 /// A single day's aggregated savings totals.
 #[derive(Debug, Clone)]

@@ -222,7 +222,8 @@ impl Lang {
                 "[Tab:切换] [↑↓:导航] [Enter:详情] [/:搜索] [t:时间范围] [e:导出] [d:返回] [q:退出]"
             }
             Lang::En => {
-                "[Tab:switch] [↑↓:navigate] [Enter:detail] [/:search] [t:time range] [e:export] [d:back] [q:quit]"
+                "[Tab:switch] [↑↓:navigate] [Enter:detail] [/:search] [t:time range] [e:export] \
+                 [d:back] [q:quit]"
             }
         }
     }

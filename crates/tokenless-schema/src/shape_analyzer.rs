@@ -181,8 +181,9 @@ fn key_set_matches(obj: &serde_json::Map<String, Value>, expected_keys: &[&Strin
 )]
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn test_analyze_uniform_array() {

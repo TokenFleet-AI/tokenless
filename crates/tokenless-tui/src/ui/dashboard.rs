@@ -9,9 +9,8 @@ use ratatui::{
 };
 use tokenless_stats::{OperationType, StatsRecord, StatsSummary};
 
-use crate::lang::Lang;
-
 use super::{format_bytes, render_dashboard_tabs, render_status_bar};
+use crate::lang::Lang;
 
 /// Render the dashboard tab.
 pub fn render(f: &mut Frame, summary: &StatsSummary, records: &[StatsRecord], lang: &Lang) {

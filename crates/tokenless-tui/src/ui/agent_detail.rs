@@ -13,9 +13,8 @@ use ratatui::{
 };
 use tokenless_stats::OperationType;
 
-use crate::lang::Lang;
-
 use super::{format_bytes, render_status_bar};
+use crate::lang::Lang;
 
 /// Render the agent detail view.
 pub fn render(

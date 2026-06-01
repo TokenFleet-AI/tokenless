@@ -1,7 +1,8 @@
 //! Rule-based field classification using compiled-in TOML profiles.
 
-use serde::Deserialize;
 use std::collections::HashMap;
+
+use serde::Deserialize;
 
 /// Action to take for a JSON field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

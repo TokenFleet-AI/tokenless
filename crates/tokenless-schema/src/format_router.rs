@@ -9,9 +9,12 @@
 //! 4. Deep single-child chains (> 3 levels) → [`Strategy::EnhancedToon`].
 //! 5. Everything else → [`Strategy::CjsonCompact`].
 
-use crate::encoding;
-use crate::shape_analyzer::{self, JsonShape};
 use serde_json::Value;
+
+use crate::{
+    encoding,
+    shape_analyzer::{self, JsonShape},
+};
 
 /// Selected encoding strategy.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,9 +85,10 @@ pub fn strategy_name(strategy: &Strategy) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
     use crate::shape_analyzer::TopType;
-    use serde_json::json;
 
     fn make_shape(char_count: usize) -> JsonShape {
         JsonShape {

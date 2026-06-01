@@ -8,9 +8,8 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Row, Table},
 };
 
-use crate::lang::Lang;
-
 use super::{format_bytes, render_agents_tabs, render_status_bar};
+use crate::lang::Lang;
 
 /// Summary statistics for a single proxy agent.
 #[derive(Debug, Clone)]

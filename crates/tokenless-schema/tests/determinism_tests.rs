@@ -5,8 +5,7 @@
 //! across 100 invocations with the same input, and that `Value`-returning
 //! compressors are idempotent (i.e. `compress(compress(x)) == compress(x)`).
 
-use serde_json::Value;
-use serde_json::json;
+use serde_json::{Value, json};
 use tokenless_schema::{
     ResponseCompressor, SchemaCompressor, Strategy, compress_auto,
     encoding::{encode_cjson, encode_enhanced, encode_toon_hrv},

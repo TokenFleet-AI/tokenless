@@ -13,9 +13,9 @@
 //! snapshot file.  When fixtures or compressor logic change the
 //! snapshots can be reviewed with `cargo insta review`.
 
+use std::{fs, path::PathBuf};
+
 use serde_json::Value;
-use std::fs;
-use std::path::PathBuf;
 
 /// Resolve a fixture path relative to this test file's directory.
 fn fixture_path(name: &str) -> PathBuf {

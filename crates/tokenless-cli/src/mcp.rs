@@ -18,12 +18,11 @@ use std::{
     io::{self, BufRead, Write},
 };
 
+use rtk_registry::{Classification, classify_command, rewrite_command};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokenless_schema::{ResponseCompressor, SchemaCompressor};
 use tokenless_stats::{StatsRecorder, StatsSummary, TokenlessConfig, estimate_tokens_from_bytes};
-
-use rtk_registry::{Classification, classify_command, rewrite_command};
 
 /// A single JSON-RPC 2.0 request from the MCP client.
 #[derive(Debug, Deserialize)]
