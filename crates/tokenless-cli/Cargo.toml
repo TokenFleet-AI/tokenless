@@ -17,7 +17,7 @@ path = "src/main.rs"
 [dependencies]
 tokenless-schema = { path = "../tokenless-schema", version = "0.3.1" }
 tokenless-stats = { path = "../tokenless-stats", version = "0.3.1" }
-tokenless-semantic = { path = "../tokenless-semantic" }
+tokenless-semantic = { path = "../tokenless-semantic", version = "0.3.1" }
 clap = { workspace = true, features = ["derive"] }
 chrono = { workspace = true, features = ["serde"] }
 serde.workspace = true
@@ -29,7 +29,7 @@ tracing.workspace = true
 rtk-registry.workspace = true
 blake3.workspace = true
 lru.workspace = true
-tokenless-tui = { path = "../tokenless-tui" }
+tokenless-tui = { path = "../tokenless-tui", version = "0.3.1" }
 
 [lints]
 workspace = true
