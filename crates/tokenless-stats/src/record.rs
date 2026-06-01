@@ -223,26 +223,32 @@ impl StatsRecord {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "Test code uses unwrap/expect/panic idiomatically for assertion on failure"
+)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_operation_type_from_str() {
         assert_eq!(
-            OperationType::from_str("compress-schema").unwrap(),
-            OperationType::CompressSchema
+            OperationType::from_str("compress-schema"),
+            Ok(OperationType::CompressSchema)
         );
         assert_eq!(
-            OperationType::from_str("compress-response").unwrap(),
-            OperationType::CompressResponse
+            OperationType::from_str("compress-response"),
+            Ok(OperationType::CompressResponse)
         );
         assert_eq!(
-            OperationType::from_str("rewrite-command").unwrap(),
-            OperationType::RewriteCommand
+            OperationType::from_str("rewrite-command"),
+            Ok(OperationType::RewriteCommand)
         );
         assert_eq!(
-            OperationType::from_str("compress-toon").unwrap(),
-            OperationType::CompressToon
+            OperationType::from_str("compress-toon"),
+            Ok(OperationType::CompressToon)
         );
         assert!(OperationType::from_str("unknown").is_err());
     }

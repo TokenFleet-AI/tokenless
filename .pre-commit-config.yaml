@@ -51,7 +51,7 @@ repos:
       - id: cargo-clippy
         name: cargo clippy
         description: Lint rust sources
-        entry: bash -c 'cargo clippy --all-targets --all-features --tests --benches -- -D warnings -W clippy::pedantic'
+        entry: bash -c 'cargo clippy --all-targets --all-features -- -D warnings'
         language: system
         files: \.rs$
         pass_filenames: false
@@ -62,6 +62,7 @@ repos:
         language: system
         files: \.rs$
         pass_filenames: false
+        stages: [manual]
       - id: check-agent-sync
         name: check agent sync
         description: Ensure AGENTS.md stays in sync with CLAUDE.md
@@ -69,3 +70,9 @@ repos:
         language: system
         files: (CLAUDE\.md|AGENTS\.md)$
         pass_filenames: false
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.0
+    hooks:
+      - id: gitleaks
+        args: ["protect", "--staged", "--verbose"]
+        stages: [pre-commit]

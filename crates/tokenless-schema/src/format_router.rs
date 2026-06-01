@@ -193,6 +193,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::unwrap_used,
+        reason = "test: unwrap on known-valid serialization"
+    )]
     fn test_compress_auto_integration() {
         let value = json!({
             "name": {"type": "string", "enum": ["admin", "user"]}

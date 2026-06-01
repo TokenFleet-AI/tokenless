@@ -1,6 +1,7 @@
 //! Determinism and idempotency tests for tokenless-schema compressors.
 //!
 //! Verifies that every compressor / encoder produces byte-identical output
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! across 100 invocations with the same input, and that `Value`-returning
 //! compressors are idempotent (i.e. `compress(compress(x)) == compress(x)`).
 

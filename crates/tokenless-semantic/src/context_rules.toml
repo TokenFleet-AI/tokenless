@@ -1,0 +1,57 @@
+# Default context rules for semantic-aware field compression.
+# Format:
+#   [category]           # category name (matched via keyword detection)
+#   keep = ["..."]       # glob patterns for fields to ALWAYS keep
+#   drop = ["..."]       # glob patterns for fields to ALWAYS drop
+#
+# Pattern syntax: `*` matches any sequence, `?` matches single char.
+# Categories are checked in order: drop rules first, then keep rules.
+# Unmatched fields receive default truncation.
+
+[weather]
+keep = [
+    "temp*", "humid*", "wind*", "forecast*", "condition*",
+    "pressure*", "visibility*", "uv*", "precipitation*", "sunrise*",
+    "sunset*", "feels_like*", "dew_point*",
+]
+drop = [
+    "station_id", "sensor_*", "calibration*", "maintenance_*",
+    "debug_*", "trace_*",
+]
+
+[devops]
+keep = [
+    "status*", "pod*", "node*", "deploy*", "error*",
+    "cpu*", "memory*", "replicas*", "ready*", "restart*",
+    "container*", "image*", "namespace*",
+]
+drop = [
+    "internal_*", "debug_*", "trace_*", "managed_fields*",
+    "uid", "self_link", "resource_version", "generation",
+    "owner_references*",
+]
+
+[database]
+keep = [
+    "query*", "table*", "row*", "index*", "latency*",
+    "schema*", "connection*", "result*", "column*",
+]
+drop = [
+    "internal_*", "debug_*",
+]
+
+[git]
+keep = [
+    "branch*", "status", "modified*", "staged*", "untracked*",
+    "ahead*", "behind*", "commit*", "message*", "diff*",
+    "file*", "path*",
+]
+drop = [
+    "author_*", "committer_*", "debug_*",
+]
+
+[default]
+drop = [
+    "debug", "trace", "traces", "stack", "stacktrace",
+    "logs", "logging",
+]

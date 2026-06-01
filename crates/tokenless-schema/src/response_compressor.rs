@@ -323,6 +323,11 @@ impl ResponseCompressor {
     }
 }
 
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests use unwrap/expect for clarity and panic-on-failure semantics"
+)]
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -727,7 +732,12 @@ mod tests {
         let result = compressor.compress(&obj);
         let r = result.as_object().unwrap();
         // stderr is preserved full
-        assert!(r["stderr"].as_str().unwrap().contains(".internal/models/user"));
+        assert!(
+            r["stderr"]
+                .as_str()
+                .unwrap()
+                .contains(".internal/models/user")
+        );
         // output array preserved full
         assert_eq!(r["output"].as_array().unwrap().len(), 5);
     }

@@ -14,8 +14,8 @@ chrono.workspace = true
 tracing.workspace = true
 
 # TUI
-ratatui = "0.30"
-crossterm = "0.29"
+ratatui.workspace = true
+crossterm.workspace = true
 
 # Internal
 tokenless-stats = { path = "../tokenless-stats", version = "0.3.1" }

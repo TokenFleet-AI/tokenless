@@ -55,7 +55,7 @@ const CLAUDE_HOOKS_JSON: &str = r#"{
         "hooks": [
           {
             "type": "command",
-            "command": "tokenless hook rewrite claude"
+            "command": "tokenless hook rewrite --target claude"
           }
         ]
       }
@@ -66,7 +66,7 @@ const CLAUDE_HOOKS_JSON: &str = r#"{
         "hooks": [
           {
             "type": "command",
-            "command": "tokenless hook compress"
+            "command": "tokenless hook compress --semantic"
           }
         ]
       }
@@ -87,7 +87,7 @@ const DEFAULT_HOOKS_JSON: &str = r#"{
         "hooks": [
           {
             "type": "command",
-            "command": "tokenless hook rewrite claude"
+            "command": "tokenless hook rewrite --target claude"
           }
         ]
       }
@@ -98,7 +98,7 @@ const DEFAULT_HOOKS_JSON: &str = r#"{
         "hooks": [
           {
             "type": "command",
-            "command": "tokenless hook compress"
+            "command": "tokenless hook compress --semantic"
           }
         ]
       }
@@ -111,7 +111,7 @@ const CURSOR_HOOKS_JSON: &str = r#"{
   "hooks": {
     "preToolUse": [
       {
-        "command": "tokenless hook rewrite cursor",
+        "command": "tokenless hook rewrite --target cursor",
         "matcher": "Shell"
       }
     ]
@@ -120,7 +120,7 @@ const CURSOR_HOOKS_JSON: &str = r#"{
 
 const GEMINI_HOOK_SCRIPT: &str = "#!/usr/bin/env bash
 # tokenless Gemini CLI BeforeTool hook
-exec tokenless hook rewrite gemini
+exec tokenless hook rewrite --target gemini
 ";
 
 const COPILOT_HOOK_JSON: &str = r#"{
@@ -128,7 +128,7 @@ const COPILOT_HOOK_JSON: &str = r#"{
     "PreToolUse": [
       {
         "type": "command",
-        "command": "tokenless hook rewrite copilot",
+        "command": "tokenless hook rewrite --target copilot",
         "cwd": ".",
         "timeout": 5
       }
@@ -497,7 +497,7 @@ mod tests {
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("PreToolUse"));
         assert!(content.contains("PostToolUse"));
-        assert!(content.contains("tokenless hook rewrite claude"));
+        assert!(content.contains("tokenless hook rewrite --target claude"));
         assert!(content.contains("RTK_SKIP_HOOK_CHECK"));
         std::fs::remove_file(&path).ok();
     }

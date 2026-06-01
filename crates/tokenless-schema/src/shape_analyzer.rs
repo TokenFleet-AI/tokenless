@@ -110,7 +110,8 @@ fn analyze_object(obj: &serde_json::Map<String, Value>, shape: &mut JsonShape, d
         if obj.contains_key("enum") {
             shape.has_enums = true;
         }
-        if obj.contains_key("minimum") || obj.contains_key("maximum") || obj.contains_key("pattern") {
+        if obj.contains_key("minimum") || obj.contains_key("maximum") || obj.contains_key("pattern")
+        {
             shape.has_constraints = true;
         }
     }
@@ -147,10 +148,12 @@ fn check_uniform_array(arr: &[Value]) -> bool {
         return false;
     }
 
-    let first_keys = arr[0].as_object().map(|o| {
-        let mut ks: Vec<_> = o.keys().collect();
-        ks.sort_unstable();
-        ks
+    let first_keys = arr.first().and_then(|v| {
+        v.as_object().map(|o| {
+            let mut ks: Vec<_> = o.keys().collect();
+            ks.sort_unstable();
+            ks
+        })
     });
 
     let Some(first_keys) = first_keys else {
@@ -158,7 +161,7 @@ fn check_uniform_array(arr: &[Value]) -> bool {
     };
 
     let limit = arr.len().min(100);
-    arr[1..limit].iter().all(|item| {
+    arr.get(1..limit).unwrap_or(&[]).iter().all(|item| {
         item.as_object()
             .is_some_and(|o| key_set_matches(o, &first_keys))
     })
@@ -171,6 +174,11 @@ fn key_set_matches(obj: &serde_json::Map<String, Value>, expected_keys: &[&Strin
     ks == expected_keys
 }
 
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests use unwrap/expect for clarity and panic-on-failure semantics"
+)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,7 +267,10 @@ mod tests {
             "role": {"type": "string", "enum": ["admin", "user"]}
         });
         let shape = analyze(&value, "");
-        assert!(shape.has_enums, "actual schema with enum should be detected");
+        assert!(
+            shape.has_enums,
+            "actual schema with enum should be detected"
+        );
     }
 
     #[test]

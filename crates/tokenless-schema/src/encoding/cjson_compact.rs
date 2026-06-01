@@ -21,6 +21,10 @@ use serde_json::Value;
 ///
 /// A safe bare word starts with a letter or underscore, followed by
 /// alphanumeric characters or underscores.
+#[allow(
+    clippy::indexing_slicing,
+    reason = "bounds: s.is_empty() check above ensures bytes[0] exists"
+)]
 fn is_safe_bare_word(s: &str) -> bool {
     if s.is_empty() {
         return false;

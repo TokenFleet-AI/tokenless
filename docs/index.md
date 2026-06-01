@@ -4,6 +4,9 @@ This directory contains reusable project documentation for the template reposito
 
 ## Tokenless 文档
 
+- [SDK 集成指南 (英文)](./sdk-integration.md) — 第三方 Rust 库集成文档
+- [SDK 集成指南 (中文)](./sdk-integration-zh.md) — 中文版 SDK 集成文档
+
 - [用户指南与教程](./user-guide.md) — 全面的使用教程、设计说明和 API 参考
 
 - [Tokenless 架构设计 (中文)](./design/tokenless-architecture-zh.md) — 中文版架构设计文档
@@ -64,4 +67,8 @@ This directory contains reusable project documentation for the template reposito
 - [多维度分析报告](./analysis/multi-dimensional-analysis.md) — 架构、文档、安全、性能四维度综合评估
 - [性能基准报告](./performance-benchmarks.md) — 实际压缩效果与构建指标
 
-Owner: baoyx · 版本：v1.1 · 生效日期：2026-05-29 · 最后更新：2026-05-29
+## 研究分析
+
+- [模板迁移分析](./research/template-migration-analysis.md) — rust-tui-template 模板替换评估（RuFlo 6 Agent Swarm 联合审计）
+
+Owner: baoyx · 版本：v1.2 · 生效日期：2026-06-01 · 最后更新：2026-06-01

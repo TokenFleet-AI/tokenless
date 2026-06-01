@@ -1,5 +1,5 @@
 [files]
-extend-exclude = ["CHANGELOG.md", "vendors/"]
+extend-exclude = ["CHANGELOG.md", "vendors/", "crates/tokenless-semantic/models/"]
 
 [default.extend-words]
 caf = "caf"  # truncated form of "café" in test assertion

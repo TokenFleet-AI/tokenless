@@ -119,7 +119,9 @@ fn test_large_string_array_truncation() {
     let compressor = ResponseCompressor::new().with_truncate_arrays_at(16);
     let result = compressor.compress(&input);
 
-    let items = result["items"].as_array().expect("items should be an array");
+    let items = result["items"]
+        .as_array()
+        .expect("items should be an array");
     assert!(
         items.len() <= 17, // 16 items + 1 marker
         "truncated array should have <= 17 elements"

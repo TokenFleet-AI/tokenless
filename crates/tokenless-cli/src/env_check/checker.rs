@@ -146,7 +146,7 @@ pub(crate) fn check_dep(dep: &DepEntry) -> DepStatus {
 
 pub(crate) fn check_config_file(path: &str) -> bool {
     let expanded = if path == "~" || path.starts_with("~/") {
-        let home = crate::get_home_dir();
+        let home = crate::shared::get_home_dir();
         path.replacen('~', &home, 1)
     } else {
         path.to_string()

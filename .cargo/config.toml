@@ -1,0 +1,24 @@
+# Cargo configuration for tokenless
+#
+# Linker hardening flags for security:
+# - Linux: RELRO (Read-Only Relocations) + BIND_NOW (immediate binding)
+# - macOS: dead_strip (remove unreachable code)
+# - Windows: DYNAMICBASE (ASLR), NXCOMPAT (DEP), HIGHENTROPYVA (64-bit ASLR entropy)
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-args=-Wl,-z,relro,-z,now"]
+
+[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "link-args=-Wl,-z,relro,-z,now"]
+
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "link-args=-Wl,-dead_strip"]
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-args=-Wl,-dead_strip"]
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-args=/DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA"]
+
+[alias]
+check-all = "check --workspace --all-targets --all-features"

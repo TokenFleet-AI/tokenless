@@ -257,7 +257,7 @@ pub(crate) fn load_spec(spec_path: &PathBuf) -> Result<HashMap<String, ToolDepSp
 }
 
 pub(crate) fn find_spec_path() -> Result<PathBuf, String> {
-    let home = crate::get_home_dir();
+    let home = crate::shared::get_home_dir();
     let cwd = std::env::current_dir().ok();
     let candidates = [
         std::env::var("TOKENLESS_TOOL_READY_SPEC")

@@ -3,6 +3,13 @@
 //! Uses the [`insta`] crate to capture and review compression output.
 //! Each test reads a JSON fixture from `tests/fixtures/`, runs the
 //! appropriate compressor, and asserts the result against a stored
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::missing_panics_doc,
+    clippy::disallowed_methods
+)]
 //! snapshot file.  When fixtures or compressor logic change the
 //! snapshots can be reviewed with `cargo insta review`.
 

@@ -5,7 +5,7 @@
 //! The [`format_router`] module intelligently selects the optimal encoding
 //! strategy based on JSON structural shape.
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![forbid(unsafe_code)]
 
 /// JSON response compression — removes debug fields, truncates strings / arrays.
 pub mod response_compressor;

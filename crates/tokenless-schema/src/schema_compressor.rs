@@ -1,15 +1,14 @@
+#![allow(clippy::expect_used, reason = "static regex with known-valid literals")]
+
 use std::sync::LazyLock;
 
 use regex::Regex;
 use serde_json::Value;
 
-#[allow(clippy::expect_used)]
 static CODE_BLOCK_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"```[\s\S]*?```").expect("valid regex"));
-#[allow(clippy::expect_used)]
 static INLINE_CODE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"`[^`]+`").expect("valid regex"));
-#[allow(clippy::expect_used)]
 static WHITESPACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").expect("valid regex"));
 
 fn find_char_boundary(s: &str, pos: usize) -> usize {
@@ -171,7 +170,10 @@ impl SchemaCompressor {
             "/$defs",
             "/definitions",
         ] {
-            #[allow(clippy::collapsible_if)]
+            #[allow(
+                clippy::collapsible_if,
+                reason = "nested if improves readability for path traversal"
+            )]
             if let Some(defs) = result.pointer_mut(defs_path) {
                 if let Some(defs_obj) = defs.as_object_mut() {
                     for (_key, def_schema) in defs_obj.iter_mut() {
@@ -189,7 +191,10 @@ impl SchemaCompressor {
                     self.func_desc_max_tokens,
                 ));
             }
-            #[allow(clippy::collapsible_if)]
+            #[allow(
+                clippy::collapsible_if,
+                reason = "nested if improves readability for path traversal"
+            )]
             if self.drop_titles {
                 if let Some(obj) = function.as_object_mut() {
                     obj.remove("title");
@@ -199,14 +204,18 @@ impl SchemaCompressor {
                 self.compress_json_schema(params, 1);
             }
         } else {
-            if let Some(desc) = result.get("description").and_then(|d| d.as_str()) {
-                result["description"] = Value::String(self.truncate_description(
-                    desc,
-                    self.func_desc_max_len,
-                    self.func_desc_max_tokens,
-                ));
+            if let Some(desc_val) = result.get_mut("description") {
+                let truncated = desc_val.as_str().map(|d| {
+                    self.truncate_description(d, self.func_desc_max_len, self.func_desc_max_tokens)
+                });
+                if let Some(truncated) = truncated {
+                    *desc_val = Value::String(truncated);
+                }
             }
-            #[allow(clippy::collapsible_if)]
+            #[allow(
+                clippy::collapsible_if,
+                reason = "nested if improves readability for path traversal"
+            )]
             if self.drop_titles {
                 if let Some(obj) = result.as_object_mut() {
                     obj.remove("title");
@@ -274,7 +283,10 @@ impl SchemaCompressor {
                 Value::String(self.truncate_description(&desc, max_len, token_max)),
             );
         }
-        #[allow(clippy::collapsible_if)]
+        #[allow(
+            clippy::collapsible_if,
+            reason = "nested if improves readability for path traversal"
+        )]
         if self.max_enum_items != usize::MAX {
             if let Some(enum_arr) = obj.get_mut("enum").and_then(|v| v.as_array_mut()) {
                 let original_len = enum_arr.len();
@@ -299,7 +311,10 @@ impl SchemaCompressor {
                 }
             }
         }
-        #[allow(clippy::collapsible_if)]
+        #[allow(
+            clippy::collapsible_if,
+            reason = "nested if improves readability for path traversal"
+        )]
         if let Some(properties) = obj.get_mut("properties") {
             if let Some(props_obj) = properties.as_object_mut() {
                 for (_key, prop_schema) in props_obj.iter_mut() {
@@ -310,7 +325,10 @@ impl SchemaCompressor {
         if let Some(items) = obj.get_mut("items") {
             self.compress_json_schema(items, depth + 1);
         }
-        #[allow(clippy::collapsible_if)]
+        #[allow(
+            clippy::collapsible_if,
+            reason = "nested if improves readability for path traversal"
+        )]
         if let Some(any_of) = obj.get_mut("anyOf") {
             if let Some(arr) = any_of.as_array_mut() {
                 for item in arr.iter_mut() {
@@ -318,7 +336,10 @@ impl SchemaCompressor {
                 }
             }
         }
-        #[allow(clippy::collapsible_if)]
+        #[allow(
+            clippy::collapsible_if,
+            reason = "nested if improves readability for path traversal"
+        )]
         if let Some(one_of) = obj.get_mut("oneOf") {
             if let Some(arr) = one_of.as_array_mut() {
                 for item in arr.iter_mut() {
@@ -326,7 +347,10 @@ impl SchemaCompressor {
                 }
             }
         }
-        #[allow(clippy::collapsible_if)]
+        #[allow(
+            clippy::collapsible_if,
+            reason = "nested if improves readability for path traversal"
+        )]
         if let Some(all_of) = obj.get_mut("allOf") {
             if let Some(arr) = all_of.as_array_mut() {
                 for item in arr.iter_mut() {
@@ -335,13 +359,19 @@ impl SchemaCompressor {
             }
         }
         // P3: additional recursion targets
-        #[allow(clippy::collapsible_if)]
+        #[allow(
+            clippy::collapsible_if,
+            reason = "nested if improves readability for path traversal"
+        )]
         if let Some(additional) = obj.get_mut("additionalProperties") {
             if additional.is_object() {
                 self.compress_json_schema(additional, depth + 1);
             }
         }
-        #[allow(clippy::collapsible_if)]
+        #[allow(
+            clippy::collapsible_if,
+            reason = "nested if improves readability for path traversal"
+        )]
         if let Some(pattern_props) = obj.get_mut("patternProperties") {
             if let Some(props_obj) = pattern_props.as_object_mut() {
                 for (_pattern, prop_schema) in props_obj.iter_mut() {
@@ -349,7 +379,10 @@ impl SchemaCompressor {
                 }
             }
         }
-        #[allow(clippy::collapsible_if)]
+        #[allow(
+            clippy::collapsible_if,
+            reason = "nested if improves readability for path traversal"
+        )]
         if let Some(nested_defs) = obj.get_mut("$defs") {
             if let Some(defs_obj) = nested_defs.as_object_mut() {
                 for (_key, def_schema) in defs_obj.iter_mut() {
@@ -357,7 +390,10 @@ impl SchemaCompressor {
                 }
             }
         }
-        #[allow(clippy::collapsible_if)]
+        #[allow(
+            clippy::collapsible_if,
+            reason = "nested if improves readability for path traversal"
+        )]
         if let Some(nested_defs) = obj.get_mut("definitions") {
             if let Some(defs_obj) = nested_defs.as_object_mut() {
                 for (_key, def_schema) in defs_obj.iter_mut() {
@@ -459,6 +495,11 @@ impl SchemaCompressor {
     }
 }
 
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests use unwrap/expect for clarity and panic-on-failure semantics"
+)]
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -926,8 +967,8 @@ mod tests {
             }
         });
         let result = compressor.compress(&schema);
-        let color = &result["function"]["parameters"]["properties"]["level1"]
-            ["properties"]["level2"]["properties"]["color"];
+        let color = &result["function"]["parameters"]["properties"]["level1"]["properties"]["level2"]
+            ["properties"]["color"];
         let arr = color["enum"].as_array().unwrap();
         assert_eq!(arr.len(), 5, "5 values only, no sentinel in array");
         // Verify extension field

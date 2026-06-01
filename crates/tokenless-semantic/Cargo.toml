@@ -1,0 +1,27 @@
+[package]
+name = "tokenless-semantic"
+description = "Semantic-aware field compression: context-driven keep/drop decisions for JSON responses"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+toml = "0.8"
+
+# Level 2: ONNX embedding model (opt-in via feature flag)
+dirs = { workspace = true, optional = true }
+ort = { version = "2.0.0-rc.12", optional = true }
+tokenizers = { version = "0.21", optional = true }
+ureq = { version = "3", optional = true }
+
+[features]
+default = []
+onnx = ["ureq", "dirs", "ort", "tokenizers"]
+
+[lints]
+workspace = true

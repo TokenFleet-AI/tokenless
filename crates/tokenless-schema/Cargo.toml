@@ -12,11 +12,11 @@ categories = ["development-tools", "compression"]
 
 [dependencies]
 serde_json.workspace = true
-regex = "1.10"
+regex.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-insta = { version = "1", features = ["json"] }
+insta.workspace = true
 
 [lints]
 workspace = true

@@ -18,10 +18,21 @@ audit:
 
 lint: fmt clippy audit
 
-install: build
+install: build models-install
 	@mkdir -p $(BIN_DIR)
 	@cp target/release/tokenless $(BIN_DIR)/tokenless
 	@echo "Installed tokenless to $(BIN_DIR)/tokenless"
+
+models-install:
+	@MODEL_DIR="$${HOME}/.tokenless/models"; \
+	SRC="crates/tokenless-semantic/models"; \
+	if [ -f "$${SRC}/all-MiniLM-L6-v2.onnx" ] && [ -f "$${SRC}/tokenizer.json" ]; then \
+		mkdir -p "$${MODEL_DIR}"; \
+		cp "$${SRC}/all-MiniLM-L6-v2.onnx" "$${MODEL_DIR}/"; \
+		cp "$${SRC}/tokenizer.json" "$${MODEL_DIR}/"; \
+		echo "Installed ONNX models to $${MODEL_DIR}"; \
+	fi
+
 
 adapter-install:
 	@mkdir -p $(ADAPTER_DIR)/common

@@ -542,6 +542,12 @@ pub struct AgentSummaryRow {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "Test code uses unwrap/expect/panic idiomatically for assertion on failure"
+)]
 mod tests {
     use super::*;
 
@@ -746,13 +752,13 @@ mod tests {
         // Try again (simulates duplicate column name on second migration)
         let result = conn.execute("ALTER TABLE stats ADD COLUMN before_output TEXT", []);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("duplicate column name"),
-            "expected 'duplicate column name' error on re-add"
-        );
+        match result {
+            Err(e) => assert!(
+                e.to_string().contains("duplicate column name"),
+                "expected 'duplicate column name' error on re-add"
+            ),
+            Ok(_) => panic!("expected error on re-add, got Ok"),
+        }
     }
 
     #[test]
@@ -778,7 +784,10 @@ mod tests {
         let id = recorder.record(&record).unwrap();
         assert!(id > 0);
 
-        let fetched = recorder.record_by_id(id).unwrap().unwrap();
+        let fetched = recorder
+            .record_by_id(id)
+            .expect("record_by_id query should succeed")
+            .expect("record should exist in database");
         assert_eq!(fetched.before_text.as_deref(), Some("before"));
         assert_eq!(fetched.after_text.as_deref(), Some("after"));
         assert_eq!(fetched.before_output.as_deref(), Some("output_before"));

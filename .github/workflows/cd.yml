@@ -12,4 +12,5 @@ jobs:
     uses: ./.github/workflows/release.yml
     with:
       tag: ${{ github.ref_name }}
-    secrets: inherit
+    secrets:
+      CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}

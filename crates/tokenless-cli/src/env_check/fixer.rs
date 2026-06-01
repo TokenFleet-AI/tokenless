@@ -127,7 +127,7 @@ pub(crate) fn build_json_result(
 }
 
 pub(crate) fn auto_fix(missing_deps: &[DepEntry]) -> Result<String, String> {
-    let home = crate::get_home_dir();
+    let home = crate::shared::get_home_dir();
     let cwd = std::env::current_dir().ok();
     let fix_script_candidates = [
         std::env::var("TOKENLESS_ENV_FIX_SCRIPT").ok(),

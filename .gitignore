@@ -9,3 +9,24 @@
 ruvector.db
 .codegraph/
 .idea
+
+# Environment & Secrets
+.env
+.env.*
+.env.local
+
+# Keys & Certificates
+*.pem
+*.key
+*.p12
+*.cer
+*.pfx
+
+# SSH
+.ssh/
+
+# Cloud credentials
+secrets/
+credentials/
+.aws/
+.gcloud/

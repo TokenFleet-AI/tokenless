@@ -190,7 +190,11 @@ pub(crate) fn is_schema_object(obj: &serde_json::Map<String, Value>) -> bool {
     // This is more permissive because JSON Schema allows `{"enum": [...]}`
     // without a `type` field, but we guard against false positives by
     // requiring every key to be a recognized schema keyword.
-    if obj.contains_key("enum") && obj.keys().all(|k| SCHEMA_TYPICAL_KEYS.contains(&k.as_str())) {
+    if obj.contains_key("enum")
+        && obj
+            .keys()
+            .all(|k| SCHEMA_TYPICAL_KEYS.contains(&k.as_str()))
+    {
         return true;
     }
 
@@ -428,7 +432,10 @@ mod tests {
 
     /// Helper: build a `serde_json::Map` from key-value pairs.
     fn make_map(pairs: &[(&str, Value)]) -> serde_json::Map<String, Value> {
-        pairs.iter().map(|(k, v)| ((*k).to_string(), v.clone())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), v.clone()))
+            .collect()
     }
 
     #[test]

@@ -72,7 +72,7 @@ fn error_response(id: Option<Value>, code: i32, message: &str) -> McpResponse {
 
 /// Look up the stats database path from env or default.
 fn get_db_path() -> String {
-    let home = crate::get_home_dir();
+    let home = crate::shared::get_home_dir();
     std::env::var("TOKENLESS_STATS_DB").unwrap_or_else(|_| format!("{home}/.tokenless/stats.db"))
 }
 

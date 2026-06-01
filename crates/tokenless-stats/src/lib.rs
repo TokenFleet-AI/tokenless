@@ -3,21 +3,20 @@
 //! Tracks compression metrics (characters, tokens, text content)
 //! for schema compression, response compression, and command rewriting.
 
+#![forbid(unsafe_code)]
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_precision_loss,
     clippy::collapsible_if,
     clippy::doc_markdown,
-    clippy::expect_used,
     clippy::format_push_string,
     clippy::items_after_statements,
     clippy::map_unwrap_or,
     clippy::redundant_closure_for_method_calls,
     clippy::result_map_or_into_option,
     clippy::similar_names,
-    clippy::single_match_else,
-    clippy::unwrap_used
+    clippy::single_match_else
 )]
 
 pub mod config;

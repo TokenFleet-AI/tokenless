@@ -35,7 +35,9 @@ pub fn encode(value: &Value) -> String {
                 return fallback_encode(value);
             };
 
-            let is_uniform = arr[1..arr.len().min(100)]
+            let is_uniform = arr
+                .get(1..arr.len().min(100))
+                .unwrap_or(&[])
                 .iter()
                 .all(|item| extract_keys(item).is_some_and(|ks| ks == first_keys));
 

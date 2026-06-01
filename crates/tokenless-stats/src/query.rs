@@ -324,9 +324,9 @@ pub fn parse_time_range(input: &str) -> Option<String> {
             if parts.len() != 3 {
                 return None;
             }
-            let y: i32 = parts[0].parse().ok()?;
-            let m: u32 = parts[1].parse().ok()?;
-            let d: u32 = parts[2].parse().ok()?;
+            let y: i32 = parts.first()?.parse().ok()?;
+            let m: u32 = parts.get(1)?.parse().ok()?;
+            let d: u32 = parts.get(2)?.parse().ok()?;
             let start = Local.with_ymd_and_hms(y, m, d, 0, 0, 0).single()?;
             Some(start.to_rfc3339())
         }
