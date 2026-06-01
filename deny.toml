@@ -180,13 +180,6 @@ deny = [
   { crate = "openssl-sys", reason = "Prefer rustls for TLS — avoid OpenSSL CVE surface" },
 ]
 
-# List of features to allow/deny
-# Each entry the name of a crate and a version range. If version is
-# not specified, all versions will be matched.
-[[bans.features]]
-crate = "reqwest"
-deny = ["native-tls", "native-tls-alpn", "native-tls-vendored"]
-
 # Certain crates/versions that will be skipped when doing duplicate detection.
 skip = [
   #"ansi_term@0.11.0",
@@ -200,6 +193,13 @@ skip-tree = [
   #"ansi_term@0.11.0", # will be skipped along with _all_ of its direct and transitive dependencies
   #{ crate = "ansi_term@0.11.0", depth = 20 },
 ]
+
+# List of features to allow/deny
+# Each entry the name of a crate and a version range. If version is
+# not specified, all versions will be matched.
+[[bans.features]]
+crate = "reqwest"
+deny = ["native-tls", "native-tls-alpn", "native-tls-vendored"]
 
 # This section is considered when running `cargo deny check sources`.
 # More documentation about the 'sources' section can be found here:
