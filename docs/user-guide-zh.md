@@ -136,6 +136,14 @@ make setup
 
 安装到 `~/.local/bin/tokenless`，adapter 文件到 `~/.local/share/anolisa/adapters/tokenless/`。
 
+**开发模式**（安装到 `~/.cargo/bin/`）：
+
+```bash
+./dev-install.sh
+```
+
+功能等同于 `make install`，但将二进制文件安装到 `~/.cargo/bin/`，方便本地开发使用。
+
 ### 前提条件
 
 - Rust >= 1.85

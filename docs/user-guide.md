@@ -143,6 +143,14 @@ make adapter-install   # Install adapter files
 
 Installs binary to `~/.local/bin/tokenless`, adapter files to `~/.local/share/anolisa/adapters/tokenless/`.
 
+**Development mode** (installs to `~/.cargo/bin/`):
+
+```bash
+./dev-install.sh
+```
+
+This is equivalent to `make install` but places the binary in `~/.cargo/bin/` for local development convenience.
+
 ### Prerequisites
 
 - Rust >= 1.85 (build from source / cargo install)
