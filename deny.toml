@@ -174,6 +174,12 @@ external-default-features = "allow"
 allow = [
   #"ansi_term@0.11.0",
   #{ crate = "ansi_term@0.11.0", reason = "you can specify a reason it is allowed" },
+  # Workspace-internal path dependencies
+  { crate = "tokenless-schema", reason = "workspace crate, version pinned by Cargo.toml" },
+  { crate = "tokenless-stats", reason = "workspace crate" },
+  { crate = "tokenless-tui", reason = "workspace crate" },
+  { crate = "tokenless-core", reason = "workspace crate" },
+  { crate = "tokenless-semantic", reason = "workspace crate" },
 ]
 # List of crates to deny
 deny = [
