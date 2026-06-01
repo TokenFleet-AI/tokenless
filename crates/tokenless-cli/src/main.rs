@@ -66,9 +66,6 @@ fn rtk_available() -> bool {
     *RTK_OK.get_or_init(|| matches!(is_rtk_installed(), RtkInstallStatus::Installed { .. }))
 }
 
-/// Prefix to suppress RTK's "No hook installed" startup warning.
-const RTK_ENV_PREFIX: &str = "RTK_SKIP_HOOK_CHECK=1 ";
-
 #[derive(Parser)]
 #[command(
     name = "tokenless",
@@ -792,7 +789,7 @@ fn run() -> Result<(), (String, i32)> {
                         cmd,
                         rewritten.clone(),
                     );
-                    println!("{RTK_ENV_PREFIX}{rewritten}");
+                    println!("{rewritten}");
                 }
                 None => {
                     eprintln!("[tokenless] No rewrite available — passing through original.");
@@ -823,14 +820,13 @@ fn run() -> Result<(), (String, i32)> {
                                 cmd.to_string(),
                                 rewritten.clone(),
                             );
-                            let prefixed = format!("{RTK_ENV_PREFIX}{rewritten}");
                             let response = serde_json::json!({
                                 "hookSpecificOutput": {
                                     "hookEventName": "PreToolUse",
                                     "permissionDecision": "allow",
                                     "permissionDecisionReason": "tokenless auto-rewrite",
                                     "updatedInput": {
-                                        "command": prefixed
+                                        "command": rewritten
                                     }
                                 }
                             });
@@ -862,12 +858,11 @@ fn run() -> Result<(), (String, i32)> {
                                 cmd.to_string(),
                                 rewritten.clone(),
                             );
-                            let prefixed = format!("{RTK_ENV_PREFIX}{rewritten}");
                             let response = serde_json::json!({
                                 "continue": true,
                                 "permission": "allow",
                                 "updated_input": {
-                                    "command": prefixed
+                                    "command": rewritten
                                 }
                             });
                             println!("{}", serde_json::to_string(&response).unwrap_or_default());
@@ -897,12 +892,11 @@ fn run() -> Result<(), (String, i32)> {
                                 cmd.to_string(),
                                 rewritten.clone(),
                             );
-                            let prefixed = format!("{RTK_ENV_PREFIX}{rewritten}");
                             let response = serde_json::json!({
                                 "decision": "allow",
                                 "hookSpecificOutput": {
                                     "tool_input": {
-                                        "command": prefixed
+                                        "command": rewritten
                                     }
                                 }
                             });
@@ -938,13 +932,12 @@ fn run() -> Result<(), (String, i32)> {
                                     cmd.to_string(),
                                     rewritten.clone(),
                                 );
-                                let prefixed = format!("{RTK_ENV_PREFIX}{rewritten}");
                                 println!(
                                     "{}",
                                     serde_json::to_string(&serde_json::json!({
                                         "permissionDecision": "deny",
                                         "permissionDecisionReason": format!(
-                                            "Token savings: use `{prefixed}` instead (rtk saves 60-90% tokens)"
+                                            "Token savings: use `{rewritten}` instead (rtk saves 60-90% tokens)"
                                         )
                                     }))
                                     .unwrap_or_default()
@@ -970,14 +963,13 @@ fn run() -> Result<(), (String, i32)> {
                                     cmd.to_string(),
                                     rewritten.clone(),
                                 );
-                                let prefixed = format!("{RTK_ENV_PREFIX}{rewritten}");
                                 let response = serde_json::json!({
                                     "hookSpecificOutput": {
                                         "hookEventName": "PreToolUse",
                                         "permissionDecision": "allow",
                                         "permissionDecisionReason": "tokenless auto-rewrite",
                                         "updatedInput": {
-                                            "command": prefixed
+                                            "command": rewritten
                                         }
                                     }
                                 });

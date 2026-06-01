@@ -45,6 +45,9 @@ pub enum Agent {
 }
 
 const CLAUDE_HOOKS_JSON: &str = r#"{
+  "env": {
+    "RTK_SKIP_HOOK_CHECK": "1"
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -74,6 +77,9 @@ const CLAUDE_HOOKS_JSON: &str = r#"{
 #[cfg(test)]
 /// Default hooks JSON for tests only.
 const DEFAULT_HOOKS_JSON: &str = r#"{
+  "env": {
+    "RTK_SKIP_HOOK_CHECK": "1"
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -229,6 +235,18 @@ fn merge_into_settings(settings_path: &Path, hooks_json: &str) -> Result<(), Str
         if let Some(obj) = existing_val.as_object_mut() {
             if let Some(new_hooks) = new_val.get("hooks") {
                 obj.insert("hooks".to_string(), new_hooks.clone());
+            }
+            // Merge the env block so RTK_SKIP_HOOK_CHECK is set without polluting the LLM context.
+            if let Some(new_env) = new_val.get("env") {
+                let existing_env = obj
+                    .entry("env".to_string())
+                    .or_insert_with(|| serde_json::json!({}));
+                if let (Some(dst), Some(src)) = (existing_env.as_object_mut(), new_env.as_object())
+                {
+                    for (k, v) in src {
+                        dst.insert(k.clone(), v.clone());
+                    }
+                }
             }
         }
         serde_json::to_string_pretty(&existing_val)
@@ -480,6 +498,7 @@ mod tests {
         assert!(content.contains("PreToolUse"));
         assert!(content.contains("PostToolUse"));
         assert!(content.contains("tokenless hook rewrite claude"));
+        assert!(content.contains("RTK_SKIP_HOOK_CHECK"));
         std::fs::remove_file(&path).ok();
     }
 
@@ -492,6 +511,7 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&content).unwrap();
         assert!(v.get("hooks").is_some());
         assert_eq!(v["env"]["KEY"], "val");
+        assert_eq!(v["env"]["RTK_SKIP_HOOK_CHECK"], "1");
         std::fs::remove_file(&path).ok();
     }
 }
