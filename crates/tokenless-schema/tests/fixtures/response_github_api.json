@@ -1,0 +1,35 @@
+{
+  "data": {
+    "repository": {
+      "name": "tokenless",
+      "description": "A high-performance token optimizer CLI built with Rust that provides 60-90% token savings on LLM API calls by intelligently compressing schemas, responses, and managing context windows for OpenAI and Anthropic function calling workloads.",
+      "url": "https://github.com/TokenFleet-AI/tokenless",
+      "stargazerCount": 128,
+      "forkCount": 34,
+      "issues": {
+        "totalCount": 12
+      }
+    }
+  },
+  "debug": {
+    "request_id": "abc-123-def-456",
+    "query_complexity": 42,
+    "cache_hit": false
+  },
+  "traces": [
+    {
+      "step": "parse_query",
+      "duration_ms": 1.2
+    },
+    {
+      "step": "resolve_repository",
+      "duration_ms": 45.8
+    },
+    {
+      "step": "check_permissions",
+      "duration_ms": 3.1
+    }
+  ],
+  "stack": "at processRequest (/app/src/handler.ts:42:10)\nat handleGraphQL (/app/src/graphql.ts:128:5)",
+  "errors": []
+}

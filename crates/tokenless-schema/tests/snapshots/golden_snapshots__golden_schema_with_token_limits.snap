@@ -1,0 +1,43 @@
+---
+source: crates/tokenless-schema/tests/golden_snapshots.rs
+expression: result
+---
+{
+  "function": {
+    "description": "Retrieves current weather conditions and forecast data for a given location. Thi",
+    "name": "get_weather",
+    "parameters": {
+      "properties": {
+        "forecast_days": {
+          "description": "Number of days to include in the forecas",
+          "maximum": 14,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "include_hourly": {
+          "default": false,
+          "description": "Whether to include hour-by-hour weather",
+          "type": "boolean"
+        },
+        "location": {
+          "description": "The city name, ZIP code, or geographic c",
+          "type": "string"
+        },
+        "units": {
+          "description": "The temperature unit system to use for t",
+          "enum": [
+            "celsius",
+            "fahrenheit",
+            "kelvin"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "location"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "function"
+}

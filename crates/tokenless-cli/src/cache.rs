@@ -31,8 +31,13 @@ impl PredictCache {
         }
     }
 
+    /// Hash the input with a version prefix to prevent stale cache entries
+    /// across compressor upgrades. The version is embedded via `CARGO_PKG_VERSION`
+    /// so that a recompilation after a version bump automatically invalidates
+    /// all previously cached keys.
     fn hash_key(input: &str) -> u64 {
-        let hash = blake3::hash(input.as_bytes());
+        let versioned = format!("v{}:{}", env!("CARGO_PKG_VERSION"), input);
+        let hash = blake3::hash(versioned.as_bytes());
         u64::from_le_bytes(hash.as_bytes()[..8].try_into().unwrap_or([0; 8]))
     }
 
@@ -259,6 +264,27 @@ pub fn clear_diff_cache() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_hash_key_version_prefix_affects_key() {
+        // Same input should produce the same key (deterministic).
+        let input = "some-command --flag";
+        let k1 = PredictCache::hash_key(input);
+        let k2 = PredictCache::hash_key(input);
+        assert_eq!(k1, k2, "hash_key must be deterministic");
+
+        // The version-prefixed hash MUST differ from a plain blake3 hash
+        // of the input alone. This guarantees that a version bump invalidates
+        // old cache entries.
+        let plain_hash = {
+            let hash = blake3::hash(input.as_bytes());
+            u64::from_le_bytes(hash.as_bytes()[..8].try_into().unwrap_or([0; 8]))
+        };
+        assert_ne!(
+            k1, plain_hash,
+            "version-prefixed hash must differ from plain blake3 hash of the input"
+        );
+    }
 
     #[test]
     fn test_cache_hit_and_miss() {

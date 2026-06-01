@@ -1,0 +1,8 @@
+---
+source: crates/tokenless-schema/tests/golden_snapshots.rs
+expression: "router_snapshot(&strategy, &output)"
+---
+{
+  "output": "items[7]{age,city,name,role}:\n  30,\\New York,Alice,Engineer\n  25,\\San Francisco,Bob,Designer\n  35,Chicago,Charlie,Manager\n  28,\\Los Angeles,Diana,Engineer\n  32,Seattle,Eve,Researcher\n  40,Boston,Frank,Director\n  27,Austin,Grace,Developer",
+  "strategy": "toon-hrv"
+}

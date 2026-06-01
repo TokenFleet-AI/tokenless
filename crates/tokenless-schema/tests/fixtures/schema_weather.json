@@ -1,0 +1,40 @@
+{
+  "type": "function",
+  "function": {
+    "name": "get_weather",
+    "title": "Weather Forecast Function",
+    "description": "Retrieves current weather conditions and forecast data for a given location. This function supports city names, ZIP codes, and geographic coordinates. It returns temperature, humidity, wind speed, precipitation probability, and a multi-day forecast summary with detailed daily breakdowns including high/low temperatures and conditions.",
+    "parameters": {
+      "type": "object",
+      "title": "Weather Parameters",
+      "required": ["location"],
+      "properties": {
+        "location": {
+          "type": "string",
+          "title": "Location Name",
+          "description": "The city name, ZIP code, or geographic coordinates for which to retrieve weather data. Examples include 'San Francisco, CA', '94105', or '37.7749,-122.4194'.",
+          "examples": ["New York, NY", "90210"]
+        },
+        "units": {
+          "type": "string",
+          "title": "Temperature Units",
+          "enum": ["celsius", "fahrenheit", "kelvin"],
+          "description": "The temperature unit system to use for the returned weather data. Celsius is the default for most international locations, while Fahrenheit is common in the United States."
+        },
+        "forecast_days": {
+          "type": "integer",
+          "title": "Forecast Days",
+          "minimum": 1,
+          "maximum": 14,
+          "description": "Number of days to include in the forecast, ranging from 1 to 14 days ahead. Defaults to 1 when not specified."
+        },
+        "include_hourly": {
+          "type": "boolean",
+          "title": "Include Hourly Breakdown",
+          "description": "Whether to include hour-by-hour weather data in the response for each forecast day. Enabling this flag significantly increases response size.",
+          "default": false
+        }
+      }
+    }
+  }
+}

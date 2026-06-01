@@ -1,0 +1,9 @@
+[
+  {"name": "Alice", "age": 30, "city": "New York", "role": "Engineer"},
+  {"name": "Bob", "age": 25, "city": "San Francisco", "role": "Designer"},
+  {"name": "Charlie", "age": 35, "city": "Chicago", "role": "Manager"},
+  {"name": "Diana", "age": 28, "city": "Los Angeles", "role": "Engineer"},
+  {"name": "Eve", "age": 32, "city": "Seattle", "role": "Researcher"},
+  {"name": "Frank", "age": 40, "city": "Boston", "role": "Director"},
+  {"name": "Grace", "age": 27, "city": "Austin", "role": "Developer"}
+]

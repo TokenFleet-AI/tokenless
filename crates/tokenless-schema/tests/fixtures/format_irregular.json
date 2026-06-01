@@ -1,0 +1,19 @@
+{
+  "config": {
+    "version": 2,
+    "features": {
+      "auth": true,
+      "logging": false
+    },
+    "endpoints": [
+      {"path": "/api/v1/users", "method": "GET", "auth_required": true},
+      {"path": "/api/v1/users", "method": "POST", "auth_required": true, "rate_limit": 100},
+      {"path": "/api/v1/health", "method": "GET", "auth_required": false},
+      {"path": "/api/v1/search", "method": "POST", "auth_required": true, "rate_limit": 50, "timeout_ms": 5000}
+    ],
+    "metadata": {
+      "deployed_at": "2025-06-01T12:00:00Z",
+      "environment": "production"
+    }
+  }
+}

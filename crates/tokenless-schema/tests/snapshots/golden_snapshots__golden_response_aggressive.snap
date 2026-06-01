@@ -1,0 +1,41 @@
+---
+source: crates/tokenless-schema/tests/golden_snapshots.rs
+expression: result
+---
+{
+  "items": [
+    {
+      "<...keys_truncated>": "<... 2 more keys truncated>",
+      "description": "Description for item 1 with some additio… (truncated)",
+      "id": 1,
+      "name": "Item Alpha"
+    },
+    {
+      "<...keys_truncated>": "<... 2 more keys truncated>",
+      "description": "Description for item 2 with some additio… (truncated)",
+      "id": 2,
+      "name": "Item Beta"
+    },
+    {
+      "<...keys_truncated>": "<... 2 more keys truncated>",
+      "description": "Description for item 3 with some additio… (truncated)",
+      "id": 3,
+      "name": "Item Gamma"
+    },
+    {
+      "<...keys_truncated>": "<... 2 more keys truncated>",
+      "description": "Description for item 4 with some additio… (truncated)",
+      "id": 4,
+      "name": "Item Delta"
+    },
+    {
+      "<...keys_truncated>": "<... 2 more keys truncated>",
+      "description": "Description for item 5 with some additio… (truncated)",
+      "id": 5,
+      "name": "Item Epsilon"
+    },
+    "<... up to 17 more items truncated>"
+  ],
+  "next_cursor": "cursor_abcdef123456",
+  "total": 100
+}

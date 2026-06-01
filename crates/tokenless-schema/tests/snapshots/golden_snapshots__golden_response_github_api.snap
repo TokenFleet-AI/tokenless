@@ -1,0 +1,18 @@
+---
+source: crates/tokenless-schema/tests/golden_snapshots.rs
+expression: result
+---
+{
+  "data": {
+    "repository": {
+      "description": "A high-performance token optimizer CLI built with Rust that provides 60-90% token savings on LLM API calls by intelligently compressing schemas, responses, and managing context windows for OpenAI and Anthropic function calling workloads.",
+      "forkCount": 34,
+      "issues": {
+        "totalCount": 12
+      },
+      "name": "tokenless",
+      "stargazerCount": 128,
+      "url": "https://github.com/TokenFleet-AI/tokenless"
+    }
+  }
+}

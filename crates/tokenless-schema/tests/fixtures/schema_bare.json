@@ -1,0 +1,74 @@
+{
+  "title": "Pet Store API Schemas",
+  "type": "object",
+  "description": "Root schema definition for the Pet Store API. This schema defines all the core data models used throughout the API including pets, owners, and veterinary records. It follows the OpenAPI 3.0 specification with JSON Schema Draft 2020-12 compatibility.",
+  "properties": {
+    "pet": {
+      "$ref": "#/$defs/Pet"
+    },
+    "owner": {
+      "$ref": "#/$defs/Owner"
+    }
+  },
+  "$defs": {
+    "Pet": {
+      "type": "object",
+      "title": "Pet Model",
+      "description": "Represents a pet in the store system. Pets can be various species including dogs, cats, birds, and fish. Each pet has a unique identifier, name, species, breed information, and optional microchip tracking number.",
+      "required": ["id", "name", "species"],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "title": "Unique Pet ID",
+          "description": "Auto-generated unique identifier for the pet record in the database."
+        },
+        "name": {
+          "type": "string",
+          "title": "Pet Name",
+          "description": "The display name of the pet as provided by the owner or store staff."
+        },
+        "species": {
+          "type": "string",
+          "title": "Species Classification",
+          "enum": ["dog", "cat", "bird", "fish", "reptile", "small_mammal"],
+          "description": "The biological species classification for this pet. Used for filtering and search functionality across the store catalog."
+        },
+        "breed": {
+          "type": "string",
+          "title": "Breed Information",
+          "description": "Optional breed designation for the pet. This field is free-form text and may contain mixed breed descriptions such as 'Labrador Mix' or 'Domestic Shorthair'."
+        }
+      }
+    },
+    "Owner": {
+      "type": "object",
+      "title": "Owner Model",
+      "description": "Represents a pet owner registered in the system. Owners can have multiple pets and each owner record includes contact information, address details, and a list of associated pet identifiers.",
+      "required": ["id", "name", "email"],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "title": "Unique Owner ID",
+          "description": "Auto-generated unique identifier for the owner record."
+        },
+        "name": {
+          "type": "string",
+          "title": "Owner Name",
+          "description": "Full legal name of the pet owner as registered in the system."
+        },
+        "email": {
+          "type": "string",
+          "title": "Email Address",
+          "format": "email",
+          "description": "Primary email address for contacting the owner. Used for appointment reminders, vaccination alerts, and account notifications."
+        },
+        "phone": {
+          "type": "string",
+          "title": "Phone Number",
+          "pattern": "^\\+?[1-9]\\d{1,14}$",
+          "description": "Contact phone number in E.164 international format for the owner."
+        }
+      }
+    }
+  }
+}
