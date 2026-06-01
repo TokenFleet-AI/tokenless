@@ -1,6 +1,10 @@
 /target/
 .vscode/
 
+# ONNX model files (downloaded from GitHub Releases on first use)
+crates/tokenless-semantic/models/*.onnx
+crates/tokenless-semantic/models/*.json
+
 # Ruflo / Claude-flow runtime state
 .claude-flow/
 .swarm/
