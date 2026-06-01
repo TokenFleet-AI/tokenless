@@ -412,7 +412,12 @@ fn record_compression_stats(
 }
 
 /// Print a before/after comparison report to stderr.
-fn eprint_report(before_chars: usize, before_tokens: usize, after_chars: usize, after_tokens: usize) {
+fn eprint_report(
+    before_chars: usize,
+    before_tokens: usize,
+    after_chars: usize,
+    after_tokens: usize,
+) {
     let saved_pct = if before_tokens > 0 {
         ((before_tokens.saturating_sub(after_tokens)) as f64 / before_tokens as f64) * 100.0
     } else {
@@ -433,9 +438,8 @@ fn run_demo() -> String {
     let schema_input = r#"{"function":{"name":"get_weather","description":"Get the current weather conditions for a specified city including temperature, humidity, wind speed, and precipitation forecast for the next 24 hours.","parameters":{"type":"object","properties":{"city":{"type":"string","description":"The city name to get weather for","examples":["Beijing","Tokyo","London"]},"units":{"type":"string","description":"Temperature unit: celsius or fahrenheit","examples":["celsius"]}}}}}"#;
     out.push_str("1. Schema Compression\n");
     out.push_str("─────────────────────\n");
-    let result = SCHEMA_COMPRESSOR.compress(
-        &serde_json::from_str::<serde_json::Value>(schema_input).unwrap(),
-    );
+    let result = SCHEMA_COMPRESSOR
+        .compress(&serde_json::from_str::<serde_json::Value>(schema_input).unwrap());
     let after = serde_json::to_string(&result).unwrap_or_default();
     let bt = estimate_tokens_from_bytes(schema_input.len());
     let at = estimate_tokens_from_bytes(after.len());
@@ -476,9 +480,9 @@ fn run_demo() -> String {
     out.push_str("─────────────────\n");
     let before = toon_input.len();
     let bt = estimate_tokens_from_bytes(before);
-    if let Ok(encoded) = toon_format::encode_default(
-        &serde_json::from_str::<serde_json::Value>(toon_input).unwrap(),
-    ) {
+    if let Ok(encoded) =
+        toon_format::encode_default(&serde_json::from_str::<serde_json::Value>(toon_input).unwrap())
+    {
         let encoded = encoded.trim_end();
         let at = estimate_tokens_from_bytes(encoded.len());
         out.push_str(&format!(
@@ -567,7 +571,12 @@ fn run() -> Result<(), (String, i32)> {
             };
 
             if report {
-                eprint_report(input.len(), before_tokens, after_compact.len(), after_tokens);
+                eprint_report(
+                    input.len(),
+                    before_tokens,
+                    after_compact.len(),
+                    after_tokens,
+                );
             }
 
             cache::cache_insert(&input, &output_text);
@@ -612,7 +621,12 @@ fn run() -> Result<(), (String, i32)> {
             };
 
             if report {
-                eprint_report(input.len(), before_tokens, after_compact.len(), after_tokens);
+                eprint_report(
+                    input.len(),
+                    before_tokens,
+                    after_compact.len(),
+                    after_tokens,
+                );
             }
 
             cache::cache_insert(&input, &output_text);
@@ -1175,14 +1189,15 @@ fn run() -> Result<(), (String, i32)> {
                         .as_deref()
                         .and_then(parse_time_range)
                         .unwrap_or_else(|| chrono::Local::now().to_rfc3339());
-                    let since_str = since
-                        .as_deref()
-                        .and_then(parse_time_range)
-                        .unwrap_or_else(|| {
-                            // Default: 7 days ago
-                            let d = chrono::Local::now() - chrono::Duration::days(7);
-                            d.to_rfc3339()
-                        });
+                    let since_str =
+                        since
+                            .as_deref()
+                            .and_then(parse_time_range)
+                            .unwrap_or_else(|| {
+                                // Default: 7 days ago
+                                let d = chrono::Local::now() - chrono::Duration::days(7);
+                                d.to_rfc3339()
+                            });
 
                     let records = recorder
                         .records_since(Some(&since_str), Some(&until_str))

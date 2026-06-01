@@ -247,9 +247,7 @@ pub fn format_diff(records: &[StatsRecord], since: &str, until: &str) -> String 
 
     // Estimated cost savings (assuming $3/1M input tokens, $15/1M output tokens blended ~$8/1M)
     let est_cost = summary.tokens_saved() as f64 * 8.0 / 1_000_000.0;
-    output.push_str(&format!(
-        "Est. cost saved: ~${est_cost:.2}\n",
-    ));
+    output.push_str(&format!("Est. cost saved: ~${est_cost:.2}\n",));
 
     // Per-agent breakdown
     let mut by_agent: std::collections::BTreeMap<&str, (usize, usize)> =
@@ -316,14 +314,7 @@ pub fn parse_time_range(input: &str) -> Option<String> {
             let days: i64 = s.strip_suffix('d')?.parse().ok()?;
             let target = now - chrono::Duration::days(days);
             let start = Local
-                .with_ymd_and_hms(
-                    target.year(),
-                    target.month(),
-                    target.day(),
-                    0,
-                    0,
-                    0,
-                )
+                .with_ymd_and_hms(target.year(), target.month(), target.day(), 0, 0, 0)
                 .single()?;
             Some(start.to_rfc3339())
         }
