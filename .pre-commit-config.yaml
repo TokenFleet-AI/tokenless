@@ -51,7 +51,7 @@ repos:
       - id: cargo-clippy
         name: cargo clippy
         description: Lint rust sources
-        entry: bash -c 'cargo clippy --all-targets --all-features -- -D warnings'
+        entry: bash -c 'cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic'
         language: system
         files: \.rs$
         pass_filenames: false
