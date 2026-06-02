@@ -69,7 +69,7 @@ pub fn run(
                         &[],
                         &[]
                     ))
-                    .unwrap()
+                    .expect("JSON serialization should not fail")
                 );
                 return Ok(());
             }
@@ -137,7 +137,7 @@ pub fn run(
                         &fixed,
                         &post_missing
                     ))
-                    .unwrap()
+                    .expect("JSON serialization should not fail")
                 );
             } else {
                 println!("{}: {}", tool_name, format_status(&post_result.status));
@@ -151,7 +151,7 @@ pub fn run(
                     &[],
                     &missing_names
                 ))
-                .unwrap()
+                .expect("JSON serialization should not fail")
             );
         } else {
             println!("{}: {}", tool_name, format_status(&result.status));
