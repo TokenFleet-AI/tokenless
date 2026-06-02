@@ -218,7 +218,7 @@ impl App {
                 tokens_saved: tokens,
             })
             .collect();
-        totals.sort_by(|a, b| a.date.cmp(&b.date));
+        totals.sort_by_key(|a| a.date.clone());
         totals
     }
 

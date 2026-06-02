@@ -219,7 +219,7 @@ fn render_project_breakdown(f: &mut Frame, area: Rect, records: &[StatsRecord]) 
     }
 
     let mut sorted: Vec<_> = projects.into_iter().collect();
-    sorted.sort_by(|a, b| b.1.1.cmp(&a.1.1)); // sort by chars saved desc
+    sorted.sort_by_key(|a| std::cmp::Reverse(a.1.1)); // sort by chars saved desc
 
     let mut lines: Vec<Line> = Vec::new();
     // Header
