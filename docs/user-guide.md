@@ -820,3 +820,15 @@ make lint      # fmt + clippy
 make install   # Install to ~/.local/bin
 make setup     # Build + install + adapter
 ```
+
+---
+
+## 12. Community
+
+<p align="center">
+  <img src="../assets/wechat-dev-group.png" alt="WeChat Developer Group" width="200">
+</p>
+
+<p align="center"><strong>Scan to join the WeChat Developer Group</strong></p>
+
+<p align="center">Ask questions, suggest features, report bugs — we're here to help.</p>

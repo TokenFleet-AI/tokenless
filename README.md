@@ -43,7 +43,7 @@ tokenless init
 tokenless stats summary
 ```
 
-> Supports **12 agents**: Claude Code, Cursor, Windsurf, Cline, Kilo Code, Antigravity, Augment, Hermes CLI, Pi, Gemini CLI, OpenCode, GitHub Copilot.  
+> Supports **12 agents**: Claude Code, Cursor, Windsurf, Cline, Kilo Code, Antigravity, Augment, Hermes CLI, Pi, Gemini CLI, OpenCode, GitHub Copilot.
 > `tokenless init` auto-installs hooks. See [user guide](./docs/user-guide.md) for full agent table and manual setup.
 
 ## Architecture
@@ -204,6 +204,16 @@ See [specs/](./specs/) for 14 design documents covering architecture, data flow,
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow, coding conventions, and testing guidelines.
+
+## Community
+
+<p align="center">
+  <img src="assets/wechat-dev-group.png" alt="WeChat Developer Group" width="200">
+</p>
+
+<p align="center"><strong>扫码加入微信开发者群</strong></p>
+
+<p align="center">交流使用心得、反馈问题、参与功能讨论</p>
 
 ## License
 

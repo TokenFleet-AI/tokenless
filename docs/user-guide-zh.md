@@ -857,3 +857,15 @@ make lint      # fmt + clippy
 make install   # 安装到 ~/.local/bin
 make setup     # 构建 + 安装 + adapter
 ```
+
+---
+
+## 十二、开发者社区
+
+<p align="center">
+  <img src="../assets/wechat-dev-group.png" alt="微信开发者群" width="200">
+</p>
+
+<p align="center"><strong>扫码加入微信开发者群</strong></p>
+
+<p align="center">使用问题、功能建议、Bug 反馈 — 直接群里聊</p>
