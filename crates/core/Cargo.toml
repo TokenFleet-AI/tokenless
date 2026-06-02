@@ -6,6 +6,8 @@ edition = "2024"
 license = "Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/TokenFleet-AI/tokenless"
+keywords = ["tokenless", "config", "path", "error-handling"]
+categories = ["rust-patterns", "development-tools"]
 
 [dependencies]
 serde = { version = "1.0.228", features = ["derive"] }

@@ -1,8 +1,16 @@
 # tokenless-tui
 
+[![Crates.io](https://img.shields.io/crates/v/tokenless-tui.svg)](https://crates.io/crates/tokenless-tui)
+[![Docs](https://docs.rs/tokenless-tui/badge.svg)](https://docs.rs/tokenless-tui)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/TokenFleet-AI/tokenless/blob/master/LICENSE)
+
 Interactive terminal dashboard for tokenless compression statistics.
 
 Part of the [tokenless](https://github.com/TokenFleet-AI/tokenless) toolkit.
+
+## Why tokenless-tui?
+
+`tokenless stats summary` gives you numbers. The TUI gives you insight — browse records, filter by project, compare agent performance, and track savings trends over time. It reads directly from the same SQLite database that the CLI writes to, so there's zero setup beyond enabling recording.
 
 ## Quick Start
 

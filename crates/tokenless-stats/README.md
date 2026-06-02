@@ -1,8 +1,16 @@
 # tokenless-stats
 
+[![Crates.io](https://img.shields.io/crates/v/tokenless-stats.svg)](https://crates.io/crates/tokenless-stats)
+[![Docs](https://docs.rs/tokenless-stats/badge.svg)](https://docs.rs/tokenless-stats)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/TokenFleet-AI/tokenless/blob/master/LICENSE)
+
 SQLite-based compression metrics tracking for tokenless.
 
 Part of the [tokenless](https://github.com/TokenFleet-AI/tokenless) toolkit.
+
+## Why tokenless-stats?
+
+Compression is invisible. Without metrics, you can't tell if your 60% savings claim holds up over time, which agents benefit most, or whether a specific project generates wasteful output. This crate gives you a zero-config SQLite store that records every compression operation — then lets you query it with the TUI, CLI, or your own code.
 
 ## Quick Start
 

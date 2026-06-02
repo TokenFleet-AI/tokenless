@@ -8,7 +8,7 @@ repository.workspace = true
 homepage.workspace = true
 readme = "README.md"
 keywords = ["llm", "token", "statistics", "sqlite", "metrics"]
-categories = ["development-tools"]
+categories = ["development-tools", "database", "visualization"]
 
 [dependencies]
 serde.workspace = true

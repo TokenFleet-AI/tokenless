@@ -1,8 +1,16 @@
 # tokenless-schema
 
+[![Crates.io](https://img.shields.io/crates/v/tokenless-schema.svg)](https://crates.io/crates/tokenless-schema)
+[![Docs](https://docs.rs/tokenless-schema/badge.svg)](https://docs.rs/tokenless-schema)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/TokenFleet-AI/tokenless/blob/master/LICENSE)
+
 Schema and response compression for LLM token optimization.
 
 Part of the [tokenless](https://github.com/TokenFleet-AI/tokenless) toolkit.
+
+## Why tokenless-schema?
+
+Every byte sent to an LLM costs tokens. OpenAI Function Calling schemas routinely contain 500–2000+ characters of descriptions and metadata that the model doesn't need. API responses carry `debug`, `trace`, and `stacktrace` fields that are useless to an AI agent. This crate trims the fat — structurally compressing both function definitions and tool outputs before they reach the model.
 
 ## Quick Start
 

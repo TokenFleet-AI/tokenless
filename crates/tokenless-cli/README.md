@@ -1,10 +1,18 @@
 # tokenless
 
+[![Crates.io](https://img.shields.io/crates/v/tokenless.svg)](https://crates.io/crates/tokenless)
+[![Docs](https://docs.rs/tokenless/badge.svg)](https://docs.rs/tokenless)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/TokenFleet-AI/tokenless/blob/master/LICENSE)
+
 LLM token optimization CLI — schema/response compression, command rewriting, TOON encoding, environment checks.
 
 ```bash
 cargo install tokenless
 ```
+
+## Why tokenless?
+
+Every prompt to an LLM costs tokens and latency. `tokenless` sits between your AI coding agent and the model, transparently compressing tool schemas, API responses, and even rewriting shell commands before they're sent. A typical Claude Code session sees 40–70% token reduction on tool-related payloads. The stats dashboard proves it.
 
 ## Commands
 

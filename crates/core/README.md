@@ -1,8 +1,20 @@
 # tokenless-core
 
+[![Crates.io](https://img.shields.io/crates/v/tokenless-core.svg)](https://crates.io/crates/tokenless-core)
+[![Docs](https://docs.rs/tokenless-core/badge.svg)](https://docs.rs/tokenless-core)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/TokenFleet-AI/tokenless/blob/master/LICENSE)
+
 Shared core types and utilities for the tokenless workspace.
 
 Part of the [tokenless](https://github.com/TokenFleet-AI/tokenless) toolkit.
+
+## Why tokenless-core?
+
+Every tokenless crate needs validated configuration, path traversal protection, and a unified error type. Rather than duplicating these across 6 crates, `tokenless-core` provides them once — with compile-time safety guarantees:
+
+- **`Config`** validates at construction, not at use-site
+- **`SafePath`** rejects `..`, `/`, and NUL bytes — you can't accidentally construct a dangerous path
+- **`CoreError`** gives the whole workspace a single `Result<T>` alias
 
 ## Quick Start
 

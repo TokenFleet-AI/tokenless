@@ -1,8 +1,16 @@
 # tokenless-semantic
 
+[![Crates.io](https://img.shields.io/crates/v/tokenless-semantic.svg)](https://crates.io/crates/tokenless-semantic)
+[![Docs](https://docs.rs/tokenless-semantic/badge.svg)](https://docs.rs/tokenless-semantic)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/TokenFleet-AI/tokenless/blob/master/LICENSE)
+
 Semantic-aware JSON field compression with ONNX embeddings.
 
 Part of the [tokenless](https://github.com/TokenFleet-AI/tokenless) toolkit.
+
+## Why tokenless-semantic?
+
+Compressing JSON responses by dropping irrelevant fields saves tokens — but "relevance" depends on context. A `temperature` field is critical for weather queries but noise for git operations. This crate uses keyword matching (Level 1) or ONNX embeddings (Level 2) to decide which fields to keep based on the user's task description.
 
 ## Quick Start
 
