@@ -69,12 +69,17 @@ check-agent-sync:
 		exit 1; \
 	}
 
-release:
-	@cargo release tag --execute
+release: ## Usage: make release VERSION=patch|minor|major
+ifndef VERSION
+	$(error Usage: make release VERSION=patch|minor|major)
+endif
+	@cargo release version $(VERSION) --execute --workspace
+	@cargo release commit --execute --workspace
 	@git cliff -o CHANGELOG.md
 	@git commit -a -n -m "Update CHANGELOG.md" || true
+	@cargo release tag --execute --workspace
 	@git push origin master
-	@cargo release push --execute
+	@cargo release publish --execute --workspace
 
 update-submodule:
 	@git submodule update --init --recursive --remote

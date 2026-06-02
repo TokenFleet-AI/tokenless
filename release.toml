@@ -7,20 +7,9 @@
 #
 # Workflow: tag → changelog → commit → push → publish to crates.io
 
-# ── Workspace: consolidate all crate versions ───────────────────────────────
 consolidate-commits = true
 pre-release-commit-message = "chore: release {{version}}"
 tag-message = "{{version}}"
 tag-prefix = "v"
 enable-all-features = true
-
-# Publish order respects internal dependency DAG:
-#   core → schema / stats / semantic (parallel-safe) → tui → cli
-publish = [
-  "tokenless-core",
-  "tokenless-schema",
-  "tokenless-stats",
-  "tokenless-semantic",
-  "tokenless-tui",
-  "tokenless",
-]
+publish = true
