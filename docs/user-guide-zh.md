@@ -397,6 +397,76 @@ tokenless mcp start --port 3000
 
 ---
 
+### 3.12 多项目支持
+
+所有压缩和重写命令都支持 `--project <名称>` 标志，用于给统计记录打上项目标签。这样你就可以在同一个 SQLite 数据库中分别追踪不同项目、仓库或团队的 token 节省情况。
+
+**按项目记录数据：**
+
+```bash
+# 给压缩操作打上项目标签
+tokenless compress-schema -f tool.json --project my-api
+tokenless compress-response -f resp.json --project frontend
+tokenless rewrite "git push" --project devops
+```
+
+**按项目查询：**
+
+```bash
+# 按项目筛选统计
+tokenless stats summary --project my-api
+tokenless stats list --project my-api --limit 10
+```
+
+**TUI 项目选择器：** 在 TUI 仪表盘中按 `p` 打开项目选择器弹窗。用 `↑` `↓` 选择项目，`Enter` 应用筛选。选择"所有项目"清除筛选。选择器自动列出数据库中已有的所有项目名，无需手动注册。
+
+**工作原理：**
+
+- `--project` 始终是可选的。不传则记录不带项目关联。
+- 项目名从已有数据中自动发现——不需要预先创建。
+- TUI 状态栏显示当前项目筛选状态：筛选时显示 `[p:项目名]`，未筛选时显示 `[p:所有项目]`。
+- `--namespace` 标志提供第二个分组维度（如 "production" vs "staging"）。
+
+### 3.13 实验功能
+
+部分功能受**实验模式**开关控制，以保持默认安装稳定轻量。关闭时，tokenless 仅使用核心压缩（Level 1 语义规则，无 format router，无 ONNX 模型）。
+
+**受控功能：**
+
+| 功能 | 需要实验模式 |
+|------|:---:|
+| TUI 仪表盘 | ✅ |
+| MCP 服务器 | ✅ |
+| 语义压缩 Level 2（ONNX） | ✅ |
+| Format router（自动压缩） | ✅ |
+| 增强 TOON 编码 | ✅ |
+| `hook diff`（差异响应） | ✅ |
+| 核心压缩（schema/response） | — 始终可用 |
+| 命令重写 | — 始终可用 |
+| 统计记录 | — 始终可用 |
+
+**启用 / 禁用：**
+
+```bash
+# 启用所有实验功能
+tokenless stats experimental-on
+
+# 禁用（回到纯核心模式）
+tokenless stats experimental-off
+
+# 查看当前状态
+tokenless stats status
+# → Stats recording: enabled | Experimental mode: on
+```
+
+**TUI 切换：** 按 `c` 打开配置面板，再按 `e` 切换实验模式。修改即时生效，跨会话持久保留。
+
+**持久化：** 实验模式设置存储在 `~/.tokenless/config.json` 中，重启和升级后保持。与统计录制开关独立——你可以录制统计而不启用实验功能。
+
+**注意：** TUI 运行时禁用实验模式，退出后将无法重新启动。如需恢复，运行 `tokenless stats experimental-on`。
+
+---
+
 ## 四、Agent 集成
 
 ### 4.1 快速安装

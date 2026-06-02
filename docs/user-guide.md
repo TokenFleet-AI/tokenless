@@ -360,6 +360,76 @@ Outputs a formatted showcase of schema compression, response compression, TOON e
 
 ---
 
+### 3.13 Multi-Project Support
+
+All compression and rewrite commands accept a `--project <name>` flag that tags records for later filtering. This lets you track token savings separately for different projects, repositories, or teams — all in a single SQLite database.
+
+**Recording data per project:**
+
+```bash
+# Tag compression operations with a project name
+tokenless compress-schema -f tool.json --project my-api
+tokenless compress-response -f resp.json --project frontend
+tokenless rewrite "git push" --project devops
+```
+
+**Querying per project:**
+
+```bash
+# Filter stats by project
+tokenless stats summary --project my-api
+tokenless stats list --project my-api --limit 10
+```
+
+**TUI project picker:** Press `p` in the TUI dashboard to open the project picker overlay. Use `↑` `↓` to select a project, `Enter` to apply the filter. Selecting "All Projects" clears the filter. The picker lists all projects found in the database — no manual registration needed.
+
+**How it works:**
+
+- `--project` is always optional. Omitting it records metrics without a project association.
+- Projects are discovered automatically from recorded data — you don't create them upfront.
+- The TUI status bar shows the current project filter: `[p:project]` when filtered, `[p:所有项目]` when unfiltered.
+- The `--namespace` flag provides a secondary grouping dimension (e.g., "production" vs "staging").
+
+### 3.14 Experimental Features
+
+Some features are gated behind an **experimental mode** toggle to keep the default installation stable and lightweight. When disabled, tokenless uses core compression only (Level 1 semantic rules, no format router, no ONNX models).
+
+**Gated features:**
+
+| Feature | Requires experimental mode |
+|---------|:---:|
+| TUI dashboard | ✅ |
+| MCP server | ✅ |
+| Semantic compression Level 2 (ONNX) | ✅ |
+| Format router (auto compression) | ✅ |
+| Enhanced TOON encoding | ✅ |
+| `hook diff` (unified diff responses) | ✅ |
+| Core compression (schema/response) | — always available |
+| Command rewriting | — always available |
+| Statistics recording | — always available |
+
+**Enabling / disabling:**
+
+```bash
+# Enable all experimental features
+tokenless stats experimental-on
+
+# Disable (back to core-only)
+tokenless stats experimental-off
+
+# Check current state
+tokenless stats status
+# → Stats recording: enabled | Experimental mode: on
+```
+
+**TUI toggle:** Open the config panel with `c`, then press `e` to toggle experimental mode. Changes take effect immediately and persist across sessions.
+
+**Persistence:** The experimental mode setting is stored in `~/.tokenless/config.json` and survives reboots and upgrades. It is separate from the stats recording toggle — you can record stats without enabling experimental features.
+
+**Note:** Disabling experimental mode while the TUI is open will prevent re-launching it after exit. Re-enable with `tokenless stats experimental-on` if needed.
+
+---
+
 ## 4. Agent Integration
 
 ### 4.1 Quick Install
