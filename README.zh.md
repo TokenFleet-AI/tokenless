@@ -144,6 +144,16 @@ tokenless stats show 5               # 记录详情
 
 参见 [CONTRIBUTING.md](CONTRIBUTING.md) 了解开发流程、编码规范和测试指南。
 
+## 开发者社区
+
+<p align="center">
+  <img src="assets/wechat-dev-group.png" alt="微信开发者群" width="200">
+</p>
+
+<p align="center"><strong>扫码加入微信开发者群</strong></p>
+
+<p align="center">使用问题、功能建议、Bug 反馈 — 直接群里聊</p>
+
 ## 许可证
 
 Apache License 2.0 — 详见 [LICENSE](LICENSE.md)。
