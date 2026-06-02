@@ -10,6 +10,7 @@ pub(crate) fn rewrite(
     command: Option<String>,
     exclude: Vec<String>,
     transparent_prefix: Vec<String>,
+    project: Option<String>,
     agent_id: Option<String>,
     session_id: Option<String>,
     tool_use_id: Option<String>,
@@ -48,8 +49,10 @@ pub(crate) fn rewrite(
                     agent_id,
                     session_id,
                     tool_use_id,
+                    project,
                     input,
                     rewritten,
+                    false, // RTK rewrite is always core
                 );
             }
         }

@@ -12,7 +12,9 @@ The current `.pre-commit-config.yaml` configures:
 - dependency and policy checks through `cargo deny check -d`;
 - typo checks through `typos`;
 - Rust compilation checks through `cargo check --all`;
-- Rust linting through `cargo clippy --all-targets --all-features --tests --benches -- -D warnings`;
+- Rust linting through `cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic`;
+- secret detection through `gitleaks protect --staged --verbose`;
+- AGENTS.md/CLAUDE.md sync check through `make check-agent-sync`;
 - tests through `cargo nextest run --all-features -- --include-ignored`.
 
 ## Prerequisites
@@ -96,7 +98,9 @@ pre-commit autoupdate
 - 使用 `cargo deny check -d` 检查依赖和策略；
 - 使用 `typos` 检查拼写；
 - 使用 `cargo check --all` 检查 Rust 编译错误；
-- 使用 `cargo clippy --all-targets --all-features --tests --benches -- -D warnings` 做 Rust lint；
+- 使用 `cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic` 做 Rust lint；
+- 使用 `gitleaks protect --staged --verbose` 检测密钥泄露；
+- 使用 `make check-agent-sync` 检查 AGENTS.md 与 CLAUDE.md 同步；
 - 使用 `cargo nextest run --all-features -- --include-ignored` 运行测试。
 
 ## 前置工具

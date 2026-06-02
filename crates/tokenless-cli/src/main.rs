@@ -50,6 +50,9 @@ enum Commands {
         /// Print token savings report to stderr.
         #[arg(long)]
         report: bool,
+        /// Project name for multi-project statistics.
+        #[arg(long)]
+        project: Option<String>,
         /// Agent ID for statistics attribution.
         #[arg(long)]
         agent_id: Option<String>,
@@ -74,6 +77,9 @@ enum Commands {
         /// Falls back to Level 1 (keyword rules) if model is unavailable.
         #[arg(long)]
         semantic: bool,
+        /// Project name for multi-project statistics.
+        #[arg(long)]
+        project: Option<String>,
         #[arg(long)]
         agent_id: Option<String>,
         #[arg(long)]
@@ -87,6 +93,9 @@ enum Commands {
         file: Option<String>,
         #[arg(long)]
         report: bool,
+        /// Project name for multi-project statistics.
+        #[arg(long)]
+        project: Option<String>,
         #[arg(long)]
         agent_id: Option<String>,
         #[arg(long)]
@@ -98,6 +107,9 @@ enum Commands {
     CompressToon {
         #[arg(short, long)]
         file: Option<String>,
+        /// Project name for multi-project statistics.
+        #[arg(long)]
+        project: Option<String>,
         #[arg(long)]
         agent_id: Option<String>,
         #[arg(long)]
@@ -123,6 +135,9 @@ enum Commands {
         /// Transparent prefixes (can be repeated).
         #[arg(long)]
         transparent_prefix: Vec<String>,
+        /// Project name for multi-project statistics.
+        #[arg(long)]
+        project: Option<String>,
         #[arg(long)]
         agent_id: Option<String>,
         #[arg(long)]
@@ -141,6 +156,9 @@ enum Commands {
         /// Agent name (claude, cursor, windsurf, cline, copilot, gemini, etc.).
         #[arg(short, long, default_value = "claude")]
         agent: String,
+        /// Enable debug logging for compress hook (~/.tokenless/compress-debug.log).
+        #[arg(long)]
+        debug: bool,
     },
     /// Check tool environment readiness.
     EnvCheck {
@@ -170,7 +188,7 @@ enum Commands {
         /// Refresh interval in seconds (default: 1).
         #[arg(long, default_value = "1")]
         refresh: u64,
-        /// Display language: "zh" or "en" (default: detect from LANG env).
+        /// Display language: "zh" or "en" (default: zh (Chinese)).
         #[arg(long, default_value = "zh")]
         lang: String,
     },
@@ -189,12 +207,24 @@ enum HookCommands {
         /// Agent target (e.g., "claude").
         #[arg(short, long, default_value = "claude")]
         target: String,
+        /// Project name for multi-project statistics.
+        #[arg(long)]
+        project: Option<String>,
     },
     /// PostToolUse: compress tool response output.
     Compress {
         /// Enable semantic-aware field filtering (Level 2 ONNX or Level 1 rules).
         #[arg(long)]
         semantic: bool,
+        /// Agent target (e.g., "claude").
+        #[arg(short, long, default_value = "claude")]
+        target: String,
+        /// Project name for multi-project statistics.
+        #[arg(long)]
+        project: Option<String>,
+        /// Write original/compressed text to debug log (~/.tokenless/compress-debug.log).
+        #[arg(long)]
+        debug: bool,
     },
     /// PostToolUse: differential response (unified diff).
     Diff,
@@ -215,11 +245,19 @@ enum StatsCommands {
     Summary {
         #[arg(long)]
         limit: Option<usize>,
+        #[arg(long)]
+        project: Option<String>,
+        #[arg(long)]
+        namespace: Option<String>,
     },
     /// List recent records.
     List {
         #[arg(short, long, default_value = "20")]
         limit: usize,
+        #[arg(long)]
+        project: Option<String>,
+        #[arg(long)]
+        namespace: Option<String>,
     },
     /// Show before/after text content for a specific record.
     Show { id: i64 },
@@ -234,6 +272,9 @@ enum StatsCommands {
         limit: usize,
         #[arg(long, default_value = "0")]
         offset: usize,
+        /// Project name for multi-project filtering.
+        #[arg(long)]
+        project: Option<String>,
     },
     /// Show stats recording status.
     Status,
@@ -241,10 +282,18 @@ enum StatsCommands {
     Enable,
     /// Disable stats recording.
     Disable,
+    /// Enable experimental mode (format router, enhanced TOON, semantic, TUI, MCP).
+    ExperimentalOn,
+    /// Disable experimental mode (core compression only).
+    ExperimentalOff,
     /// Show cumulative savings for a time period.
     Diff {
         #[arg(long)]
         since: Option<String>,
+        #[arg(long)]
+        project: Option<String>,
+        #[arg(long)]
+        namespace: Option<String>,
         #[arg(long)]
         until: Option<String>,
     },
@@ -253,6 +302,11 @@ enum StatsCommands {
 // ── Dispatch ─────────────────────────────────────────────────────────────────
 
 fn run() -> Result<(), (String, i32)> {
+    // Sync experimental mode from config/env to the SDK so library
+    // callers (compress_auto, etc.) also respect the setting.
+    let config = tokenless_stats::TokenlessConfig::load();
+    tokenless_schema::set_experimental_mode(config.is_experimental_enabled());
+
     let cli = Cli::parse();
 
     match cli.command {
@@ -260,6 +314,7 @@ fn run() -> Result<(), (String, i32)> {
             file,
             batch,
             report,
+            project,
             agent_id,
             session_id,
             tool_use_id,
@@ -267,6 +322,7 @@ fn run() -> Result<(), (String, i32)> {
             file,
             batch,
             report,
+            project,
             agent_id,
             session_id,
             tool_use_id,
@@ -276,6 +332,7 @@ fn run() -> Result<(), (String, i32)> {
             report,
             context,
             semantic,
+            project,
             agent_id,
             session_id,
             tool_use_id,
@@ -284,6 +341,7 @@ fn run() -> Result<(), (String, i32)> {
             report,
             semantic,
             context,
+            project,
             agent_id,
             session_id,
             tool_use_id,
@@ -291,21 +349,31 @@ fn run() -> Result<(), (String, i32)> {
         Commands::CompressAuto {
             file,
             report,
+            project,
             agent_id,
             session_id,
             tool_use_id,
-        } => commands::compress::compress_auto(file, report, agent_id, session_id, tool_use_id),
+        } => commands::compress::compress_auto(
+            file,
+            report,
+            project,
+            agent_id,
+            session_id,
+            tool_use_id,
+        ),
         Commands::CompressToon {
             file,
+            project,
             agent_id,
             session_id,
             tool_use_id,
-        } => commands::toon::compress_toon(file, agent_id, session_id, tool_use_id),
+        } => commands::toon::compress_toon(file, project, agent_id, session_id, tool_use_id),
         Commands::DecompressToon { file } => commands::toon::decompress_toon(file),
         Commands::Rewrite {
             command,
             exclude,
             transparent_prefix,
+            project,
             agent_id,
             session_id,
             tool_use_id,
@@ -313,16 +381,28 @@ fn run() -> Result<(), (String, i32)> {
             command,
             exclude,
             transparent_prefix,
+            project,
             agent_id,
             session_id,
             tool_use_id,
         ),
         Commands::Hook(hook_cmd) => match hook_cmd {
-            HookCommands::Rewrite { target } => commands::hook::hook_rewrite(&target),
-            HookCommands::Compress { semantic } => commands::hook::hook_compress(semantic),
+            HookCommands::Rewrite { target, project } => {
+                commands::hook::hook_rewrite(&target, project)
+            }
+            HookCommands::Compress {
+                semantic,
+                target,
+                project,
+                debug,
+            } => commands::hook::hook_compress(semantic, &target, project, debug),
             HookCommands::Diff => commands::hook::hook_diff(),
         },
-        Commands::Init { global, agent } => commands::init_cmd::handle(global, agent),
+        Commands::Init {
+            global,
+            agent,
+            debug,
+        } => commands::init_cmd::handle(global, agent, debug),
         Commands::EnvCheck {
             tool,
             all,
@@ -331,6 +411,13 @@ fn run() -> Result<(), (String, i32)> {
             json,
         } => commands::env_check_cmd::handle(tool, all, fix, checklist, json),
         Commands::Mcp(McpAction::Start) => {
+            if !shared::is_experimental_enabled() {
+                return Err((
+                    "MCP server is an experimental feature. Enable with: tokenless stats experimental-on"
+                        .to_string(),
+                    1,
+                ));
+            }
             commands::mcp_cmd::handle();
             Ok(())
         }
@@ -338,19 +425,45 @@ fn run() -> Result<(), (String, i32)> {
             println!("{}", commands::demo::generate());
             Ok(())
         }
-        Commands::Tui { refresh, lang } => commands::tui::handle(refresh, lang),
+        Commands::Tui { refresh, lang } => {
+            if !shared::is_experimental_enabled() {
+                return Err((
+                    "TUI dashboard is an experimental feature. Enable with: tokenless stats experimental-on"
+                        .to_string(),
+                    1,
+                ));
+            }
+            commands::tui::handle(refresh, lang)
+        }
         Commands::Stats(stats_cmd) => match stats_cmd {
-            StatsCommands::Summary { limit } => commands::stats::stats_summary(limit),
-            StatsCommands::List { limit } => commands::stats::stats_list(limit),
+            StatsCommands::Summary {
+                limit,
+                project,
+                namespace,
+            } => commands::stats::stats_summary(limit, project, namespace),
+            StatsCommands::List {
+                limit,
+                project,
+                namespace,
+            } => commands::stats::stats_list(limit, project, namespace),
             StatsCommands::Show { id } => commands::stats::stats_show(id),
             StatsCommands::Clear { yes } => commands::stats::stats_clear(yes),
-            StatsCommands::Rewrites { limit, offset } => {
-                commands::stats::stats_rewrites(limit, offset)
-            }
+            StatsCommands::Rewrites {
+                limit,
+                offset,
+                project,
+            } => commands::stats::stats_rewrites(limit, offset, project),
             StatsCommands::Status => commands::stats::stats_status(),
             StatsCommands::Enable => commands::stats::stats_enable(),
             StatsCommands::Disable => commands::stats::stats_disable(),
-            StatsCommands::Diff { since, until } => commands::stats::stats_diff(since, until),
+            StatsCommands::ExperimentalOn => commands::stats::stats_experimental_on(),
+            StatsCommands::ExperimentalOff => commands::stats::stats_experimental_off(),
+            StatsCommands::Diff {
+                since,
+                until,
+                project,
+                namespace: _,
+            } => commands::stats::stats_diff(since, until, project),
         },
     }
 }

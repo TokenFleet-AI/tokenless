@@ -1,5 +1,7 @@
 //! Trends tab panel — daily savings sparklines and data table.
 
+use std::collections::HashMap;
+
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -7,8 +9,9 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph, Sparkline},
 };
+use tokenless_stats::StatsRecord;
 
-use super::{render_status_bar, render_trends_tabs};
+use super::{format_bytes, render_status_bar, render_trends_tabs};
 use crate::lang::Lang;
 
 /// A single day's aggregated savings totals.
@@ -28,7 +31,9 @@ pub fn render(
     daily_chars: &[u64],
     daily_tokens: &[u64],
     date_labels: &[String],
+    records: &[StatsRecord],
     lang: &Lang,
+    selected_project: Option<&str>,
 ) {
     let area = f.area();
     let chunks = Layout::default()
@@ -38,6 +43,7 @@ pub fn render(
             Constraint::Length(7), // chars sparkline
             Constraint::Length(7), // tokens sparkline
             Constraint::Min(1),    // daily data table
+            Constraint::Length(4), // project breakdown
             Constraint::Length(1), // status bar
         ])
         .split(area);
@@ -53,15 +59,13 @@ pub fn render(
             lang.trends_no_data(),
         );
     } else {
-        let sparkline = Sparkline::default()
-            .block(
-                Block::default()
-                    .title(lang.trends_header_chars())
-                    .borders(Borders::ALL),
-            )
-            .data(daily_chars)
-            .style(Style::default().fg(Color::Cyan));
-        f.render_widget(sparkline, chunks[1]);
+        render_sparkline_with_summary(
+            f,
+            chunks[1],
+            lang.trends_header_chars(),
+            daily_chars,
+            Color::Cyan,
+        );
     }
 
     // ── Token savings sparkline ──
@@ -73,21 +77,62 @@ pub fn render(
             lang.trends_no_data(),
         );
     } else {
-        let sparkline = Sparkline::default()
-            .block(
-                Block::default()
-                    .title(lang.trends_header_tokens())
-                    .borders(Borders::ALL),
-            )
-            .data(daily_tokens)
-            .style(Style::default().fg(Color::Green));
-        f.render_widget(sparkline, chunks[2]);
+        render_sparkline_with_summary(
+            f,
+            chunks[2],
+            lang.trends_header_tokens(),
+            daily_tokens,
+            Color::Green,
+        );
     }
 
     // ── Daily summary table ──
     render_daily_table(f, chunks[3], date_labels, daily_chars, daily_tokens);
 
-    render_status_bar(f, chunks[4], lang.trends_status_bar());
+    // ── Per-project breakdown ──
+    render_project_breakdown(f, chunks[4], records);
+
+    let status = format!(
+        "📂 {} | {}",
+        lang.project_label(selected_project),
+        lang.trends_status_bar()
+    );
+    render_status_bar(f, chunks[5], &status);
+}
+
+/// Render a sparkline with a summary line showing total / max / days.
+fn render_sparkline_with_summary(
+    f: &mut Frame,
+    area: Rect,
+    title: &str,
+    data: &[u64],
+    color: Color,
+) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(area);
+
+    let sparkline = Sparkline::default()
+        .block(Block::default().title(title).borders(Borders::ALL))
+        .data(data)
+        .style(Style::default().fg(color));
+    f.render_widget(sparkline, chunks[0]);
+
+    let total: u64 = data.iter().sum();
+    let max = data.iter().max().copied().unwrap_or(0);
+    let days = data.len();
+    let summary = format!(
+        " Total: {} | Max: {} | Days: {} ",
+        format_bytes(total as usize),
+        format_bytes(max as usize),
+        days,
+    );
+    let p = Paragraph::new(Line::from(Span::styled(
+        summary,
+        Style::default().fg(Color::Gray),
+    )));
+    f.render_widget(p, chunks[1]);
 }
 
 /// Render a bordered block with a centred "no data" message.
@@ -144,6 +189,64 @@ fn render_daily_table(
         lines.push(Line::from(Span::raw(format!(
             " {:<12} {:>10} {:>10}",
             label, chars, tokens,
+        ))));
+    }
+
+    f.render_widget(Paragraph::new(Text::from(lines)), inner);
+}
+
+/// Render per-project breakdown from filtered records.
+fn render_project_breakdown(f: &mut Frame, area: Rect, records: &[StatsRecord]) {
+    let block = Block::default()
+        .title(" By Project ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    if records.is_empty() {
+        return;
+    }
+
+    // Aggregate per project
+    let mut projects: HashMap<String, (usize, u64, u64)> = HashMap::new();
+    for r in records {
+        let proj = r.project.as_deref().unwrap_or("(unassigned)").to_string();
+        let entry = projects.entry(proj).or_default();
+        entry.0 += 1;
+        entry.1 += r.before_chars.saturating_sub(r.after_chars) as u64;
+        entry.2 += r.before_tokens.saturating_sub(r.after_tokens) as u64;
+    }
+
+    let mut sorted: Vec<_> = projects.into_iter().collect();
+    sorted.sort_by(|a, b| b.1.1.cmp(&a.1.1)); // sort by chars saved desc
+
+    let mut lines: Vec<Line> = Vec::new();
+    // Header
+    lines.push(Line::from(Span::styled(
+        format!(
+            " {:<20} {:>6} {:>10} {:>10}",
+            "Project", "Recs", "Chars", "Tokens"
+        ),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )));
+
+    for (proj, (count, chars, tokens)) in sorted.iter().take(3) {
+        // Truncate long project names at char boundary
+        let name = if proj.chars().count() > 18 {
+            let truncated: String = proj.chars().take(17).collect();
+            format!("{truncated}…")
+        } else {
+            proj.clone()
+        };
+        lines.push(Line::from(Span::raw(format!(
+            " {:<20} {:>6} {:>10} {:>10}",
+            name,
+            count,
+            format_bytes(*chars as usize),
+            format_bytes(*tokens as usize),
         ))));
     }
 

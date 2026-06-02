@@ -13,6 +13,8 @@ use std::{
 pub struct InitConfig {
     /// Install globally vs project-local.
     pub global: bool,
+    /// Enable debug logging for compress hook (~/.tokenless/compress-debug.log).
+    pub debug: bool,
 }
 
 /// Target agent for hook installation.
@@ -44,36 +46,6 @@ pub enum Agent {
     Copilot,
 }
 
-const CLAUDE_HOOKS_JSON: &str = r#"{
-  "env": {
-    "RTK_SKIP_HOOK_CHECK": "1"
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "tokenless hook rewrite --target claude"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "tokenless hook compress --semantic"
-          }
-        ]
-      }
-    ]
-  }
-}"#;
-
 #[cfg(test)]
 /// Default hooks JSON for tests only.
 const DEFAULT_HOOKS_JSON: &str = r#"{
@@ -87,18 +59,18 @@ const DEFAULT_HOOKS_JSON: &str = r#"{
         "hooks": [
           {
             "type": "command",
-            "command": "tokenless hook rewrite --target claude"
+            "command": "tokenless hook rewrite --target claude --project test-project"
           }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "*",
+        "matcher": "^(?!Bash$).*",
         "hooks": [
           {
             "type": "command",
-            "command": "tokenless hook compress --semantic"
+            "command": "tokenless hook compress --semantic --target claude --project test-project"
           }
         ]
       }
@@ -114,6 +86,12 @@ const CURSOR_HOOKS_JSON: &str = r#"{
         "command": "tokenless hook rewrite --target cursor",
         "matcher": "Shell"
       }
+    ],
+    "postToolUse": [
+      {
+        "command": "tokenless hook compress --semantic --target cursor",
+        "matcher": "*"
+      }
     ]
   }
 }"#;
@@ -121,6 +99,11 @@ const CURSOR_HOOKS_JSON: &str = r#"{
 const GEMINI_HOOK_SCRIPT: &str = "#!/usr/bin/env bash
 # tokenless Gemini CLI BeforeTool hook
 exec tokenless hook rewrite --target gemini
+";
+
+const GEMINI_HOOK_COMPRESS_SCRIPT: &str = "#!/usr/bin/env bash
+# tokenless Gemini CLI AfterTool hook
+exec tokenless hook compress --semantic --target gemini
 ";
 
 const COPILOT_HOOK_JSON: &str = r#"{
@@ -131,6 +114,14 @@ const COPILOT_HOOK_JSON: &str = r#"{
         "command": "tokenless hook rewrite --target copilot",
         "cwd": ".",
         "timeout": 5
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "tokenless hook compress --semantic --target copilot",
+        "cwd": ".",
+        "timeout": 10
       }
     ]
   }
@@ -222,6 +213,103 @@ fn write_file(path: &Path, content: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Detect the project name for the current working directory.
+///
+/// Priority: CLI override > git remote > Cargo.toml > package.json > dirname fallback.
+fn detect_project_name(cwd: &Path, cli_override: Option<&str>) -> String {
+    // 1. Explicit CLI override — highest priority
+    if let Some(name) = cli_override {
+        return name.to_string();
+    }
+
+    // 2. git remote get-url origin → extract repo name
+    if let Ok(output) = std::process::Command::new("git")
+        .args(["remote", "get-url", "origin"])
+        .current_dir(cwd)
+        .output()
+    {
+        if output.status.success() {
+            let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if let Some(name) = extract_repo_name(&url) {
+                return name;
+            }
+        }
+    }
+
+    // 3. Cargo.toml [package].name
+    if let Some(name) = read_manifest_field(cwd.join("Cargo.toml"), "package.name") {
+        return name;
+    }
+
+    // 4. package.json "name"
+    if let Some(name) = read_manifest_field(cwd.join("package.json"), "name") {
+        return name;
+    }
+
+    // 5. Fallback: current directory basename
+    cwd.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .filter(|n| n != "/" && !n.is_empty())
+        .unwrap_or_else(|| "(unclassified)".to_string())
+}
+
+/// Extract the repository name from a git remote URL.
+///
+/// Handles HTTPS, SSH, and git:// URL formats.
+fn extract_repo_name(url: &str) -> Option<String> {
+    let url = url.strip_suffix(".git").unwrap_or(url);
+    let name = url.rsplit('/').next()?;
+    let name = name.split(':').next_back()?;
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
+}
+
+/// Read a field from a JSON or TOML manifest file using simple line-based parsing.
+fn read_manifest_field(path: std::path::PathBuf, field_path: &str) -> Option<String> {
+    let content = std::fs::read_to_string(&path).ok()?;
+
+    match field_path {
+        "package.name" => {
+            // Simple line-based parse for Cargo.toml: name = "value"
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("name") {
+                    if let Some(val) = trimmed.split('=').nth(1) {
+                        let val = val.trim().trim_matches('"').trim_matches('\'');
+                        if !val.is_empty() {
+                            return Some(val.to_string());
+                        }
+                    }
+                }
+            }
+            None
+        }
+        "name" => {
+            // Simple parse for package.json: "name": "value"
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("\"name\"") || trimmed.starts_with("\"name ") {
+                    if let Some(val) = trimmed.split(':').nth(1) {
+                        let val = val
+                            .trim()
+                            .trim_matches('"')
+                            .trim_matches('\'')
+                            .trim_end_matches(',');
+                        if !val.is_empty() {
+                            return Some(val.to_string());
+                        }
+                    }
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
 fn merge_into_settings(settings_path: &Path, hooks_json: &str) -> Result<(), String> {
     let existing = std::fs::read_to_string(settings_path).unwrap_or_default();
     let merged = if existing.is_empty() {
@@ -269,9 +357,54 @@ fn claude_dir(global: bool) -> PathBuf {
 fn init_claude(config: &InitConfig) -> Result<(), String> {
     let dir = claude_dir(config.global);
     let settings_path = dir.join("settings.json");
-    merge_into_settings(&settings_path, CLAUDE_HOOKS_JSON)?;
+
+    // Detect project name from current directory (project-local install only)
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let project_name = detect_project_name(&cwd, None);
+
+    // Build hooks JSON with project name baked in
+    let debug_flag = if config.debug { " --debug" } else { "" };
+    let hooks_json = format!(
+        r#"{{
+  "env": {{
+    "RTK_SKIP_HOOK_CHECK": "1"
+  }},
+  "hooks": {{
+    "PreToolUse": [
+      {{
+        "matcher": "Bash",
+        "hooks": [
+          {{
+            "type": "command",
+            "command": "tokenless hook rewrite --target claude --project {project}"
+          }}
+        ]
+      }}
+    ],
+    "PostToolUse": [
+      {{
+        "matcher": "^(?!Bash$).*",
+        "hooks": [
+          {{
+            "type": "command",
+            "command": "tokenless hook compress --semantic --target claude --project {project}{debug}"
+          }}
+        ]
+      }}
+    ]
+  }}
+}}"#,
+        project = project_name,
+        debug = debug_flag,
+    );
+
+    merge_into_settings(&settings_path, &hooks_json)?;
     let scope = if config.global { "global" } else { "project" };
     println!("[tokenless] Installed hooks for Claude Code ({scope})");
+    println!("  project: {project_name}");
+    if config.debug {
+        println!("  debug: ~/.tokenless/compress-debug.log");
+    }
     println!("  {}", path_display(&settings_path));
     Ok(())
 }
@@ -409,20 +542,24 @@ fn init_gemini(config: &InitConfig) -> Result<(), String> {
     } else {
         PathBuf::from(".gemini")
     };
-    // Write the hook wrapper script
+    // Write the hook wrapper scripts
     let hooks_dir = base.join("hooks");
     let hook_script = hooks_dir.join("tokenless-hook-gemini.sh");
     write_file(&hook_script, GEMINI_HOOK_SCRIPT)?;
+    let compress_script = hooks_dir.join("tokenless-hook-compress-gemini.sh");
+    write_file(&compress_script, GEMINI_HOOK_COMPRESS_SCRIPT)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::metadata(&hook_script) {
-            let mut perms = meta.permissions();
-            perms.set_mode(0o755);
-            let _ = std::fs::set_permissions(&hook_script, perms);
+        for script in &[&hook_script, &compress_script] {
+            if let Ok(meta) = std::fs::metadata(script) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o755);
+                let _ = std::fs::set_permissions(script, perms);
+            }
         }
     }
-    // Write settings.json with BeforeTool hook (Gemini uses BeforeTool, not PreToolUse)
+    // Write settings.json with BeforeTool + AfterTool hooks
     let settings_path = base.join("settings.json");
     let gemini_hooks_json = format!(
         r#"{{
@@ -433,20 +570,33 @@ fn init_gemini(config: &InitConfig) -> Result<(), String> {
         "hooks": [
           {{
             "type": "command",
-            "command": "{}"
+            "command": "{rewrite}"
+          }}
+        ]
+      }}
+    ],
+    "AfterTool": [
+      {{
+        "matcher": "*",
+        "hooks": [
+          {{
+            "type": "command",
+            "command": "{compress}"
           }}
         ]
       }}
     ]
   }}
 }}"#,
-        hook_script.display()
+        rewrite = hook_script.display(),
+        compress = compress_script.display(),
     );
     merge_into_settings(&settings_path, &gemini_hooks_json)?;
     let scope = if config.global { "global" } else { "project" };
     println!("[tokenless] Installed hooks for Gemini CLI ({scope})");
     println!("  {}", path_display(&settings_path));
     println!("  {}", path_display(&hook_script));
+    println!("  {}", path_display(&compress_script));
     Ok(())
 }
 
@@ -513,5 +663,53 @@ mod tests {
         assert_eq!(v["env"]["KEY"], "val");
         assert_eq!(v["env"]["RTK_SKIP_HOOK_CHECK"], "1");
         std::fs::remove_file(&path).ok();
+    }
+
+    // ── project name detection tests (TDD RED) ─────────────────
+
+    #[test]
+    fn test_detect_cli_override_wins() {
+        let cwd = std::env::temp_dir();
+        let name = detect_project_name(&cwd, Some("my-custom-app"));
+        assert_eq!(name, "my-custom-app");
+    }
+
+    #[test]
+    fn test_detect_fallback_to_dirname() {
+        let dir = std::env::temp_dir().join("tokenless-test-project");
+        let _ = std::fs::create_dir_all(&dir);
+        let name = detect_project_name(&dir, None);
+        assert_eq!(name, "tokenless-test-project");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_detect_unknown_dir() {
+        let name = detect_project_name(std::path::Path::new("/"), None);
+        assert_eq!(name, "(unclassified)");
+    }
+
+    #[test]
+    fn test_extract_repo_name_https() {
+        assert_eq!(
+            extract_repo_name("https://github.com/user/my-repo.git"),
+            Some("my-repo".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_repo_name_ssh() {
+        assert_eq!(
+            extract_repo_name("git@github.com:TokenFleet-AI/tokenless.git"),
+            Some("tokenless".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_repo_name_no_extension() {
+        assert_eq!(
+            extract_repo_name("https://github.com/user/repo"),
+            Some("repo".to_string())
+        );
     }
 }

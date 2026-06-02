@@ -3,4 +3,6 @@ extend-exclude = ["CHANGELOG.md", "vendors/", "crates/tokenless-semantic/models/
 
 [default.extend-words]
 caf = "caf"  # truncated form of "café" in test assertion
+ratatui = "ratatui"  # crate name: ratatui terminal UI library
+Thi = "Thi"  # truncated "This" in golden snapshot test data
 wriet = "wriet"  # intentional typo example in spec

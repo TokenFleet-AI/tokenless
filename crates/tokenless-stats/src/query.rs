@@ -137,6 +137,14 @@ pub fn format_show(record: &StatsRecord) -> String {
     if let Some(pid) = record.source_pid {
         output.push_str(&format!("PID: {pid}\n"));
     }
+    output.push_str(&format!(
+        "Experimental: {}\n",
+        if record.experimental_mode {
+            "yes"
+        } else {
+            "no"
+        }
+    ));
 
     output.push_str(&format!(
         "\nBefore: {bc} chars, {bt} tokens\nAfter: {ac} chars, {at} tokens\nSaved: {cs} chars \
@@ -281,7 +289,7 @@ pub fn format_diff(records: &[StatsRecord], since: &str, until: &str) -> String 
 ///
 /// # Panics
 ///
-/// Does not panic; returns `None` for unparseable input.
+/// Does not panic; returns `None` for unparsable input.
 #[must_use]
 pub fn parse_time_range(input: &str) -> Option<String> {
     use chrono::{Datelike, Local, TimeZone};

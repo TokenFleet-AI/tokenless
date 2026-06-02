@@ -1,6 +1,6 @@
 # Tokenless SDK Integration Guide
 
-> Version: 0.3.1 | Language: English
+> Version: 0.4.0 | Language: English
 
 ## Overview
 
@@ -22,9 +22,9 @@ All crates enforce `#![forbid(unsafe_code)]` and target Rust 2024 edition (MSRV 
 
 ```toml
 [dependencies]
-tokenless-schema = "0.3.1"
-tokenless-stats = "0.3.1"
-tokenless-semantic = { version = "0.3.1", features = ["onnx"] }  # optional
+tokenless-schema = "0.4.0"
+tokenless-stats = "0.4.0"
+tokenless-semantic = { version = "0.4.0", features = ["onnx"] }  # optional
 ```
 
 ### Minimal Example
@@ -132,6 +132,29 @@ let (strategy, result) = compress_auto(&value, &original_json);
 // Strategy: ToonHrv | EnhancedToon | CjsonCompact | CompressorOnly
 ```
 
+#### Strategy Selection
+
+Lower-level exports for custom routing logic:
+
+```rust
+use tokenless_schema::{select_strategy, JsonShape, TopType, analyze};
+
+// Inspect JSON structure before deciding on a strategy
+let shape: JsonShape = analyze(&value);
+// shape.top_type: TopType::Object | Array | Primitive
+// shape.field_count, shape.max_depth, shape.total_string_chars
+
+// Select optimal strategy manually
+let strategy = select_strategy(&shape);
+```
+
+| Export | Purpose |
+|------|------|
+| `select_strategy(shape)` | Choose best compression strategy from a `JsonShape` |
+| `JsonShape` | Structural summary: `top_type`, `field_count`, `max_depth`, `total_string_chars` |
+| `TopType` | Enum: `Object`, `Array`, `Primitive` |
+| `analyze(value)` | Compute `JsonShape` from any `&serde_json::Value` |
+
 ---
 
 ### tokenless-stats
@@ -153,14 +176,48 @@ let record = StatsRecord::new(
     before_tokens,             // estimated tokens before
     after_chars,               // byte length after
     after_tokens,              // estimated tokens after
+    "my-project".into(),       // project
+    "default".into(),          // namespace
+    before_output,             // byte length of output before
+    after_output,              // byte length of output after
 )
 .with_session_id("session-abc")
 .with_tool_use_id("call_xyz")
 .with_before_text(before_json)
-.with_after_text(after_json);
+.with_after_text(after_json)
+.with_experimental_mode(false)
+.with_source_pid(12345)
+.with_text("my text".into())
+.with_output("my output".into());
 
 recorder.record(&record)?;
 ```
+
+#### StatsRecord Builder Methods
+
+| Method | Type | Description |
+|------|:---:|------|
+| `with_session_id(id)` | `&str` | Associate with a session |
+| `with_tool_use_id(id)` | `&str` | Associate with a tool-use call |
+| `with_before_text(t)` | `&str` | Raw text before compression |
+| `with_after_text(t)` | `&str` | Raw text after compression |
+| `with_project(p)` | `&str` | Set project name |
+| `with_namespace(n)` | `&str` | Set namespace |
+| `with_experimental_mode(b)` | `bool` | Mark as experimental-mode record |
+| `with_source_pid(pid)` | `u32` | Set source process PID |
+| `with_text(t)` | `&str` | Context text (e.g., command) |
+| `with_output(t)` | `&str` | Context output text |
+
+#### StatsRecord Fields
+
+| Field | Type | Description |
+|------|:---:|------|
+| `project` | `String` | Project name |
+| `namespace` | `String` | Namespace |
+| `experimental_mode` | `bool` | Whether experimental mode was active |
+| `source_pid` | `Option<u32>` | Source process PID |
+| `before_output` | `usize` | Byte length of output before compression |
+| `after_output` | `usize` | Byte length of output after compression |
 
 #### Operation Types
 
@@ -188,6 +245,60 @@ let records = recorder.records_since(Some("2026-05-01"), Some("2026-06-01"))?;
 
 // Agent listing
 let agents = recorder.all_agents()?;
+
+// Filtered queries (accept optional agent_id, project, namespace, operation_type)
+let records = recorder.records_filtered(None, None, None, None, Some(100))?;
+let records = recorder.all_records_filtered(
+    Some("my-agent"),       // agent_id
+    Some("my-project"),     // project
+    Some("default"),        // namespace
+    Some("CompressResponse"), // operation_type
+    Some(100),              // limit
+)?;
+let records = recorder.records_since_filtered(
+    Some("2026-05-01"),
+    Some("2026-06-01"),
+    Some("my-agent"),
+    Some("my-project"),
+    Some("default"),
+    Some(100),
+)?;
+
+// Project-level queries
+let projects = recorder.all_projects()?;
+let summary = recorder.project_summary("my-project")?;        // single project
+let summaries = recorder.projects_summary()?;                 // all projects
+let trends = recorder.project_daily_trends("my-project", 30)?; // last N days
+
+// Recorder management
+let total = recorder.count()?;
+recorder.clear()?;
+let agent_stats = recorder.agent_summary()?;
+```
+
+#### Query Formatters
+
+Human-readable display formatters for CLI/TUI output:
+
+```rust
+use tokenless_stats::{format_list, format_show, format_diff, format_rewrites, parse_time_range};
+
+// List records as a table
+println!("{}", format_list(&records));
+
+// Show a single record in detail
+println!("{}", format_show(&record));
+
+// Show before/after diff for a compression record
+println!("{}", format_diff(&record));
+
+// Show command rewrite history
+println!("{}", format_rewrites(&rewrite_records));
+
+// Parse flexible time range strings
+let range = parse_time_range("2026-05-01..2026-06-01")?;
+let range = parse_time_range("today")?;
+let range = parse_time_range("last_7d")?;
 ```
 
 #### Configuration
@@ -197,6 +308,7 @@ use tokenless_stats::TokenlessConfig;
 
 let mut config = TokenlessConfig::load();
 config.stats_enabled = true;
+config.experimental_mode = true;
 config.save()?;
 ```
 
@@ -210,8 +322,68 @@ let tokens = estimate_tokens_from_bytes(json_string.len());
 let tokens = estimate_tokens_cjk_aware(text);
 
 // Byte-count mode
-let tokens = estimate_tokens_from_bytes(text.as_bytes());
+let tokens = estimate_tokens_from_bytes(text.len());
+
+// String-based alias
+let tokens = estimate_tokens("hello world");
+
+// Error handling
+use tokenless_stats::{StatsError, StatsResult};
+
+fn query() -> StatsResult<Vec<StatsRecord>> {
+    let recorder = StatsRecorder::new("stats.db").map_err(StatsError::from)?;
+    Ok(recorder.all_records(None)?)
+}
 ```
+
+#### StatsError and StatsResult
+
+| Type | Description |
+|------|------|
+| `StatsError` | Error enum for stats operations (DB errors, invalid input, not found) |
+| `StatsResult<T>` | Type alias for `Result<T, StatsError>` |
+
+#### StatsSummary
+
+Aggregated compression metrics returned by `format_summary` and `agent_summary`:
+
+```rust
+use tokenless_stats::StatsSummary;
+
+// Built by format_summary or returned directly
+let summary: StatsSummary = recorder.agent_summary()?;
+// Fields: total_records, total_chars_before, total_chars_after,
+//         total_tokens_before, total_tokens_after,
+//         avg_savings_pct, records_by_type, records_by_agent
+```
+
+#### Experimental Mode API
+
+Global toggle for enabling experimental compression behaviors:
+
+```rust
+use tokenless_stats::experimental;
+
+// Enable experimental features (higher compression, possibly less stable)
+experimental::set_experimental_mode(true);
+
+// Check current experimental mode status
+if experimental::is_experimental_mode() {
+    // Use experimental code paths
+    let compressor = SchemaCompressor::new()
+        .with_func_desc_max_tokens(20); // more aggressive
+}
+```
+
+| Function | Returns | Description |
+|------|:---:|------|
+| `set_experimental_mode(enabled)` | — | Enable or disable experimental mode globally |
+| `is_experimental_mode()` | `bool` | Query current experimental mode status |
+
+Experimental mode enables:
+- More aggressive token limits in `SchemaCompressor`
+- Extra field-dropping rules in `ResponseCompressor`
+- Persistent record tagging via `StatsRecord::experimental_mode`
 
 ---
 

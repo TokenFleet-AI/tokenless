@@ -26,7 +26,11 @@ pub fn render(f: &mut Frame, record: &StatsRecord, lang: &Lang) {
         .split(area);
 
     // Header
-    let op = lang.op_label(&record.operation);
+    let op = if record.experimental_mode {
+        format!("{} ⚡", lang.op_label(&record.operation))
+    } else {
+        lang.op_label(&record.operation).to_string()
+    };
     let savings_pct = if record.before_tokens > 0 {
         ((record.before_tokens - record.after_tokens) as f64 / record.before_tokens as f64
             * 100.0
@@ -39,7 +43,7 @@ pub fn render(f: &mut Frame, record: &StatsRecord, lang: &Lang) {
     let agent_label = lang.agent_label(&record.agent_id);
     let header = Paragraph::new(Line::from(Span::raw(lang.detail_header(
         record.id,
-        op,
+        &op,
         agent_label,
         savings_pct,
     ))))

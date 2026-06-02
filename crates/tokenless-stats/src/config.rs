@@ -11,13 +11,26 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenlessConfig {
     /// Whether stats recording is enabled.
+    #[serde(default = "default_true")]
     pub stats_enabled: bool,
+    /// Whether experimental mode is enabled (format router, enhanced TOON,
+    /// semantic compression, diff hook, TUI, MCP, cache).
+    /// Default: `true`. Set to `false` to use only core compression
+    /// (schema + response + basic TOON).
+    #[serde(default = "default_true")]
+    pub experimental_mode: bool,
+}
+
+/// Serde default for boolean `true` fields.
+const fn default_true() -> bool {
+    true
 }
 
 impl Default for TokenlessConfig {
     fn default() -> Self {
         Self {
             stats_enabled: true,
+            experimental_mode: true,
         }
     }
 }
@@ -58,6 +71,19 @@ impl TokenlessConfig {
         self.stats_enabled
     }
 
+    /// Check if experimental mode is enabled, respecting env override.
+    ///
+    /// Set `TOKENLESS_EXPERIMENTAL=0` or `TOKENLESS_EXPERIMENTAL=false` to
+    /// disable all experimental features (format router, enhanced TOON,
+    /// semantic compression, diff hook, TUI, MCP, cache).
+    #[must_use]
+    pub fn is_experimental_enabled(&self) -> bool {
+        if let Ok(val) = std::env::var("TOKENLESS_EXPERIMENTAL") {
+            return val == "1" || val.eq_ignore_ascii_case("true");
+        }
+        self.experimental_mode
+    }
+
     /// Return whether the config file exists on disk.
     #[must_use]
     pub fn config_file_exists() -> bool {
@@ -71,6 +97,7 @@ impl TokenlessConfig {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -78,12 +105,29 @@ mod tests {
     fn test_default_is_enabled() {
         let config = TokenlessConfig::default();
         assert!(config.stats_enabled);
+        assert!(config.experimental_mode);
+    }
+
+    #[test]
+    fn test_experimental_mode_default_true() {
+        let config = TokenlessConfig::default();
+        assert!(config.is_experimental_enabled());
+    }
+
+    #[test]
+    fn test_experimental_mode_disabled() {
+        let config = TokenlessConfig {
+            stats_enabled: true,
+            experimental_mode: false,
+        };
+        assert!(!config.is_experimental_enabled());
     }
 
     #[test]
     fn test_is_stats_enabled_respects_env() {
         let config = TokenlessConfig {
             stats_enabled: false,
+            experimental_mode: true,
         };
         // When env is not set, use config value
         assert!(!config.is_stats_enabled());
@@ -95,8 +139,19 @@ mod tests {
         // This test verifies the API compiles and doesn't panic.
         let config = TokenlessConfig {
             stats_enabled: false,
+            experimental_mode: false,
         };
         assert!(!config.stats_enabled);
+        assert!(!config.experimental_mode);
         // Actual roundtrip requires mocking HOME, which is not feasible here.
+    }
+
+    #[test]
+    fn test_deserialize_missing_experimental_mode_defaults_true() {
+        let json = r#"{"stats_enabled":true}"#;
+        let config: TokenlessConfig =
+            serde_json::from_str(json).expect("valid JSON should deserialize");
+        assert!(config.experimental_mode);
+        assert!(config.is_experimental_enabled());
     }
 }

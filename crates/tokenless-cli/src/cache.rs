@@ -5,6 +5,7 @@
 //! computation when the same input is seen repeatedly within a session.
 //!
 //! Set `TOKENLESS_CACHE_SIZE=0` to disable caching (default: 512 entries).
+//! The cache is also disabled when experimental mode is off.
 
 use std::{
     collections::HashMap,
@@ -12,6 +13,8 @@ use std::{
     sync::{LazyLock, Mutex},
     time::Instant,
 };
+
+use tokenless_stats::TokenlessConfig;
 
 /// An LRU cache keyed by blake3 hash (first 8 bytes as u64).
 ///
@@ -103,12 +106,22 @@ fn cache() -> std::sync::MutexGuard<'static, PredictCache> {
 }
 
 /// Check cache for `input`. Returns `Some(cached_output)` on hit, `None` on miss.
+///
+/// Returns `None` immediately when experimental mode is disabled.
 pub fn cache_get(input: &str) -> Option<String> {
+    if !TokenlessConfig::load().is_experimental_enabled() {
+        return None;
+    }
     cache().get(input)
 }
 
 /// Store `output` as the cached result for `input`.
+///
+/// No-op when experimental mode is disabled.
 pub fn cache_insert(input: &str, output: &str) {
+    if !TokenlessConfig::load().is_experimental_enabled() {
+        return;
+    }
     cache().insert(input, output);
 }
 

@@ -6,6 +6,7 @@ pub mod config;
 pub mod dashboard;
 pub mod detail;
 pub mod help;
+pub mod project_picker;
 pub mod records;
 pub mod trends;
 

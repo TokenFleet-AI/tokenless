@@ -16,7 +16,7 @@ pub fn render(f: &mut Frame, lang: &Lang) {
 
     // Centered overlay dimensions (about 44 cols wide, fits all rows)
     let width = 44.min(area.width.saturating_sub(4));
-    let height = 15.min(area.height.saturating_sub(4));
+    let height = 18.min(area.height.saturating_sub(4));
     let x = (area.width - width) / 2;
     let y = (area.height - height) / 2;
     let overlay = Rect::new(x, y, width, height);
@@ -46,7 +46,7 @@ pub fn render(f: &mut Frame, lang: &Lang) {
 
     let rows = [
         Row::new(vec![
-            Cell::from(Span::styled("Tab / \u{2190}\u{2192}", key_style)),
+            Cell::from(Span::styled("h / Tab", key_style)),
             Cell::from(lang.help_action("switch_tabs")),
         ]),
         Row::new(vec![
@@ -74,8 +74,20 @@ pub fn render(f: &mut Frame, lang: &Lang) {
             Cell::from(lang.help_action("config")),
         ]),
         Row::new(vec![
+            Cell::from(Span::styled("p", key_style)),
+            Cell::from(lang.help_action("project")),
+        ]),
+        Row::new(vec![
+            Cell::from(Span::styled("d", key_style)),
+            Cell::from(lang.help_action("back")),
+        ]),
+        Row::new(vec![
             Cell::from(Span::styled("?", key_style)),
             Cell::from(lang.help_action("help")),
+        ]),
+        Row::new(vec![
+            Cell::from(Span::styled("Esc", key_style)),
+            Cell::from(lang.help_action("dismiss")),
         ]),
         Row::new(vec![
             Cell::from(Span::styled("q", key_style)),

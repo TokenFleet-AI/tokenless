@@ -19,8 +19,12 @@
 | Crate | 名称 | 说明 |
 |-------|------|------|
 | `tokenless-schema` | `tokenless-schema` | SchemaCompressor + ResponseCompressor |
+| `tokenless-semantic` | `tokenless-semantic` | 语义向量 / 嵌入 |
 | `tokenless-stats` | `tokenless-stats` | SQLite 指标追踪 |
+| `core` | `tokenless-core` | 共享核心工具 |
+| `tokenless-tui` | `tokenless-tui` | TUI 组件库 |
 | `tokenless-cli` | `tokenless` | CLI 二进制 |
+| `apps/tui` | `tokenless-tui-app` | TUI 应用二进制 |
 
 ### 发布前准备
 
@@ -39,9 +43,13 @@
 **crates.io 依赖链：**
 
 ```
-tokenless-schema ────────┐
+core ────────────────────┐
+tokenless-schema ────────┤
+tokenless-semantic ──────┤
                          ├──→ tokenless-cli (tokenless)
-tokenless-stats ─────────┘
+tokenless-stats ─────────┤
+tokenless-tui ───────────┤
+                         ├──→ apps/tui (tokenless-tui-app)
 ```
 
 ### 发布步骤
@@ -87,11 +95,11 @@ workspace 依赖已从 `path = "../rtk/crates/rtk-registry"` 改为 `"0.1.0"`。
 ### 版本号策略
 
 ```
-v0.1.0 → v0.2.0 → v0.3.0 → v1.0.0
-  dev      功能完善   稳定API   正式版
+v0.1.0 → v0.4.0 → v1.0.0
+  dev      功能完善   正式版
 ```
 
-当前 `version = "0.2.0"`。
+当前 `version = "0.4.0"`。
 
 ---
 
@@ -205,7 +213,7 @@ gh repo create TokenFleet-AI/homebrew-tap --public
 class Tokenless < Formula
   desc "LLM token optimization toolkit"
   homepage "https://github.com/TokenFleet-AI/tokenless"
-  url "https://github.com/TokenFleet-AI/tokenless/releases/download/v0.2.0/tokenless-aarch64-apple-darwin.tar.gz"
+  url "https://github.com/TokenFleet-AI/tokenless/releases/download/v0.4.0/tokenless-aarch64-apple-darwin.tar.gz"
   sha256 "..."
   license "Apache-2.0"
 
@@ -269,6 +277,6 @@ brew install TokenFleet-AI/tap/tokenless
 | 变化 | 版本号 | 示例 |
 |------|--------|------|
 | 初始开发 | 0.1.x | v0.1.0 |
-| 新增功能（非破坏性） | 0.2.x | v0.2.0 |
+| 新增功能（非破坏性） | 0.2.x | v0.4.0 |
 | API 重大变更 | 0.3.x / 1.0 | v0.3.0 |
 | 正式版 | 1.x.x | v1.0.0 |

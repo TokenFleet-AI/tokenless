@@ -22,7 +22,7 @@ This repository is a reusable Rust 2024 workspace template. These rules are mand
 - Keep changes minimal, cohesive, and aligned with SOLID, DRY, and KISS.
 - Check for existing user changes before editing; never overwrite unrelated work.
 - Prefer existing Makefile targets. For new automation, add a `Makefile` target instead of ad-hoc shell scripts.
-- **Install path**: `make install` installs to `~/.local/bin/`. For **development mode**, use `./dev-install.sh` which installs to `~/.cargo/bin/`. Do not suggest `make install` when the user is developing locally — use `./dev-install.sh` instead.
+- **Install path**: `make install` installs to `~/.local/bin/`. For **development mode**, use `./scripts/dev-install.sh` which installs to `~/.cargo/bin/`. Do not suggest `make install` when the user is developing locally — use `./scripts/dev-install.sh` instead.
 - For dependency, Helm chart, or external-resource changes, check current upstream usage and security posture first. Put deep research under `docs/research/` after checking existing research.
 - For specs, inspect `specs/`, place new files there, name them `{feature-name}-{type}.md`, and update `specs/index.md`.
 - For docs, inspect `docs/`, place new files there, and update `docs/index.md`. If documentation was not explicitly requested but is useful, still place it under `docs/`.

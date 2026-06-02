@@ -8,7 +8,17 @@
 - [一、项目概览](#一项目概览)
 - [二、安装](#二安装)
 - [三、CLI 使用](#三cli-使用)
-  - [3.8 TUI 仪表盘](#38-tui-仪表盘)
+  - [3.1 Schema 压缩](#31-schema-压缩)
+  - [3.2 Response 压缩](#32-response-压缩)
+  - [3.3 TOON 编码](#33-toon-编码)
+  - [3.4 自动压缩](#34-自动压缩compress-auto)
+  - [3.5 命令重写](#35-命令重写)
+  - [3.6 Hook 命令](#36-hook-命令)
+  - [3.7 环境检查](#37-环境检查)
+  - [3.8 统计](#38-统计)
+  - [3.9 环境变量参考](#39-环境变量参考)
+  - [3.10 TUI 仪表盘](#310-tui-仪表盘)
+  - [3.11 MCP](#311-mcp)
 - [四、Agent 集成](#四agent-集成)
 - [五、OpenClaw 插件](#五openclaw-插件)
 - [六、Hermes Agent 插件](#六hermes-agent-插件)
@@ -139,7 +149,7 @@ make setup
 **开发模式**（安装到 `~/.cargo/bin/`）：
 
 ```bash
-./dev-install.sh
+./scripts/dev-install.sh
 ```
 
 功能等同于 `make install`，但将二进制文件安装到 `~/.cargo/bin/`，方便本地开发使用。
@@ -161,12 +171,17 @@ make setup
 # 单文件
 tokenless compress-schema -f tool.json
 
+# 输出压缩报告
+tokenless compress-schema -f tool.json --report
+
 # 标准输入
 cat tool.json | tokenless compress-schema
 
 # 批量（JSON 数组）
 tokenless compress-schema -f tools.json --batch
 ```
+
+> 所有压缩命令支持 `--project`、`--agent-id`、`--session-id`、`--tool-use-id` 选项，用于关联统计记录。
 
 压缩效果：移除 `title`、`examples`、截断 description、去除 markdown 格式。
 
@@ -182,7 +197,16 @@ tokenless compress-schema -f tools.json --batch
 压缩 API 返回的 JSON：
 
 ```bash
+# 从文件压缩
 tokenless compress-response -f response.json
+
+# 输出压缩报告
+tokenless compress-response -f response.json --report
+
+# 带上下文的语义压缩
+tokenless compress-response -f response.json --semantic --context "API response"
+
+# 标准输入
 curl -s https://api.example.com/data | tokenless compress-response
 ```
 
@@ -205,7 +229,31 @@ echo 'name: Alice\nage: 30' | tokenless decompress-toon
 # → {"name":"Alice","age":30}
 ```
 
-### 3.4 命令重写
+### 3.4 自动压缩（compress-auto）
+
+整合 schema + response 压缩，一步完成：
+
+```bash
+# 从文件自动检测并压缩
+tokenless compress-auto -f response.json
+
+# 输出报告
+tokenless compress-auto -f response.json --report
+
+# 关联统计
+tokenless compress-auto -f response.json --project my-project --agent-id claude --session-id abc --tool-use-id 123
+```
+
+| 选项 | 说明 |
+|------|------|
+| `-f` / `--file` | 输入文件 |
+| `--report` | 输出压缩报告 |
+| `--project` | 项目名称 |
+| `--agent-id` | Agent ID |
+| `--session-id` | 会话 ID |
+| `--tool-use-id` | 工具调用 ID |
+
+### 3.5 命令重写
 
 ```bash
 tokenless rewrite "git status"
@@ -213,15 +261,44 @@ tokenless rewrite "git status"
 
 tokenless rewrite "cargo test && git push"
 # → rtk cargo test && rtk git push
+
+# 排除特定命令
+tokenless rewrite "git status && npm test" --exclude "npm"
+
+# 透明前缀模式
+tokenless rewrite "git status" --transparent-prefix "rtk"
 ```
 
 RTK 没装时回退原始命令并提示安装。
 
-### 3.5 环境检查
+### 3.6 Hook 命令
+
+Hook 命令通过 stdin/stdout JSON 协议与 Claude Code 交互，由 Agent 的 hooks 配置自动调用。
+
+```bash
+# 命令重写 hook
+tokenless hook rewrite --target claude --project <项目名>
+
+# 响应压缩 hook
+tokenless hook compress --semantic --target claude --project <项目名>
+
+# 差分输出 hook
+tokenless hook diff --target claude --project <项目名>
+```
+
+| 选项 | 说明 |
+|------|------|
+| `--target` | 目标 agent（claude, cursor, windsurf 等） |
+| `--project` | 项目名称 |
+
+### 3.7 环境检查
 
 ```bash
 # 检查单个工具
 tokenless env-check --tool Shell
+
+# JSON 输出格式
+tokenless env-check --tool Shell --json
 
 # 检查全部
 tokenless env-check --all
@@ -235,16 +312,25 @@ tokenless env-check --tool Shell --fix
 
 依赖声明在 `adapters/tokenless/common/tool-ready-spec.json`，支持 6 个工具类别：Shell、WebFetch、Read、Write、Git、Python。
 
-### 3.6 统计
+### 3.8 统计
 
 ```bash
-tokenless stats summary           # 汇总
-tokenless stats list              # 最近记录
-tokenless stats show <ID>         # 详情
-tokenless stats enable/disable    # 开关
+tokenless stats summary                    # 汇总
+tokenless stats summary --project my-proj  # 按项目汇总
+tokenless stats summary --limit 50         # 限制条数
+tokenless stats list                       # 最近记录
+tokenless stats list --project my-proj --namespace default --limit 20
+tokenless stats show <ID>                  # 详情
+tokenless stats enable/disable             # 开关
+tokenless stats clear                      # 清除所有记录
+tokenless stats rewrites                   # 查看重写记录
+tokenless stats status                     # 统计状态
+tokenless stats diff                       # 差分对比
+tokenless stats experimental-on            # 启用实验功能
+tokenless stats experimental-off           # 关闭实验功能
 ```
 
-### 3.7 环境变量参考
+### 3.9 环境变量参考
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
@@ -254,17 +340,17 @@ tokenless stats enable/disable    # 开关
 | `TOKENLESS_STATS_ENABLED` | — | 环境变量方式禁用统计（设为 `0` 或 `false`） |
 | `TOKENLESS_LANG` | `zh` | TUI 界面语言（`zh` 或 `en`），也会从 `LANG` 环境变量解析 |
 
-### 3.8 TUI 仪表盘
+### 3.10 TUI 仪表盘
 
 启动交互式终端仪表盘，实时查看压缩统计数据：
 
 ```bash
-tokenless tui                     # 默认：中文，5 秒刷新
+tokenless tui                     # 默认：中文，1 秒刷新
 tokenless tui --lang en           # 英文界面
 tokenless tui --refresh 3         # 3 秒刷新间隔
 ```
 
-仪表盘有 **4 个标签页**，用 `Tab` 或 `←` / `→` 切换：
+仪表盘有 **4 个标签页**，用 `h` / `Tab`（下一个）或 `Shift+Tab`（上一个）切换：
 
 | 标签 | 说明 |
 |------|------|
@@ -277,18 +363,37 @@ tokenless tui --refresh 3         # 3 秒刷新间隔
 
 | 按键 | 功能 |
 |------|------|
-| `Tab` / `←→` | 切换标签页 |
+| `h` / `Tab`（下一个）, `Shift+Tab`（上一个） | 切换标签页 |
 | `↑↓` / `j``k` | 滚动 / 导航 |
 | `Enter` | 查看详情（记录详情或代理操作明细） |
 | `d` | 从详情视图返回 |
 | `/` | 搜索 / 过滤记录 |
 | `t` | 切换时间范围：今天 → 本周 → 全部 |
+| `p` | 切换项目过滤器 |
 | `e` | 导出过滤后的记录到 JSON 文件 |
-| `c` | 切换配置面板（统计、缓存、阈值） |
+| `c` | 切换配置面板（统计、缓存、阈值、实验模式） |
+| `e`（配置面板中） | 切换实验模式 |
 | `?` | 切换帮助面板 |
 | `q` / `Esc` | 退出 |
 
 > TUI 与 `tokenless stats` 共享同一个 SQLite 数据库。如果看不到数据，用 `tokenless stats enable` 确认统计记录已开启。
+
+> **前置条件**: 先运行 `tokenless stats experimental-on` 启用实验功能。
+
+### 3.11 MCP
+
+Tokenless 提供 MCP（Model Context Protocol）服务，供兼容的 Agent 使用。
+
+```bash
+# 启动 MCP 服务
+tokenless mcp start --port 3000
+```
+
+| 选项 | 说明 |
+|------|------|
+| `--port` | 监听端口（默认 3456） |
+
+> **前置条件**: 先运行 `tokenless stats experimental-on` 启用实验功能。
 
 ---
 
@@ -299,6 +404,9 @@ tokenless tui --refresh 3         # 3 秒刷新间隔
 ```bash
 # 当前项目安装 Claude Code hooks
 tokenless init
+
+# 调试模式
+tokenless init --debug
 
 # 全局安装到 ~/.claude/settings.json
 tokenless init --global
@@ -338,18 +446,18 @@ Claude Code 的完整 hooks 配置（由 `tokenless init` 自动生成）：
         "hooks": [
           {
             "type": "command",
-            "command": "tokenless hook rewrite claude"
+            "command": "tokenless hook rewrite --target claude --project <项目名>"
           }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "*",
+        "matcher": "^(?!Bash$).*",
         "hooks": [
           {
             "type": "command",
-            "command": "tokenless hook compress"
+            "command": "tokenless hook compress --semantic --target claude --project <项目名>"
           }
         ]
       }
@@ -358,7 +466,7 @@ Claude Code 的完整 hooks 配置（由 `tokenless init` 自动生成）：
 }
 ```
 
-> **注意**：hooks 使用的是 `tokenless hook` 子命令，不是直接调用 `tokenless rewrite` 或 `tokenless compress-response`。`hook` 子命令通过 stdin/stdout 的 JSON 协议与 Claude Code 交互，自动从 hook 输入中读取命令并输出重写后的结果。手动配置时应使用上述 `tokenless hook rewrite claude` 和 `tokenless hook compress` 命令。
+> **注意**：hooks 使用的是 `tokenless hook` 子命令，不是直接调用 `tokenless rewrite` 或 `tokenless compress-response`。`hook` 子命令通过 stdin/stdout 的 JSON 协议与 Claude Code 交互，自动从 hook 输入中读取命令并输出重写后的结果。手动配置时应使用上述 `tokenless hook rewrite --target claude --project <项目名>` 和 `tokenless hook compress --semantic --target claude --project <项目名>` 命令。
 
 ---
 

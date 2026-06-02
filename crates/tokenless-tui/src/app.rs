@@ -81,9 +81,15 @@ pub struct App {
     search_mode: bool,
     export_msg: Option<String>,
 
+    // Project filter
+    selected_project: Option<String>,
+    all_projects: Vec<String>,
+
     // Overlays
     show_help: bool,
     show_config: bool,
+    show_project_picker: bool,
+    project_picker_cursor: usize,
 }
 
 impl App {
@@ -108,15 +114,21 @@ impl App {
             export_msg: None,
             show_help: false,
             show_config: false,
+            selected_project: None,
+            all_projects: Vec::new(),
+            show_project_picker: false,
+            project_picker_cursor: 0,
         }
     }
 
     /// Refresh data from the database.
     fn refresh(&mut self) {
-        if let Ok(records) = self.recorder.all_records(None) {
-            self.summary = StatsSummary::from_records(&records);
+        if let Ok(records) = self.recorder.all_records_filtered(None, None) {
             self.records = records;
             self.apply_filters();
+            // Recompute summary from filtered records so dashboard stat cards
+            // and breakdown reflect the active project/time/text filters.
+            self.summary = StatsSummary::from_records(&self.filtered_records);
         }
     }
 
@@ -148,6 +160,13 @@ impl App {
                 let pattern = self.filter_text.to_lowercase();
                 r.agent_id.to_lowercase().contains(&pattern)
                     || r.operation.as_str().contains(&pattern)
+            })
+            .filter(|r| {
+                // Project filter
+                match &self.selected_project {
+                    Some(proj) => r.project.as_deref() == Some(proj.as_str()),
+                    None => true,
+                }
             })
             .cloned()
             .collect();
@@ -206,7 +225,11 @@ impl App {
     /// Export filtered records to a JSON file.
     fn export_json(&mut self) {
         let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
-        let path = format!("tokenless-export_{ts}.json");
+        let path = if let Some(ref proj) = self.selected_project {
+            format!("tokenless-export_{proj}_{ts}.json")
+        } else {
+            format!("tokenless-export_{ts}.json")
+        };
         #[allow(clippy::disallowed_methods)]
         match serde_json::to_string_pretty(&self.filtered_records) {
             Ok(json) => match std::fs::write(&path, &json) {
@@ -215,6 +238,39 @@ impl App {
             },
             Err(e) => self.export_msg = Some(self.lang.export_error(&e.to_string())),
         }
+    }
+
+    /// Toggle the project picker overlay on/off.
+    fn toggle_project_picker(&mut self) {
+        self.show_project_picker = !self.show_project_picker;
+        if self.show_project_picker {
+            if let Ok(projects) = self.recorder.all_projects() {
+                self.all_projects = projects;
+            }
+            // Position cursor at the currently selected project (+1 for "All Projects")
+            self.project_picker_cursor = match &self.selected_project {
+                Some(proj) => self
+                    .all_projects
+                    .iter()
+                    .position(|p| p == proj)
+                    .map_or(0, |idx| idx + 1),
+                None => 0,
+            };
+        }
+    }
+
+    /// Select the project at the current cursor position.
+    fn select_project(&mut self) {
+        self.selected_project = if self.project_picker_cursor == 0 {
+            None
+        } else {
+            self.all_projects
+                .get(self.project_picker_cursor - 1)
+                .cloned()
+        };
+        self.show_project_picker = false;
+        self.apply_filters();
+        self.summary = StatsSummary::from_records(&self.filtered_records);
     }
 
     /// Run the TUI event loop.
@@ -261,6 +317,32 @@ impl App {
                     KeyCode::Char('c') => {
                         self.show_config = !self.show_config;
                     }
+                    // ── Toggle experimental mode from config overlay ──
+                    KeyCode::Char('e') if self.show_config => {
+                        let mut config = tokenless_stats::TokenlessConfig::load();
+                        config.experimental_mode = !config.experimental_mode;
+                        let _ = config.save();
+                        tokenless_schema::set_experimental_mode(config.is_experimental_enabled());
+                    }
+
+                    // ── Project picker overlay ──
+                    KeyCode::Esc if self.show_project_picker => {
+                        self.show_project_picker = false;
+                    }
+                    KeyCode::Up | KeyCode::Char('k') if self.show_project_picker => {
+                        if self.project_picker_cursor > 0 {
+                            self.project_picker_cursor -= 1;
+                        }
+                    }
+                    KeyCode::Down | KeyCode::Char('j') if self.show_project_picker => {
+                        let max = self.all_projects.len(); // cursor 0 + N projects
+                        if self.project_picker_cursor < max {
+                            self.project_picker_cursor += 1;
+                        }
+                    }
+                    KeyCode::Enter if self.show_project_picker => {
+                        self.select_project();
+                    }
 
                     // ── Dismiss overlays on Esc ──
                     KeyCode::Esc if self.show_help || self.show_config => {
@@ -268,10 +350,18 @@ impl App {
                         self.show_config = false;
                     }
 
+                    // ── Project picker: p key also selects (mirrors Enter) ──
+                    KeyCode::Char('p') if self.show_project_picker => {
+                        self.select_project();
+                    }
+
                     // ── Ignore navigation keys while overlay is active ──
-                    _ if self.show_help || self.show_config => {}
+                    _ if self.show_help || self.show_config || self.show_project_picker => {}
 
                     // ── Normal mode ──
+                    KeyCode::Char('p') => {
+                        self.toggle_project_picker();
+                    }
                     KeyCode::Char('q') | KeyCode::Esc => break,
                     KeyCode::Char('h') | KeyCode::Tab => {
                         self.active_tab = self.active_tab.next();
@@ -397,10 +487,25 @@ impl App {
             ui::config::render(f, &config, &self.lang);
             return;
         }
+        if self.show_project_picker {
+            ui::project_picker::render(
+                f,
+                &self.all_projects,
+                self.project_picker_cursor,
+                &self.lang,
+            );
+            return;
+        }
 
         match self.active_tab {
             Tab::Dashboard => {
-                ui::dashboard::render(f, &self.summary, &self.filtered_records, &self.lang);
+                ui::dashboard::render(
+                    f,
+                    &self.summary,
+                    &self.filtered_records,
+                    &self.lang,
+                    self.selected_project.as_deref(),
+                );
             }
             Tab::Records => {
                 if let Some(ref record) = self.detail_record {
@@ -419,6 +524,7 @@ impl App {
                         time_label,
                         self.search_mode,
                         &self.lang,
+                        self.selected_project.as_deref(),
                     );
                 }
             }
@@ -455,8 +561,280 @@ impl App {
                 let daily_chars: Vec<u64> = daily.iter().map(|d| d.chars_saved).collect();
                 let daily_tokens: Vec<u64> = daily.iter().map(|d| d.tokens_saved).collect();
                 let date_labels: Vec<String> = daily.iter().map(|d| d.date.clone()).collect();
-                ui::trends::render(f, &daily_chars, &daily_tokens, &date_labels, &self.lang);
+                ui::trends::render(
+                    f,
+                    &daily_chars,
+                    &daily_tokens,
+                    &date_labels,
+                    &self.filtered_records,
+                    &self.lang,
+                    self.selected_project.as_deref(),
+                );
             }
         }
+    }
+}
+
+// ── Project picker and multi-project filtering tests ────────────────────
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    reason = "Test code uses unwrap/expect/panic idiomatically for assertion on failure"
+)]
+mod tests {
+    use super::*;
+    use tokenless_stats::{OperationType, StatsRecord};
+
+    /// Helper: create an in-memory `StatsRecorder`.
+    fn make_recorder() -> StatsRecorder {
+        StatsRecorder::new(":memory:").expect("failed to create in-memory database")
+    }
+
+    /// Helper: create a test `App` with a 1-second refresh rate and English locale.
+    fn make_app(recorder: StatsRecorder) -> App {
+        App::new(recorder, 1, Lang::En)
+    }
+
+    // ── Default state ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_should_default_to_all_projects() {
+        let app = make_app(make_recorder());
+
+        // selected_project defaults to None, meaning "All Projects"
+        assert_eq!(
+            app.selected_project, None,
+            "selected_project should default to None (All Projects)"
+        );
+
+        // Project picker overlay is hidden by default
+        assert!(
+            !app.show_project_picker,
+            "show_project_picker should default to false"
+        );
+    }
+
+    // ── Picker toggle ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_should_toggle_project_picker() {
+        let mut app = make_app(make_recorder());
+
+        assert!(!app.show_project_picker);
+        app.toggle_project_picker();
+        assert!(
+            app.show_project_picker,
+            "picker should be visible after first toggle"
+        );
+        app.toggle_project_picker();
+        assert!(
+            !app.show_project_picker,
+            "picker should be hidden after second toggle"
+        );
+    }
+
+    // ── Project-based record filtering ────────────────────────────────
+
+    #[test]
+    fn test_should_filter_records_by_project() {
+        let recorder = make_recorder();
+
+        // Insert records with different project names
+        let r_a = StatsRecord::new(
+            OperationType::CompressSchema,
+            "agent-x".into(),
+            100,
+            25,
+            50,
+            12,
+        )
+        .with_project("project-a");
+
+        let r_b = StatsRecord::new(
+            OperationType::CompressResponse,
+            "agent-y".into(),
+            200,
+            50,
+            100,
+            25,
+        )
+        .with_project("project-b");
+
+        recorder.record(&r_a).expect("insert should succeed");
+        recorder.record(&r_b).expect("insert should succeed");
+
+        let mut app = make_app(recorder);
+        app.selected_project = Some("project-a".to_string());
+        app.refresh();
+
+        assert_eq!(
+            app.filtered_records.len(),
+            1,
+            "should only contain records matching selected_project"
+        );
+        assert_eq!(
+            app.filtered_records[0].project.as_deref(),
+            Some("project-a"),
+            "filtered record should belong to project-a"
+        );
+    }
+
+    #[test]
+    fn test_should_filter_all_projects_when_none() {
+        let recorder = make_recorder();
+
+        let r_a = StatsRecord::new(
+            OperationType::CompressSchema,
+            "agent-x".into(),
+            100,
+            25,
+            50,
+            12,
+        )
+        .with_project("project-a");
+
+        let r_b = StatsRecord::new(
+            OperationType::CompressResponse,
+            "agent-y".into(),
+            100,
+            25,
+            50,
+            12,
+        )
+        .with_project("project-b");
+
+        recorder.record(&r_a).expect("insert should succeed");
+        recorder.record(&r_b).expect("insert should succeed");
+
+        let mut app = make_app(recorder);
+        // selected_project is None by default, but set explicitly for clarity
+        app.selected_project = None;
+        app.refresh();
+
+        assert_eq!(
+            app.filtered_records.len(),
+            2,
+            "should contain all records when selected_project is None"
+        );
+    }
+
+    // ── Export with project name in filename ──────────────────────────
+
+    #[test]
+    fn test_should_export_json_with_project_name() {
+        let mut app = make_app(make_recorder());
+        app.selected_project = Some("my-app".to_string());
+        app.export_json();
+
+        let msg = app
+            .export_msg
+            .as_ref()
+            .expect("export_msg should be set after export");
+
+        assert!(
+            msg.contains("my-app"),
+            "export filename should include project name, got: {msg}"
+        );
+    }
+
+    // ── Picker selection (confirm with Enter) ─────────────────────────
+
+    #[test]
+    fn test_should_close_project_picker_on_enter() {
+        let mut app = make_app(make_recorder());
+
+        // Simulate opening the picker and selecting the second project.
+        // Cursor layout: 0 = "All Projects", 1 = all_projects[0], 2 = all_projects[1], ...
+        app.show_project_picker = true;
+        app.all_projects = vec!["frontend".to_string(), "backend".to_string()];
+        app.project_picker_cursor = 2;
+
+        app.select_project();
+
+        assert!(
+            !app.show_project_picker,
+            "picker should close after selecting a project"
+        );
+        assert_eq!(
+            app.selected_project.as_deref(),
+            Some("backend"),
+            "selected_project should match the project at cursor position"
+        );
+    }
+
+    #[test]
+    fn test_should_select_all_projects_when_cursor_is_zero() {
+        let mut app = make_app(make_recorder());
+
+        app.show_project_picker = true;
+        app.all_projects = vec!["project-a".to_string()];
+        app.project_picker_cursor = 0;
+
+        app.select_project();
+
+        assert!(
+            !app.show_project_picker,
+            "picker should close after selecting All Projects"
+        );
+        assert_eq!(
+            app.selected_project, None,
+            "cursor 0 should select None (All Projects)"
+        );
+    }
+
+    #[test]
+    fn test_select_project_with_empty_list_should_not_panic() {
+        let mut app = make_app(make_recorder());
+
+        app.show_project_picker = true;
+        app.all_projects = vec![];
+        // Cursor at 1 with empty list — simulate moving past All Projects
+        app.project_picker_cursor = 1;
+
+        // Should not panic; Vec::get handles out-of-bounds
+        app.select_project();
+
+        assert!(
+            !app.show_project_picker,
+            "picker should close even when cursor is out of bounds"
+        );
+        assert_eq!(
+            app.selected_project, None,
+            "out-of-bounds cursor should yield None"
+        );
+    }
+
+    #[test]
+    fn test_should_refresh_project_list_on_toggle() {
+        let recorder = make_recorder();
+        let r = StatsRecord::new(
+            OperationType::CompressSchema,
+            "agent-1".into(),
+            100,
+            50,
+            200,
+            100,
+        )
+        .with_project("new-project-x");
+
+        recorder.record(&r).expect("insert should succeed");
+
+        let mut app = make_app(recorder);
+        // all_projects starts empty
+        assert!(
+            app.all_projects.is_empty(),
+            "all_projects should be empty before toggling picker"
+        );
+
+        app.toggle_project_picker();
+
+        assert!(
+            app.all_projects.contains(&"new-project-x".to_string()),
+            "all_projects should be refreshed with DB contents on toggle"
+        );
     }
 }

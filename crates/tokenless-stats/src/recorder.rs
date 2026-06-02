@@ -23,6 +23,15 @@ pub enum StatsError {
     Io(#[from] std::io::Error),
 }
 
+/// Full column list for SELECT queries on the `stats` table.
+///
+/// Shared by [`all_records`], [`records_filtered`], [`records_since`],
+/// [`records_since_filtered`].
+const ALL_COLS: &str = "id, timestamp, operation, agent_id, source_pid, session_id, \
+                        tool_use_id, project, namespace, experimental_mode,
+         before_chars, before_tokens, after_chars, after_tokens,
+         before_text, after_text, before_output, after_output";
+
 /// Statistics recorder that stores metrics in a SQLite database.
 ///
 /// Manual `Debug` is provided because `rusqlite::Connection` does not implement it.
@@ -74,6 +83,9 @@ impl StatsRecorder {
                 source_pid INTEGER,
                 session_id TEXT,
                 tool_use_id TEXT,
+                project TEXT,
+                namespace TEXT,
+                experimental_mode INTEGER NOT NULL DEFAULT 1,
                 before_chars INTEGER NOT NULL,
                 before_tokens INTEGER NOT NULL,
                 after_chars INTEGER NOT NULL,
@@ -91,6 +103,7 @@ impl StatsRecorder {
             "CREATE INDEX IF NOT EXISTS idx_operation ON stats(operation)",
             "CREATE INDEX IF NOT EXISTS idx_agent_id ON stats(agent_id)",
             "CREATE INDEX IF NOT EXISTS idx_session_id ON stats(session_id)",
+            "CREATE INDEX IF NOT EXISTS idx_project ON stats(project)",
         ];
         for idx in &indexes {
             conn.execute(idx, [])?;
@@ -103,6 +116,26 @@ impl StatsRecorder {
                 if !e.to_string().contains("duplicate column name") {
                     return Err(StatsError::Database(e));
                 }
+            }
+        }
+
+        // Schema migration: add project/namespace columns (v0.4.0+)
+        for col in &["project", "namespace"] {
+            let sql = format!("ALTER TABLE stats ADD COLUMN {col} TEXT");
+            if let Err(e) = conn.execute(&sql, []) {
+                if !e.to_string().contains("duplicate column name") {
+                    return Err(StatsError::Database(e));
+                }
+            }
+        }
+
+        // Schema migration: add experimental_mode column (v0.4.0+)
+        if let Err(e) = conn.execute(
+            "ALTER TABLE stats ADD COLUMN experimental_mode INTEGER NOT NULL DEFAULT 1",
+            [],
+        ) {
+            if !e.to_string().contains("duplicate column name") {
+                return Err(StatsError::Database(e));
             }
         }
 
@@ -144,10 +177,11 @@ impl StatsRecorder {
         conn.execute(
             "INSERT INTO stats (
                 timestamp, operation, agent_id, source_pid, session_id, tool_use_id,
+                project, namespace, experimental_mode,
                 before_chars, before_tokens, after_chars, after_tokens,
                 before_text, after_text,
                 before_output, after_output
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             rusqlite::params![
                 stats_record.timestamp.to_rfc3339(),
                 stats_record.operation.as_str(),
@@ -155,6 +189,9 @@ impl StatsRecorder {
                 stats_record.source_pid,
                 stats_record.session_id,
                 stats_record.tool_use_id,
+                stats_record.project,
+                stats_record.namespace,
+                i64::from(stats_record.experimental_mode),
                 stats_record.before_chars,
                 stats_record.before_tokens,
                 stats_record.after_chars,
@@ -177,22 +214,18 @@ impl StatsRecorder {
     pub fn all_records(&self, limit: Option<usize>) -> StatsResult<Vec<StatsRecord>> {
         let conn = self.lock_conn();
 
-        const COLS: &str = "id, timestamp, operation, agent_id, source_pid, session_id, \
-                            tool_use_id,
-             before_chars, before_tokens, after_chars, after_tokens,
-             before_text, after_text, before_output, after_output";
-
         let records = match limit {
             Some(n) => {
                 let mut stmt = conn.prepare(&format!(
-                    "SELECT {COLS} FROM stats ORDER BY timestamp DESC LIMIT ?1"
+                    "SELECT {ALL_COLS} FROM stats ORDER BY timestamp DESC LIMIT ?1"
                 ))?;
                 let rows = stmt.query_map([n as i64], Self::row_to_record)?;
                 rows.filter_map(|r| r.ok()).collect()
             }
             None => {
-                let mut stmt =
-                    conn.prepare(&format!("SELECT {COLS} FROM stats ORDER BY timestamp DESC"))?;
+                let mut stmt = conn.prepare(&format!(
+                    "SELECT {ALL_COLS} FROM stats ORDER BY timestamp DESC"
+                ))?;
                 let rows = stmt.query_map([], Self::row_to_record)?;
                 rows.filter_map(|r| r.ok()).collect()
             }
@@ -211,6 +244,7 @@ impl StatsRecorder {
 
         let mut stmt = conn.prepare(
             "SELECT id, timestamp, operation, agent_id, source_pid, session_id, tool_use_id,
+                    project, namespace, experimental_mode,
                     before_chars, before_tokens, after_chars, after_tokens,
                     before_text, after_text, before_output, after_output
              FROM stats WHERE id = ?1",
@@ -246,8 +280,8 @@ impl StatsRecorder {
 
     /// Query records with optional filters.
     ///
-    /// Supports filtering by exact `agent_id`, text search across
-    /// `agent_id` and `operation` columns, and an optional `limit`.
+    /// Supports filtering by exact `agent_id`, `project`, `namespace`, text
+    /// search across `agent_id` and `operation` columns, and an optional `limit`.
     /// Returns records ordered by timestamp descending.
     ///
     /// # Errors
@@ -257,16 +291,13 @@ impl StatsRecorder {
         &self,
         agent_id: Option<&str>,
         search: Option<&str>,
+        project: Option<&str>,
+        namespace: Option<&str>,
         limit: Option<usize>,
     ) -> StatsResult<Vec<StatsRecord>> {
         let conn = self.lock_conn();
 
-        const COLS: &str = "id, timestamp, operation, agent_id, source_pid, session_id, \
-                            tool_use_id,
-             before_chars, before_tokens, after_chars, after_tokens,
-             before_text, after_text, before_output, after_output";
-
-        let mut sql = format!("SELECT {COLS} FROM stats WHERE 1=1");
+        let mut sql = format!("SELECT {ALL_COLS} FROM stats WHERE 1=1");
         let mut params: Vec<rusqlite::types::Value> = Vec::new();
 
         if let Some(aid) = agent_id {
@@ -274,11 +305,21 @@ impl StatsRecorder {
             params.push(rusqlite::types::Value::Text(aid.to_string()));
         }
 
-        if let Some(pattern) = search {
+        if let Some(pat) = search {
             sql.push_str(" AND (agent_id LIKE ? OR operation LIKE ?)");
-            let like = rusqlite::types::Value::Text(format!("%{pattern}%"));
+            let like = rusqlite::types::Value::Text(format!("%{pat}%"));
             params.push(like.clone());
             params.push(like);
+        }
+
+        if let Some(proj) = project {
+            sql.push_str(" AND project = ?");
+            params.push(rusqlite::types::Value::Text(proj.to_string()));
+        }
+
+        if let Some(ns) = namespace {
+            sql.push_str(" AND namespace = ?");
+            params.push(rusqlite::types::Value::Text(ns.to_string()));
         }
 
         sql.push_str(" ORDER BY timestamp DESC");
@@ -311,6 +352,23 @@ impl StatsRecorder {
         Ok(agents)
     }
 
+    /// Get the list of all distinct project names, sorted alphabetically.
+    /// Entries with `NULL` project are excluded.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the query fails.
+    pub fn all_projects(&self) -> StatsResult<Vec<String>> {
+        let conn = self.lock_conn();
+
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT project FROM stats WHERE project IS NOT NULL ORDER BY project",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let projects: Vec<String> = rows.filter_map(|r| r.ok()).collect();
+        Ok(projects)
+    }
+
     /// Query records within a time range, newest first.
     ///
     /// `since` and `until` should be RFC 3339 strings (e.g., from
@@ -327,12 +385,7 @@ impl StatsRecorder {
     ) -> StatsResult<Vec<StatsRecord>> {
         let conn = self.lock_conn();
 
-        const COLS: &str = "id, timestamp, operation, agent_id, source_pid, session_id, \
-                            tool_use_id,
-             before_chars, before_tokens, after_chars, after_tokens,
-             before_text, after_text, before_output, after_output";
-
-        let mut sql = format!("SELECT {COLS} FROM stats WHERE 1=1");
+        let mut sql = format!("SELECT {ALL_COLS} FROM stats WHERE 1=1");
         let mut params: Vec<rusqlite::types::Value> = Vec::new();
 
         if let Some(s) = since {
@@ -386,6 +439,173 @@ impl StatsRecorder {
         Ok(row)
     }
 
+    /// Query all records with optional project filter and limit.
+    ///
+    /// Convenience wrapper around [`records_filtered`] that only exposes
+    /// `project` and `limit` filters.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the query fails.
+    pub fn all_records_filtered(
+        &self,
+        project: Option<&str>,
+        limit: Option<usize>,
+    ) -> StatsResult<Vec<StatsRecord>> {
+        self.records_filtered(None, None, project, None, limit)
+    }
+
+    /// Query records within a time range and optional project filter, newest
+    /// first.
+    ///
+    /// `since` and `until` should be RFC 3339 strings. Records with
+    /// `timestamp >= since` and `timestamp <= until` are included.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the query fails.
+    pub fn records_since_filtered(
+        &self,
+        since: Option<&str>,
+        until: Option<&str>,
+        project: Option<&str>,
+    ) -> StatsResult<Vec<StatsRecord>> {
+        let conn = self.lock_conn();
+
+        let mut sql = format!("SELECT {ALL_COLS} FROM stats WHERE 1=1");
+        let mut params: Vec<rusqlite::types::Value> = Vec::new();
+
+        if let Some(s) = since {
+            sql.push_str(" AND timestamp >= ?");
+            params.push(rusqlite::types::Value::Text(s.to_string()));
+        }
+        if let Some(u) = until {
+            sql.push_str(" AND timestamp <= ?");
+            params.push(rusqlite::types::Value::Text(u.to_string()));
+        }
+        if let Some(p) = project {
+            sql.push_str(" AND project = ?");
+            params.push(rusqlite::types::Value::Text(p.to_string()));
+        }
+
+        sql.push_str(" ORDER BY timestamp DESC");
+
+        let mut stmt = conn.prepare(&sql)?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params
+            .iter()
+            .map(|v| v as &dyn rusqlite::types::ToSql)
+            .collect();
+        let rows = stmt.query_map(param_refs.as_slice(), Self::row_to_record)?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    /// Get aggregated summary statistics for a specific project.
+    ///
+    /// Returns a single [`ProjectSummaryRow`] with summed counts. If the
+    /// project has no records, all totals are zero (with the requested
+    /// project name filled in).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the query fails.
+    pub fn project_summary(&self, project: &str) -> StatsResult<ProjectSummaryRow> {
+        let conn = self.lock_conn();
+
+        let row = conn.query_row(
+            "SELECT ?1, COUNT(*), COALESCE(SUM(before_chars), 0), COALESCE(SUM(after_chars), 0), \
+             COALESCE(SUM(before_tokens), 0), COALESCE(SUM(after_tokens), 0) FROM stats WHERE \
+             project = ?1",
+            [project],
+            Self::row_to_project_summary,
+        )?;
+
+        Ok(row)
+    }
+
+    /// Get aggregated summary statistics for all projects (excluding NULL
+    /// project records).
+    ///
+    /// Results are ordered alphabetically by project name.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the query fails.
+    pub fn projects_summary(&self) -> StatsResult<Vec<ProjectSummaryRow>> {
+        let conn = self.lock_conn();
+
+        let mut stmt = conn.prepare(
+            "SELECT project, COUNT(*), COALESCE(SUM(before_chars), 0), \
+             COALESCE(SUM(after_chars), 0), COALESCE(SUM(before_tokens), 0), \
+             COALESCE(SUM(after_tokens), 0) FROM stats WHERE project IS NOT NULL \
+             GROUP BY project ORDER BY project",
+        )?;
+
+        let rows = stmt.query_map([], Self::row_to_project_summary)?;
+
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    /// Get daily trend data points for a specific project or all projects.
+    ///
+    /// Groups records by `date(timestamp)` and aggregates
+    /// `chars_saved = SUM(before_chars - after_chars)` and
+    /// `tokens_saved = SUM(before_tokens - after_tokens)`.
+    ///
+    /// When `project` is `None`, includes all records (including NULL-
+    /// project records). Optional `since` and `until` parameters filter by
+    /// timestamp range.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the query fails.
+    pub fn project_daily_trends(
+        &self,
+        project: Option<&str>,
+        since: Option<&str>,
+        until: Option<&str>,
+    ) -> StatsResult<Vec<ProjectDaily>> {
+        let conn = self.lock_conn();
+
+        let mut sql = String::from(
+            "SELECT date(timestamp), \
+             COALESCE(SUM(before_chars - after_chars), 0), \
+             COALESCE(SUM(before_tokens - after_tokens), 0), \
+             COUNT(*) FROM stats WHERE 1=1",
+        );
+        let mut params: Vec<rusqlite::types::Value> = Vec::new();
+
+        if let Some(p) = project {
+            sql.push_str(" AND project = ?");
+            params.push(rusqlite::types::Value::Text(p.to_string()));
+        }
+        if let Some(s) = since {
+            sql.push_str(" AND timestamp >= ?");
+            params.push(rusqlite::types::Value::Text(s.to_string()));
+        }
+        if let Some(u) = until {
+            sql.push_str(" AND timestamp <= ?");
+            params.push(rusqlite::types::Value::Text(u.to_string()));
+        }
+
+        sql.push_str(" GROUP BY date(timestamp) ORDER BY date(timestamp)");
+
+        let mut stmt = conn.prepare(&sql)?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params
+            .iter()
+            .map(|v| v as &dyn rusqlite::types::ToSql)
+            .collect();
+        let rows = stmt.query_map(param_refs.as_slice(), |row| {
+            Ok(ProjectDaily {
+                date: row.get(0)?,
+                chars_saved: u64::try_from(row.get::<_, i64>(1)?).unwrap_or(0),
+                tokens_saved: u64::try_from(row.get::<_, i64>(2)?).unwrap_or(0),
+                record_count: usize::try_from(row.get::<_, i64>(3)?).unwrap_or(0),
+            })
+        })?;
+
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
     fn row_to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<StatsRecord> {
         Ok(StatsRecord {
             id: row.get(0)?,
@@ -398,14 +618,33 @@ impl StatsRecorder {
             source_pid: row.get(4)?,
             session_id: row.get(5)?,
             tool_use_id: row.get(6)?,
-            before_chars: row.get(7)?,
-            before_tokens: row.get(8)?,
-            after_chars: row.get(9)?,
-            after_tokens: row.get(10)?,
-            before_text: row.get(11)?,
-            after_text: row.get(12)?,
-            before_output: row.get(13)?,
-            after_output: row.get(14)?,
+            project: row.get(7)?,
+            namespace: row.get(8)?,
+            experimental_mode: row.get::<_, i64>(9)? != 0,
+            before_chars: row.get(10)?,
+            before_tokens: row.get(11)?,
+            after_chars: row.get(12)?,
+            after_tokens: row.get(13)?,
+            before_text: row.get(14)?,
+            after_text: row.get(15)?,
+            before_output: row.get(16)?,
+            after_output: row.get(17)?,
+        })
+    }
+
+    /// Map a database row to a [`ProjectSummaryRow`].
+    ///
+    /// Columns are assumed to be in order: project, COUNT(*),
+    /// COALESCE(SUM(before_chars), 0), COALESCE(SUM(after_chars), 0),
+    /// COALESCE(SUM(before_tokens), 0), COALESCE(SUM(after_tokens), 0).
+    fn row_to_project_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProjectSummaryRow> {
+        Ok(ProjectSummaryRow {
+            project: row.get(0)?,
+            record_count: usize::try_from(row.get::<_, i64>(1)?).unwrap_or(0),
+            total_before_chars: usize::try_from(row.get::<_, i64>(2)?).unwrap_or(0),
+            total_after_chars: usize::try_from(row.get::<_, i64>(3)?).unwrap_or(0),
+            total_before_tokens: usize::try_from(row.get::<_, i64>(4)?).unwrap_or(0),
+            total_after_tokens: usize::try_from(row.get::<_, i64>(5)?).unwrap_or(0),
         })
     }
 }
@@ -538,6 +777,36 @@ pub struct AgentSummaryRow {
     pub total_before_tokens: usize,
     /// Total tokens after compression.
     pub total_after_tokens: usize,
+}
+
+/// Aggregated statistics for a single project.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ProjectSummaryRow {
+    /// Project name.
+    pub project: String,
+    /// Number of records for this project.
+    pub record_count: usize,
+    /// Total characters before compression.
+    pub total_before_chars: usize,
+    /// Total characters after compression.
+    pub total_after_chars: usize,
+    /// Total tokens before compression.
+    pub total_before_tokens: usize,
+    /// Total tokens after compression.
+    pub total_after_tokens: usize,
+}
+
+/// Daily trend data point for a project or all projects.
+#[derive(Debug, Clone, Default)]
+pub struct ProjectDaily {
+    /// Date string (ISO 8601, e.g., "2025-06-01").
+    pub date: String,
+    /// Characters saved on this date.
+    pub chars_saved: u64,
+    /// Tokens saved on this date.
+    pub tokens_saved: u64,
+    /// Number of records on this date.
+    pub record_count: usize,
 }
 
 #[cfg(test)]
@@ -902,7 +1171,7 @@ mod tests {
         recorder.record(&rec_a).unwrap();
 
         let results = recorder
-            .records_filtered(Some("agent-a"), None, None)
+            .records_filtered(Some("agent-a"), None, None, None, None)
             .unwrap();
         assert_eq!(results.len(), 2, "should find 2 records for agent-a");
         for r in &results {
@@ -933,7 +1202,7 @@ mod tests {
         recorder.record(&rec2).unwrap();
 
         let results = recorder
-            .records_filtered(None, Some("alpha"), None)
+            .records_filtered(None, Some("alpha"), None, None, None)
             .unwrap();
         assert_eq!(results.len(), 1, "should find 1 record matching 'alpha'");
         assert_eq!(results[0].agent_id, "alpha-bot");
@@ -953,7 +1222,7 @@ mod tests {
         recorder.record(&rec).unwrap();
 
         let results = recorder
-            .records_filtered(Some("nonexistent"), None, None)
+            .records_filtered(Some("nonexistent"), None, None, None, None)
             .unwrap();
         assert!(
             results.is_empty(),
@@ -1011,5 +1280,442 @@ mod tests {
         assert_eq!(summary.total_after_chars, 1200);
         assert_eq!(summary.total_before_tokens, 800);
         assert_eq!(summary.total_after_tokens, 400);
+    }
+
+    // ── project / namespace support (TDD) ─────────────────────
+
+    #[test]
+    fn test_should_record_and_retrieve_project() {
+        let recorder = make_test_recorder();
+        let record = StatsRecord::new(
+            OperationType::CompressSchema,
+            "agent".into(),
+            100,
+            10,
+            50,
+            5,
+        )
+        .with_project("my-app");
+        let id = recorder.record(&record).unwrap();
+        let fetched = recorder.record_by_id(id).unwrap().unwrap();
+        assert_eq!(fetched.project.as_deref(), Some("my-app"));
+        assert_eq!(fetched.namespace.as_deref(), None);
+    }
+
+    #[test]
+    fn test_should_record_and_retrieve_namespace() {
+        let recorder = make_test_recorder();
+        let record = StatsRecord::new(
+            OperationType::CompressResponse,
+            "agent".into(),
+            200,
+            20,
+            100,
+            10,
+        )
+        .with_namespace("claude-memories");
+        let id = recorder.record(&record).unwrap();
+        let fetched = recorder.record_by_id(id).unwrap().unwrap();
+        assert_eq!(fetched.namespace.as_deref(), Some("claude-memories"));
+    }
+
+    #[test]
+    fn test_should_migrate_old_db_without_project_column() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        // Create old schema without project/namespace
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS stats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                operation TEXT NOT NULL,
+                agent_id TEXT NOT NULL,
+                source_pid INTEGER,
+                session_id TEXT,
+                tool_use_id TEXT,
+                before_chars INTEGER NOT NULL,
+                before_tokens INTEGER NOT NULL,
+                after_chars INTEGER NOT NULL,
+                after_tokens INTEGER NOT NULL,
+                before_text TEXT,
+                after_text TEXT,
+                before_output TEXT,
+                after_output TEXT
+            )",
+        )
+        .unwrap();
+        // Insert a row
+        conn.execute(
+            "INSERT INTO stats (timestamp, operation, agent_id, before_chars, before_tokens, after_chars, after_tokens)
+             VALUES ('2025-01-01T00:00:00+00:00', 'compress-schema', 'test', 100, 10, 50, 5)",
+            [],
+        )
+        .unwrap();
+        // Migration should succeed (column already added by CREATE TABLE IF NOT EXISTS)
+        conn.execute("ALTER TABLE stats ADD COLUMN project TEXT", [])
+            .unwrap();
+        conn.execute("ALTER TABLE stats ADD COLUMN namespace TEXT", [])
+            .unwrap();
+        // Migrating again should fail with duplicate column
+        let result = conn.execute("ALTER TABLE stats ADD COLUMN project TEXT", []);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate column name")
+        );
+    }
+
+    #[test]
+    fn test_should_list_all_projects() {
+        let recorder = make_test_recorder();
+        recorder
+            .record(
+                &StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
+                    .with_project("app-a"),
+            )
+            .unwrap();
+        recorder
+            .record(
+                &StatsRecord::new(
+                    OperationType::CompressResponse,
+                    "a".into(),
+                    200,
+                    20,
+                    100,
+                    10,
+                )
+                .with_project("app-b"),
+            )
+            .unwrap();
+        recorder
+            .record(
+                &StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
+                    .with_project("app-a"),
+            )
+            .unwrap();
+
+        let projects = recorder.all_projects().unwrap();
+        assert_eq!(projects.len(), 2, "should have 2 distinct projects");
+        assert!(projects.contains(&"app-a".to_string()));
+        assert!(projects.contains(&"app-b".to_string()));
+    }
+
+    #[test]
+    fn test_should_filter_records_by_project() {
+        let recorder = make_test_recorder();
+        let r1 = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
+            .with_project("proj-x");
+        let r2 = StatsRecord::new(
+            OperationType::CompressResponse,
+            "a".into(),
+            200,
+            20,
+            100,
+            10,
+        )
+        .with_project("proj-y");
+        recorder.record(&r1).unwrap();
+        recorder.record(&r2).unwrap();
+        recorder.record(&r1).unwrap();
+
+        let results = recorder
+            .records_filtered(None, None, Some("proj-x"), None, None)
+            .unwrap();
+        assert_eq!(results.len(), 2, "should find 2 records for proj-x");
+        for r in &results {
+            assert_eq!(r.project.as_deref(), Some("proj-x"));
+        }
+    }
+
+    // ── TDD RED: project-aware query APIs (tests only ─────────
+
+    #[test]
+    fn test_should_filter_all_records_by_project() {
+        let recorder = make_test_recorder();
+        let r_a = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
+            .with_project("alpha");
+        let r_b = StatsRecord::new(
+            OperationType::CompressResponse,
+            "a".into(),
+            200,
+            20,
+            100,
+            10,
+        )
+        .with_project("beta");
+        recorder.record(&r_a).unwrap();
+        recorder.record(&r_b).unwrap();
+
+        let filtered = recorder.all_records_filtered(Some("alpha"), None).unwrap();
+        assert_eq!(
+            filtered.len(),
+            1,
+            "should return only alpha project records"
+        );
+        assert_eq!(filtered[0].project.as_deref(), Some("alpha"));
+
+        let all = recorder.all_records_filtered(None, None).unwrap();
+        assert_eq!(
+            all.len(),
+            2,
+            "should return all records when project is None"
+        );
+    }
+
+    #[test]
+    fn test_should_filter_records_by_time_and_project() {
+        let recorder = make_test_recorder();
+        let r_x = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
+            .with_project("proj-x");
+        let r_y = StatsRecord::new(
+            OperationType::CompressResponse,
+            "a".into(),
+            200,
+            20,
+            100,
+            10,
+        )
+        .with_project("proj-y");
+        recorder.record(&r_x).unwrap();
+        recorder.record(&r_y).unwrap();
+
+        let results = recorder
+            .records_since_filtered(
+                Some("2020-01-01T00:00:00+00:00"),
+                Some("2030-01-01T00:00:00+00:00"),
+                Some("proj-x"),
+            )
+            .unwrap();
+        assert_eq!(
+            results.len(),
+            1,
+            "should find only proj-x within wide time range"
+        );
+        assert_eq!(results[0].project.as_deref(), Some("proj-x"));
+    }
+
+    #[test]
+    fn test_should_compute_project_summary() {
+        let recorder = make_test_recorder();
+        let r1 = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
+            .with_project("my-app");
+        let r2 = StatsRecord::new(
+            OperationType::CompressResponse,
+            "a".into(),
+            300,
+            30,
+            150,
+            15,
+        )
+        .with_project("my-app");
+        recorder.record(&r1).unwrap();
+        recorder.record(&r2).unwrap();
+
+        let summary = recorder.project_summary("my-app").unwrap();
+        assert_eq!(summary.project, "my-app");
+        assert_eq!(summary.record_count, 2);
+        assert_eq!(summary.total_before_chars, 400);
+        assert_eq!(summary.total_after_chars, 200);
+        assert_eq!(summary.total_before_tokens, 40);
+        assert_eq!(summary.total_after_tokens, 20);
+    }
+
+    #[test]
+    fn test_should_compute_all_projects_summary() {
+        let recorder = make_test_recorder();
+        // project "alpha": 2 records
+        let ra1 = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
+            .with_project("alpha");
+        let ra2 = StatsRecord::new(
+            OperationType::CompressResponse,
+            "a".into(),
+            200,
+            20,
+            100,
+            10,
+        )
+        .with_project("alpha");
+        // project "beta": 1 record
+        let rb = StatsRecord::new(OperationType::CompressSchema, "a".into(), 300, 30, 150, 15)
+            .with_project("beta");
+        // no project (NULL): 1 record
+        let rn = StatsRecord::new(OperationType::CompressSchema, "a".into(), 50, 5, 25, 2);
+        recorder.record(&ra1).unwrap();
+        recorder.record(&ra2).unwrap();
+        recorder.record(&rb).unwrap();
+        recorder.record(&rn).unwrap();
+
+        let summaries = recorder.projects_summary().unwrap();
+        assert_eq!(summaries.len(), 2, "should exclude NULL-project records");
+        assert_eq!(summaries[0].project, "alpha");
+        assert_eq!(summaries[0].record_count, 2);
+        assert_eq!(summaries[1].project, "beta");
+        assert_eq!(summaries[1].record_count, 1);
+    }
+
+    #[test]
+    fn test_should_compute_daily_trends_by_project() {
+        let recorder = make_test_recorder();
+        let r1 = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
+            .with_project("frontend");
+        let r2 = StatsRecord::new(
+            OperationType::CompressResponse,
+            "a".into(),
+            200,
+            20,
+            100,
+            10,
+        )
+        .with_project("frontend");
+        recorder.record(&r1).unwrap();
+        recorder.record(&r2).unwrap();
+
+        let trends = recorder
+            .project_daily_trends(Some("frontend"), None, None)
+            .unwrap();
+        assert_eq!(trends.len(), 1, "should return 1 day of aggregated data");
+        assert!(trends[0].chars_saved > 0);
+        assert!(trends[0].tokens_saved > 0);
+        assert_eq!(trends[0].record_count, 2);
+    }
+
+    // ── Boundary tests for project-aware query APIs ─────────────────
+
+    #[test]
+    fn test_all_projects_empty_db() {
+        let recorder = make_test_recorder();
+        let projects = recorder.all_projects().unwrap();
+        assert!(
+            projects.is_empty(),
+            "empty DB should return empty project list"
+        );
+    }
+
+    #[test]
+    fn test_project_summary_nonexistent_project() {
+        let recorder = make_test_recorder();
+        let summary = recorder.project_summary("nonexistent").unwrap();
+        assert_eq!(summary.project, "nonexistent");
+        assert_eq!(summary.record_count, 0);
+        assert_eq!(summary.total_before_chars, 0);
+        assert_eq!(summary.total_after_chars, 0);
+        assert_eq!(summary.total_before_tokens, 0);
+        assert_eq!(summary.total_after_tokens, 0);
+    }
+
+    #[test]
+    fn test_project_summary_empty_string_project() {
+        let recorder = make_test_recorder();
+        let rec = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
+            .with_project("");
+        recorder.record(&rec).unwrap();
+
+        let summary = recorder.project_summary("").unwrap();
+        assert_eq!(summary.project, "");
+        assert_eq!(summary.record_count, 1);
+    }
+
+    #[test]
+    fn test_projects_summary_empty_db() {
+        let recorder = make_test_recorder();
+        let summaries = recorder.projects_summary().unwrap();
+        assert!(
+            summaries.is_empty(),
+            "empty DB should return empty project summaries"
+        );
+    }
+
+    #[test]
+    fn test_project_daily_trends_nonexistent_project() {
+        let recorder = make_test_recorder();
+        // Insert records for a different project
+        let rec = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
+            .with_project("real-project");
+        recorder.record(&rec).unwrap();
+
+        let trends = recorder
+            .project_daily_trends(Some("nonexistent"), None, None)
+            .unwrap();
+        assert!(
+            trends.is_empty(),
+            "nonexistent project should return empty trends"
+        );
+    }
+
+    #[test]
+    fn test_project_daily_trends_all_projects() {
+        let recorder = make_test_recorder();
+        let r1 = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
+            .with_project("alpha");
+        let r2 = StatsRecord::new(
+            OperationType::CompressResponse,
+            "a".into(),
+            200,
+            20,
+            100,
+            10,
+        )
+        .with_project("beta");
+        // NULL project record
+        let r3 = StatsRecord::new(OperationType::CompressSchema, "a".into(), 300, 30, 150, 15);
+        recorder.record(&r1).unwrap();
+        recorder.record(&r2).unwrap();
+        recorder.record(&r3).unwrap();
+
+        let trends = recorder.project_daily_trends(None, None, None).unwrap();
+        // All 3 records on same date -> 1 row
+        assert_eq!(
+            trends.len(),
+            1,
+            "should aggregate all projects including NULL"
+        );
+        assert_eq!(trends[0].record_count, 3);
+    }
+
+    #[test]
+    fn test_records_since_no_match() {
+        let recorder = make_test_recorder();
+        let rec = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5);
+        recorder.record(&rec).unwrap();
+
+        // Query far future range where no records exist
+        let results = recorder
+            .records_since(
+                Some("2099-01-01T00:00:00+00:00"),
+                Some("2099-12-31T00:00:00+00:00"),
+            )
+            .unwrap();
+        assert!(
+            results.is_empty(),
+            "no records should match far-future time range"
+        );
+    }
+
+    #[test]
+    fn test_records_since_filtered_empty() {
+        let recorder = make_test_recorder();
+        let rec = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
+            .with_project("existing");
+        recorder.record(&rec).unwrap();
+
+        // Non-matching project
+        let results = recorder
+            .records_since_filtered(
+                Some("2020-01-01T00:00:00+00:00"),
+                Some("2099-01-01T00:00:00+00:00"),
+                Some("nonexistent"),
+            )
+            .unwrap();
+        assert!(
+            results.is_empty(),
+            "non-matching project should return empty"
+        );
+
+        // Non-matching time range
+        let results = recorder
+            .records_since_filtered(Some("2099-01-01T00:00:00+00:00"), None, Some("existing"))
+            .unwrap();
+        assert!(results.is_empty(), "future time range should return empty");
     }
 }

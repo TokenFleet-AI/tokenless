@@ -3,7 +3,7 @@
 use crate::init;
 
 /// Handle `tokenless init`.
-pub(crate) fn handle(global: bool, agent: String) -> Result<(), (String, i32)> {
+pub(crate) fn handle(global: bool, agent: String, debug: bool) -> Result<(), (String, i32)> {
     let agent = match agent.as_str() {
         "cursor" => init::Agent::Cursor,
         "windsurf" => init::Agent::Windsurf,
@@ -18,6 +18,6 @@ pub(crate) fn handle(global: bool, agent: String) -> Result<(), (String, i32)> {
         "copilot" => init::Agent::Copilot,
         _ => init::Agent::Claude,
     };
-    let config = init::InitConfig { global };
+    let config = init::InitConfig { global, debug };
     init::run(agent, &config).map_err(|e| (e, 1))
 }

@@ -59,8 +59,19 @@ pub fn select_strategy(shape: &JsonShape) -> Strategy {
 /// Analyze, select strategy, and encode in one call.
 ///
 /// Returns the selected strategy and the compressed output string.
+/// When experimental mode is disabled via [`crate::set_experimental_mode`],
+/// falls back to core response compression instead of using enhanced encoders.
 #[must_use]
 pub fn compress_auto(value: &Value, input_str: &str) -> (Strategy, String) {
+    // When experimental mode is off, skip the format router entirely
+    // and fall back to core response compression.
+    if !crate::is_experimental_mode() {
+        let compressor = crate::ResponseCompressor::new();
+        let compressed = compressor.compress(value);
+        let output = serde_json::to_string(&compressed).unwrap_or_default();
+        return (Strategy::CompressorOnly, output);
+    }
+
     let shape = shape_analyzer::analyze(value, input_str);
     let strategy = select_strategy(&shape);
     let output = match strategy {

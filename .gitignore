@@ -34,3 +34,4 @@ secrets/
 credentials/
 .aws/
 .gcloud/
+tokenless-export_*.json

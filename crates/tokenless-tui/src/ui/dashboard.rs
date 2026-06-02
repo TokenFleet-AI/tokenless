@@ -3,7 +3,7 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph},
 };
@@ -13,13 +13,19 @@ use super::{format_bytes, render_dashboard_tabs, render_status_bar};
 use crate::lang::Lang;
 
 /// Render the dashboard tab.
-pub fn render(f: &mut Frame, summary: &StatsSummary, records: &[StatsRecord], lang: &Lang) {
+pub fn render(
+    f: &mut Frame,
+    summary: &StatsSummary,
+    records: &[StatsRecord],
+    lang: &Lang,
+    selected_project: Option<&str>,
+) {
     let area = f.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),  // tab bar
-            Constraint::Length(10), // stat cards
+            Constraint::Length(10), // stat cards (was 10, +1 for project indicator)
             Constraint::Length(8),  // per-op breakdown
             Constraint::Min(1),     // recent activity
             Constraint::Length(1),  // status bar
@@ -27,13 +33,42 @@ pub fn render(f: &mut Frame, summary: &StatsSummary, records: &[StatsRecord], la
         .split(area);
 
     render_dashboard_tabs(f, chunks[0], lang);
-    render_stat_cards(f, chunks[1], summary, lang);
-    render_breakdown(f, chunks[2], summary, lang);
+    render_stat_cards(f, chunks[1], summary, lang, selected_project);
+    render_breakdown(f, chunks[2], records, lang);
     render_recent(f, chunks[3], records, lang);
-    render_status_bar(f, chunks[4], lang.dashboard_status_bar());
+    let status = format!(
+        "Project: {} | {}",
+        lang.project_label(selected_project),
+        lang.dashboard_status_bar()
+    );
+    render_status_bar(f, chunks[4], &status);
 }
 
-fn render_stat_cards(f: &mut Frame, area: Rect, summary: &StatsSummary, lang: &Lang) {
+fn render_stat_cards(
+    f: &mut Frame,
+    area: Rect,
+    summary: &StatsSummary,
+    lang: &Lang,
+    selected_project: Option<&str>,
+) {
+    // Split: project indicator + 3 stat cards
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(1)])
+        .split(area);
+
+    // Project indicator line
+    let proj_text = format!(" 📂 {}", lang.project_label(selected_project));
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            proj_text,
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ))),
+        rows[0],
+    );
+
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -41,7 +76,7 @@ fn render_stat_cards(f: &mut Frame, area: Rect, summary: &StatsSummary, lang: &L
             Constraint::Ratio(1, 3),
             Constraint::Ratio(1, 3),
         ])
-        .split(area);
+        .split(rows[1]);
 
     let total_saved = summary.chars_saved();
     let schema_saved = summary
@@ -93,7 +128,7 @@ fn render_stat_cards(f: &mut Frame, area: Rect, summary: &StatsSummary, lang: &L
     }
 }
 
-fn render_breakdown(f: &mut Frame, area: Rect, summary: &StatsSummary, lang: &Lang) {
+fn render_breakdown(f: &mut Frame, area: Rect, records: &[StatsRecord], lang: &Lang) {
     let block = Block::default()
         .title(lang.section_breakdown())
         .borders(Borders::ALL)
@@ -101,10 +136,11 @@ fn render_breakdown(f: &mut Frame, area: Rect, summary: &StatsSummary, lang: &La
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    if summary.total_records == 0 {
+    if records.is_empty() {
         return;
     }
 
+    // Compute per-operation stats from actual records
     let ops = [
         OperationType::CompressResponse,
         OperationType::CompressSchema,
@@ -114,28 +150,31 @@ fn render_breakdown(f: &mut Frame, area: Rect, summary: &StatsSummary, lang: &La
 
     let mut lines = Vec::new();
     for op in &ops {
-        let op_pct = match op {
-            OperationType::CompressResponse => summary.chars_percent(),
-            OperationType::CompressSchema => summary.chars_percent().clamp(10.0, 90.0),
-            _ => 30.0,
-        };
-        let op_total = match op {
-            OperationType::CompressResponse => summary.chars_saved(),
-            _ => summary.chars_saved() / 4,
+        let op_records: Vec<_> = records.iter().filter(|r| &r.operation == op).collect();
+        if op_records.is_empty() {
+            continue;
+        }
+        let before: usize = op_records.iter().map(|r| r.before_chars).sum();
+        let after: usize = op_records.iter().map(|r| r.after_chars).sum();
+        let saved = before.saturating_sub(after);
+        let op_pct = if before > 0 {
+            (saved as f64 / before as f64 * 100.0 * 10.0).round() / 10.0
+        } else {
+            0.0
         };
 
         let label = lang.op_label(op);
-        let bar_len = 30;
-        let filled = ((op_pct / 100.0) * bar_len as f64) as usize;
+        let bar_len: usize = 30;
+        let filled = ((op_pct / 100.0) * bar_len as f64).min(bar_len as f64) as usize;
         let bar: String = format!(
             "{}{}",
-            "█".repeat(filled.min(bar_len)),
+            "█".repeat(filled),
             "░".repeat(bar_len.saturating_sub(filled))
         );
 
         lines.push(Line::from(Span::raw(format!(
             " {label:14} {bar} {op_pct:5.1}%  ({})",
-            format_bytes(op_total),
+            format_bytes(saved),
         ))));
     }
 
@@ -159,7 +198,12 @@ fn render_recent(f: &mut Frame, area: Rect, records: &[StatsRecord], lang: &Lang
         .take(max_rows)
         .map(|r| {
             let ts = r.timestamp.format("%m-%d %H:%M:%S");
-            let op = format!("{:14}", lang.op_label(&r.operation));
+            let op_label = lang.op_label(&r.operation);
+            let op = if r.experimental_mode {
+                format!("{:14}", format!("{op_label} ⚡"))
+            } else {
+                format!("{:14}", op_label)
+            };
             let agent = lang.agent_label(&r.agent_id);
             let savings_pct = if r.before_tokens > 0 {
                 ((r.before_tokens - r.after_tokens) as f64 / r.before_tokens as f64 * 100.0 * 10.0)
@@ -168,8 +212,9 @@ fn render_recent(f: &mut Frame, area: Rect, records: &[StatsRecord], lang: &Lang
             } else {
                 0.0
             };
+            let proj = r.project.as_deref().unwrap_or("-");
             Line::from(Span::raw(format!(
-                " {ts}  {op}  {agent:12}  {}▸{}  -{savings_pct:.1}%",
+                " {ts}  {op}  {proj:12}  {agent:12}  {}▸{}  -{savings_pct:.1}%",
                 format_bytes(r.before_chars),
                 format_bytes(r.after_chars),
             )))

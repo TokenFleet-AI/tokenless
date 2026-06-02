@@ -2,7 +2,7 @@
 
 ## 概述
 
-Tokenless 是一个 LLM token 优化工具包，通过 schema 压缩、response 压缩、TOON 编码、命令重写和工具环境就绪检查来降低 token 消耗。
+Tokenless 是一个 LLM token 优化工具包，通过 schema 压缩、response 压缩、TOON 编码、命令重写和工具环境就绪检查来降低 token 消耗。二进制名称为 `tokenless`。
 
 参考实现：https://github.com/alibaba/anolisa/tree/main/src/tokenless
 
@@ -16,8 +16,15 @@ tokenless/
 │   ├── tokenless-schema/               # 核心库：SchemaCompressor + ResponseCompressor
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── schema_compressor.rs    # OpenAI Function Calling schema 压缩
-│   │       └── response_compressor.rs  # JSON response 压缩
+│   │       ├── format_router.rs        # 格式检测与路由
+│   │       ├── shape_analyzer.rs        # Schema 形状分析
+│   │       ├── schema_compressor.rs     # OpenAI Function Calling schema 压缩
+│   │       ├── response_compressor.rs   # JSON response 压缩
+│   │       └── encoding/
+│   │           ├── mod.rs
+│   │           ├── cjson_compact.rs     # CJSON 紧凑编码
+│   │           ├── enhanced_toon.rs     # 增强 TOON 编码
+│   │           └── toon_hrv.rs          # TOON HRV 变体编码
 │   ├── tokenless-stats/                # SQLite 指标追踪
 │   │   └── src/
 │   │       ├── lib.rs
@@ -29,8 +36,33 @@ tokenless/
 │   └── tokenless-cli/                  # CLI 二进制：`tokenless` 命令
 │       └── src/
 │           ├── main.rs                 # CLI 入口 + 子命令
-│           └── env_check.rs            # 工具环境就绪检查
-├── adapters/                           # 适配器包（未来）
+│           ├── cache.rs                # 缓存管理
+│           ├── shared.rs               # 共享工具和类型
+│           ├── mcp.rs                  # MCP 协议支持
+│           ├── commands/
+│           │   ├── mod.rs
+│           │   ├── compress.rs         # Schema/Response/TOON 压缩
+│           │   ├── hook.rs             # Hook 命令（Rewrite/Compress/Diff）
+│           │   ├── init_cmd.rs         # 初始化命令
+│           │   ├── rewrite.rs          # 命令重写
+│           │   ├── stats.rs            # 统计命令
+│           │   ├── toon.rs             # TOON 编解码
+│           │   ├── demo.rs             # 演示模式
+│           │   ├── tui.rs              # TUI 启动
+│           │   ├── mcp_cmd.rs          # MCP 命令
+│           │   └── config.rs           # 配置命令
+│           ├── init/
+│           │   └── mod.rs              # 初始化模块
+│           └── env_check/
+│               ├── mod.rs
+│               ├── check.rs            # 环境检查逻辑
+│               ├── fix.rs              # 自动修复逻辑
+│               └── spec.rs             # 工具就绪规范
+├── apps/
+│   └── tui/                             # TUI 二进制 crate
+│       └── src/
+│           └── main.rs                  # TUI 应用入口
+├── adapters/                           # 适配器包（已实现）
 │   └── tokenless/
 │       ├── common/                     # 共享 hooks、spec、commands
 │       ├── openclaw/                   # OpenClaw 插件
@@ -45,13 +77,13 @@ tokenless/
 regex = "1.10"
 clap = { version = "4", features = ["derive"] }
 chrono = "0.4"
-toon-format = { version = "0.4", default-features = false }
-rusqlite = { version = "0.31", features = ["bundled"] }
-dirs = "5.0"
+toon-format = { version = "0.5", default-features = false }
+rusqlite = { version = "0.32", features = ["bundled"] }
+dirs = "6.0"
 libc = "0.2"
 
 # 命令重写引擎（路径：/Users/byx/Documents/workspace/github.com/TokenFleet-AI/rtk/crates/rtk-registry）
-rtk-registry = { path = "../rtk/crates/rtk-registry" }
+rtk-registry = { version = "0.1.0" }
 ```
 
 ### 新增 workspace members
@@ -87,7 +119,7 @@ members = ["crates/*", "apps/*"]
 - `add_drop_field(&str)` — 自定义排除字段
 - `compress(&Value) -> Value` — 压缩 JSON response
 
-**依赖**：`serde_json`, `regex`
+**依赖**：`serde_json`, `regex`, `tracing`
 
 ### 2. tokenless-stats
 
@@ -122,9 +154,47 @@ CREATE TABLE stats (
 );
 ```
 
-**依赖**：`serde`, `serde_json`, `chrono`, `rusqlite`, `thiserror`, `dirs`
+**依赖**：`serde`, `serde_json`, `chrono`, `rusqlite`, `thiserror`, `dirs`, `tracing`
 
-### 3. tokenless-cli
+### 3. tokenless-core
+
+**职责**：共享核心类型和工具函数，供其他 crate 使用。
+
+**核心类型**：
+- 统一的错误类型和结果别名
+- 跨 crate 共享的配置类型
+- 公共工具函数（文本处理、文件 I/O 辅助等）
+
+**依赖**：`serde`, `serde_json`, `thiserror`, `tracing`
+
+### 4. tokenless-semantic
+
+**职责**：语义分析和代码理解，为压缩和重写提供上下文感知能力。
+
+**核心功能**：
+- 代码语义分析
+- 上下文感知的 token 优化
+- 与压缩引擎集成
+
+**依赖**：`tokenless-core`, `tokenless-schema`, `serde`, `serde_json`, `tracing`
+
+### 5. tokenless-tui
+
+**职责**：终端用户界面（TUI），提供交互式的统计查看和管理功能。
+
+**核心功能**：
+- 交互式仪表盘（dashboard）
+- 统计趋势图（trends）
+- 记录列表（records）
+- 详细视图（detail）
+- 帮助页面（help）
+- 配置管理（config）
+- 项目选择器（project_picker）
+- 多语言支持（lang）
+
+**依赖**：`tokenless-core`, `tokenless-stats`, `ratatui`, `crossterm`, `tracing`
+
+### 6. tokenless-cli
 
 **职责**：CLI 二进制，提供所有子命令。
 
@@ -132,7 +202,15 @@ CREATE TABLE stats (
 - `compress-schema [-f FILE] [--batch] [--agent-id] [--session-id] [--tool-use-id]`
 - `compress-response [-f FILE] [--agent-id] [--session-id] [--tool-use-id]`
 - `compress-toon [-f FILE] [--agent-id] [--session-id] [--tool-use-id]`
+- `compress-auto [-f FILE] [--agent-id] [--session-id] [--tool-use-id]` — 自动检测格式并选择最佳压缩模式
 - `decompress-toon [-f FILE]`
+- `hook rewrite <CMD>` — 通过 rtk-registry 重写单个命令
+- `hook compress <CMD>` — 压缩命令中的 token 消耗
+- `hook diff <CMD>` — 对比重写前后的命令差异
+- `init [--force]` — 初始化 tokenless 项目配置
+- `mcp [--port PORT]` — 启动 MCP 服务器
+- `demo` — 演示模式
+- `tui` — 启动终端交互界面
 - `env-check [--tool NAME|--all] [--fix] [--checklist] [--json]`
 - `stats summary [--limit N]`
 - `stats list [-l N]`
@@ -163,7 +241,7 @@ CREATE TABLE stats (
 命令重写通过 `rtk-registry` 作为库依赖完成（无需 shell 调用 `rtk` 二进制）。通过 path 依赖加入 workspace：
 
 ```toml
-rtk-registry = { path = "../rtk/crates/rtk-registry" }
+rtk-registry = { version = "0.1.0" }
 ```
 
 **tokenless-cli 使用的公开 API**：
@@ -176,7 +254,7 @@ rtk-registry = { path = "../rtk/crates/rtk-registry" }
 
 **错误处理**：`rtk-registry` 对不支持/忽略的命令返回 `None` — tokenless 应在重写结果为 `None` 时保持原始命令不变。
 
-**依赖**：`tokenless-schema`, `tokenless-stats`, `rtk-registry`, `dirs`, `clap`, `serde_json`, `toon-format`, `chrono`, `rusqlite`, `libc`
+**依赖**：`tokenless-schema`, `tokenless-stats`, `tokenless-semantic`, `tokenless-tui`, `rtk-registry`, `dirs`, `clap`, `serde_json`, `toon-format`, `chrono`, `rusqlite`, `tracing`, `blake3`, `lru`
 
 ## 实现顺序
 

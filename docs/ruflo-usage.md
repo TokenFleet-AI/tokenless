@@ -169,7 +169,7 @@ If one type is unavailable, replace it with the closest type from `agent list`.
 Example prompt for this template:
 
 ```text
-Use the 15-agent Ruflo swarm for a template maintenance review. Goal: verify CLAUDE.md, docs, Makefile, pre-commit, and cargo-generate settings are consistent. Produce a concise findings list, required file edits, and the smallest validation plan. Do not commit or push.
+Use the 15-agent Ruflo swarm for a template maintenance review. Goal: verify CLAUDE.md, docs, Makefile, and pre-commit are consistent. Produce a concise findings list, required file edits, and the smallest validation plan. Do not commit or push.
 ```
 
 ## How to trigger agents from Claude
@@ -230,7 +230,7 @@ Use Ruflo orchestration for implementation review: check tests, docs, security, 
 
 - Preserve template placeholders such as `tokenless`.
 - Do not instantiate template variables while maintaining this repository.
-- `cargo-generate.toml` already excludes `.claude/*` from generated projects.
+- `.gitignore` already excludes `.claude/*` and `.claude-flow/*` from version control.
 - `make check-agent-sync` checks that `CLAUDE.md` exists.
 
 ## References
@@ -411,7 +411,7 @@ npx ruflo@latest agent spawn -t swarm-specialist --name swarm-coordinator
 本模板仓库范例提示词：
 
 ```text
-使用 15 个智能体的 Ruflo swarm 做一次模板维护评审。目标：确认 CLAUDE.md、docs、Makefile、pre-commit、cargo-generate 配置保持一致。产出简洁的问题列表、需要修改的文件和最小验证计划。不要 commit 或 push。
+使用 15 个智能体的 Ruflo swarm 做一次模板维护评审。目标：确认 CLAUDE.md、docs、Makefile、pre-commit 保持一致。产出简洁的问题列表、需要修改的文件和最小验证计划。不要 commit 或 push。
 ```
 
 ## 在 Claude 中如何触发这些智能体
@@ -472,7 +472,7 @@ Use Ruflo orchestration for implementation review: check tests, docs, security, 
 
 - 保留 `tokenless` 等模板占位符。
 - 维护模板仓库时，不要把模板变量实例化成具体项目名。
-- `cargo-generate.toml` 已经排除 `.claude/*`，生成的新项目不会带出这些运行态目录。
+- `.gitignore` 已经排除 `.claude/*` 和 `.claude-flow/*`，不会进入版本控制。
 - `make check-agent-sync` 检查 `CLAUDE.md` 存在。
 
 ## 参考资料

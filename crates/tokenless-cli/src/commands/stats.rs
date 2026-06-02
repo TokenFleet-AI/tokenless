@@ -13,22 +13,40 @@ use tokenless_stats::{
 
 use crate::shared::open_recorder;
 
-pub(crate) fn stats_summary(limit: Option<usize>) -> Result<(), (String, i32)> {
+pub(crate) fn stats_summary(
+    limit: Option<usize>,
+    project: Option<String>,
+    namespace: Option<String>,
+) -> Result<(), (String, i32)> {
     let recorder = open_recorder()?;
     let records = recorder
-        .all_records(limit)
+        .records_filtered(None, None, project.as_deref(), namespace.as_deref(), limit)
         .map_err(|e| (format!("Failed to query records: {e}"), 1))?;
-    println!(
-        "{}",
-        format_summary(&records, Some("Tokenless Statistics Summary"))
-    );
+
+    let title = match (&project, &namespace) {
+        (Some(p), Some(ns)) => format!("Stats — project: {p}, namespace: {ns}"),
+        (Some(p), None) => format!("Stats — project: {p}"),
+        (None, Some(ns)) => format!("Stats — namespace: {ns}"),
+        (None, None) => "Tokenless Statistics Summary".to_string(),
+    };
+    println!("{}", format_summary(&records, Some(&title)));
     Ok(())
 }
 
-pub(crate) fn stats_list(limit: usize) -> Result<(), (String, i32)> {
+pub(crate) fn stats_list(
+    limit: usize,
+    project: Option<String>,
+    namespace: Option<String>,
+) -> Result<(), (String, i32)> {
     let recorder = open_recorder()?;
     let records = recorder
-        .all_records(Some(limit))
+        .records_filtered(
+            None,
+            None,
+            project.as_deref(),
+            namespace.as_deref(),
+            Some(limit),
+        )
         .map_err(|e| (format!("Failed to query records: {e}"), 1))?;
     println!("{}", format_list(&records, limit));
     Ok(())
@@ -66,10 +84,14 @@ pub(crate) fn stats_clear(yes: bool) -> Result<(), (String, i32)> {
     Ok(())
 }
 
-pub(crate) fn stats_rewrites(limit: usize, offset: usize) -> Result<(), (String, i32)> {
+pub(crate) fn stats_rewrites(
+    limit: usize,
+    offset: usize,
+    project: Option<String>,
+) -> Result<(), (String, i32)> {
     let recorder = open_recorder()?;
     let all = recorder
-        .all_records(None)
+        .records_filtered(None, None, project.as_deref(), None, None)
         .map_err(|e| (format!("Failed to query records: {e}"), 1))?;
     let rewrites: Vec<_> = all
         .iter()
@@ -115,7 +137,18 @@ pub(crate) fn stats_status() -> Result<(), (String, i32)> {
     } else {
         "DISABLED"
     };
+    let exp_source = if std::env::var("TOKENLESS_EXPERIMENTAL").is_ok() {
+        "env override"
+    } else {
+        source
+    };
+    let exp_state = if config.is_experimental_enabled() {
+        "ENABLED"
+    } else {
+        "DISABLED"
+    };
     println!("Stats recording: {state} (via {source})");
+    println!("Experimental mode: {exp_state} (via {exp_source})");
     Ok(())
 }
 
@@ -139,9 +172,30 @@ pub(crate) fn stats_disable() -> Result<(), (String, i32)> {
     Ok(())
 }
 
+pub(crate) fn stats_experimental_on() -> Result<(), (String, i32)> {
+    let mut config = TokenlessConfig::load();
+    config.experimental_mode = true;
+    config
+        .save()
+        .map_err(|e| (format!("Failed to save config: {e}"), 1))?;
+    println!("Experimental mode enabled (format router, enhanced TOON, semantic, TUI, MCP).");
+    Ok(())
+}
+
+pub(crate) fn stats_experimental_off() -> Result<(), (String, i32)> {
+    let mut config = TokenlessConfig::load();
+    config.experimental_mode = false;
+    config
+        .save()
+        .map_err(|e| (format!("Failed to save config: {e}"), 1))?;
+    println!("Experimental mode disabled (core compression only: schema + response + basic TOON).");
+    Ok(())
+}
+
 pub(crate) fn stats_diff(
     since: Option<String>,
     until: Option<String>,
+    project: Option<String>,
 ) -> Result<(), (String, i32)> {
     let recorder = open_recorder()?;
     let until_str = until
@@ -158,9 +212,18 @@ pub(crate) fn stats_diff(
 
     let since_label = since_str.clone();
     let until_label = until_str.clone();
-    let records = recorder
-        .records_since(Some(&since_str), Some(&until_str))
+
+    // Use records_filtered for project support, then post-filter by time
+    let all_records = recorder
+        .records_filtered(None, None, project.as_deref(), None, None)
         .map_err(|e| (format!("Failed to query records: {e}"), 1))?;
+    let records: Vec<_> = all_records
+        .into_iter()
+        .filter(|r| {
+            let ts = r.timestamp.to_rfc3339();
+            ts >= since_str && ts <= until_str
+        })
+        .collect();
 
     println!("{}", format_diff(&records, &since_label, &until_label));
     Ok(())

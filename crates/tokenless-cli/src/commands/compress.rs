@@ -6,8 +6,8 @@ use tokenless_stats::estimate_tokens_from_bytes;
 use crate::{
     cache,
     shared::{
-        RESPONSE_COMPRESSOR, SCHEMA_COMPRESSOR, SEMANTIC_COMPRESSOR, eprint_report, read_input,
-        record_compression_stats,
+        RESPONSE_COMPRESSOR, SCHEMA_COMPRESSOR, SEMANTIC_COMPRESSOR, eprint_report,
+        is_experimental_enabled, read_input, record_compression_stats,
     },
 };
 
@@ -16,6 +16,7 @@ pub(crate) fn compress_schema(
     file: Option<String>,
     batch: bool,
     report: bool,
+    project: Option<String>,
     agent_id: Option<String>,
     session_id: Option<String>,
     tool_use_id: Option<String>,
@@ -72,18 +73,22 @@ pub(crate) fn compress_schema(
         agent_id,
         session_id,
         tool_use_id,
+        project,
         input,
         output_text,
+        false, // core schema compression
     );
     Ok(())
 }
 
 /// Handle `tokenless compress-response`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn compress_response(
     file: Option<String>,
     report: bool,
     semantic: bool,
     context: Option<String>,
+    project: Option<String>,
     agent_id: Option<String>,
     session_id: Option<String>,
     tool_use_id: Option<String>,
@@ -98,13 +103,21 @@ pub(crate) fn compress_response(
 
     // Apply semantic-aware field filtering when context is provided.
     #[allow(unused_variables)]
-    let (value, semantic_dropped) = if let Some(ref ctx) = context {
+    let (value, semantic_dropped, used_experimental) = if let Some(ref ctx) = context {
+        if semantic && !is_experimental_enabled() {
+            eprintln!(
+                "Warning: --semantic requires experimental mode. \
+                 Enable with: tokenless stats experimental-on"
+            );
+        }
+        let use_semantic = semantic && is_experimental_enabled();
+
         let mut sc = SEMANTIC_COMPRESSOR
             .lock()
             .map_err(|e| (format!("Semantic compressor lock error: {e}"), 1))?;
 
         // Enable ONNX Level 2 on first `--semantic` invocation.
-        if semantic {
+        if use_semantic {
             sc.load_onnx()
                 .map_err(|e| (format!("Failed to load ONNX model: {e}"), 1))?;
         }
@@ -121,9 +134,9 @@ pub(crate) fn compress_response(
             );
         }
 
-        (compressed, dropped)
+        (compressed, dropped, use_semantic)
     } else {
-        (value, 0)
+        (value, 0, false)
     };
     // Track semantic-dropped fields in the report (printed above).
 
@@ -158,16 +171,22 @@ pub(crate) fn compress_response(
         agent_id,
         session_id,
         tool_use_id,
+        project,
         input,
         output_text,
+        used_experimental, // only true when semantic compression was applied
     );
     Ok(())
 }
 
 /// Handle `tokenless compress-auto`.
+///
+/// Delegates to [`tokenless_schema::compress_auto`], which internally
+/// respects the experimental mode flag set at startup.
 pub(crate) fn compress_auto(
     file: Option<String>,
     report: bool,
+    project: Option<String>,
     agent_id: Option<String>,
     session_id: Option<String>,
     tool_use_id: Option<String>,
@@ -210,8 +229,10 @@ pub(crate) fn compress_auto(
         agent_id,
         session_id,
         tool_use_id,
+        project,
         input,
         output_text,
+        is_experimental_enabled(), // format router is experimental
     );
     Ok(())
 }

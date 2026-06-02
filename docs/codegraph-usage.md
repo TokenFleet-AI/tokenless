@@ -237,7 +237,7 @@ codegraph --help
 这样 CodeGraph 更容易正确理解：
 
 - `Cargo.toml` workspace；
-- `apps/server` 应用入口；
+- `apps/tui` 应用入口；
 - `crates/core` 共享库；
 - `docs`、`specs`、`Makefile` 等辅助结构。
 
@@ -246,7 +246,7 @@ codegraph --help
 这一步很关键。对当前仓库，在仓库根目录执行：
 
 ```bash
-cd /path/to/rust-lib-template
+cd /Users/byx/Documents/workspace/github.com/TokenFleet-AI/tokenless
 codegraph init -i
 ```
 
@@ -260,7 +260,7 @@ codegraph status
 
 - 使用 CodeGraph 总结这个仓库结构；
 - 使用 CodeGraph 找出 Rust workspace 的入口点；
-- 使用 CodeGraph 分析 `apps/server` 和 `crates/core` 的关系。
+- 使用 CodeGraph 分析 `apps/tui` 和 `crates/core` 的关系。
 
 ### 步骤 5：第一次验证接入是否成功
 
@@ -274,7 +274,7 @@ codegraph status
 
 - `Use CodeGraph to summarize this repository structure.`
 - `Use CodeGraph to identify the main Rust workspace entry points.`
-- `Use CodeGraph to show how apps/server relates to crates/core.`
+- `Use CodeGraph to show how apps/tui relates to crates/core.`
 
 如果这些问题都能正常回答，并且仓库里已经有 `.codegraph/` 目录，通常就说明 CodeGraph 已经接入成功。
 
@@ -288,7 +288,7 @@ codegraph status
 
 ```bash
 npm install -g @colbymchenry/codegraph
-cd /path/to/rust-lib-template
+cd /Users/byx/Documents/workspace/github.com/TokenFleet-AI/tokenless
 codegraph init -i
 codegraph status
 ```
@@ -316,7 +316,7 @@ npx @colbymchenry/codegraph
 
 对这个模板仓库，重点一般会落在：
 
-- `apps/server`
+- `apps/tui`
 - `crates/core`
 - `docs`
 - `specs`
@@ -335,19 +335,19 @@ npx @colbymchenry/codegraph
 
 - `Use CodeGraph to find the main entry points in this repository.`
 - `Use CodeGraph to identify public API boundaries in crates/core.`
-- `Trace the startup path for apps/server.`
+- `Trace the startup path for apps/tui.`
 
 ### 第三步：理解依赖方向和影响面
 
 首次接入时，最有价值的不是“看全图”，而是确认依赖方向是否清晰：
 
-- `apps/server` 是否依赖 `crates/core`；
+- `apps/tui` 是否依赖 `crates/core`；
 - `crates/core` 是否保持相对稳定的公共边界；
 - 修改公共 API 时会影响哪些调用点。
 
 建议提示词：
 
-- `Use CodeGraph to show the dependency relationship between apps/server and crates/core.`
+- `Use CodeGraph to show the dependency relationship between apps/tui and crates/core.`
 - `Analyze the impact of changing public interfaces in crates/core.`
 
 ### 第四步：结合模板仓库规则理解工作流
@@ -383,7 +383,7 @@ npx @colbymchenry/codegraph
 
 ```bash
 npm install -g @colbymchenry/codegraph
-cd /path/to/rust-lib-template
+cd /Users/byx/Documents/workspace/github.com/TokenFleet-AI/tokenless
 codegraph init -i
 codegraph status
 ```
@@ -392,7 +392,7 @@ codegraph status
 
 - `Use CodeGraph to summarize the Rust workspace structure in this repository.`
 - `Use CodeGraph to find the main entry points and public API boundaries.`
-- `Use CodeGraph to analyze how apps/server depends on crates/core.`
+- `Use CodeGraph to analyze how apps/tui depends on crates/core.`
 
 如果 Claude 能直接基于这些关系回答，而不是到处扫文件，说明接入已经基本正常。
 

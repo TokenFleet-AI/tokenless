@@ -66,6 +66,12 @@ pub struct StatsRecord {
     pub session_id: Option<String>,
     /// Tool use ID for correlation with specific tool calls.
     pub tool_use_id: Option<String>,
+    /// Project name for multi-project statistics filtering.
+    pub project: Option<String>,
+    /// Namespace for fine-grained logical grouping within a project.
+    pub namespace: Option<String>,
+    /// Whether experimental mode was enabled when this record was created.
+    pub experimental_mode: bool,
     /// Byte length before compression.
     pub before_chars: usize,
     /// Tokens before compression (estimated).
@@ -103,6 +109,8 @@ impl StatsRecord {
             source_pid: None,
             session_id: None,
             tool_use_id: None,
+            project: None,
+            namespace: None,
             before_chars,
             before_tokens,
             after_chars,
@@ -111,6 +119,7 @@ impl StatsRecord {
             after_text: None,
             before_output: None,
             after_output: None,
+            experimental_mode: false,
         }
     }
 
@@ -165,6 +174,27 @@ impl StatsRecord {
         self
     }
 
+    /// Set the project name for multi-project statistics filtering.
+    #[must_use]
+    pub fn with_project(mut self, project: impl Into<String>) -> Self {
+        self.project = Some(project.into());
+        self
+    }
+
+    /// Set the namespace for fine-grained grouping within a project.
+    #[must_use]
+    pub fn with_namespace(mut self, namespace: impl Into<String>) -> Self {
+        self.namespace = Some(namespace.into());
+        self
+    }
+
+    /// Set whether experimental mode was enabled for this record.
+    #[must_use]
+    pub fn with_experimental_mode(mut self, enabled: bool) -> Self {
+        self.experimental_mode = enabled;
+        self
+    }
+
     /// Characters saved by compression.
     #[must_use]
     pub fn chars_saved(&self) -> usize {
@@ -206,9 +236,10 @@ impl StatsRecord {
         let session = self.session_id.as_deref().unwrap_or("-");
         let tool = self.tool_use_id.as_deref().unwrap_or("-");
 
+        let exp = if self.experimental_mode { " [exp]" } else { "" };
         format!(
             "[ID:{id}] {ts} | {agent}{pid} | Session:{session} | Tool:{tool} | \
-             Chars:{bc}→{ac}(-{cs}) | Tokens:{bt}→{at}(-{tp:.0}%)",
+             Chars:{bc}→{ac}(-{cs}) | Tokens:{bt}→{at}(-{tp:.0}%){exp}",
             id = self.id,
             ts = self.timestamp.format("%Y-%m-%d %H:%M:%S"),
             agent = self.agent_id,
@@ -301,5 +332,52 @@ mod tests {
         assert!(line.contains("copilot-shell"));
         assert!(line.contains("Session:session-123"));
         assert!(line.contains("Tool:call_abc"));
+    }
+
+    // ── project / namespace builder tests (TDD RED) ──────────
+
+    #[test]
+    fn test_should_default_project_and_namespace_to_none() {
+        let record = StatsRecord::new(
+            OperationType::CompressSchema,
+            "agent".to_string(),
+            100,
+            10,
+            50,
+            5,
+        );
+        assert!(record.project.is_none(), "project should default to None");
+        assert!(
+            record.namespace.is_none(),
+            "namespace should default to None"
+        );
+    }
+
+    #[test]
+    fn test_should_set_project_via_builder() {
+        let record = StatsRecord::new(
+            OperationType::CompressSchema,
+            "agent".to_string(),
+            100,
+            10,
+            50,
+            5,
+        )
+        .with_project("my-app");
+        assert_eq!(record.project.as_deref(), Some("my-app"));
+    }
+
+    #[test]
+    fn test_should_set_namespace_via_builder() {
+        let record = StatsRecord::new(
+            OperationType::CompressSchema,
+            "agent".to_string(),
+            100,
+            10,
+            50,
+            5,
+        )
+        .with_namespace("claude-memories");
+        assert_eq!(record.namespace.as_deref(), Some("claude-memories"));
     }
 }

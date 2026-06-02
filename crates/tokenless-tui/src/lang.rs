@@ -88,8 +88,8 @@ impl Lang {
     #[must_use]
     pub fn stat_avg_savings(&self) -> &'static str {
         match self {
-            Lang::Zh => "平均节省",
-            Lang::En => "Avg Savings",
+            Lang::Zh => "总节省率",
+            Lang::En => "Savings Rate",
         }
     }
 
@@ -142,10 +142,23 @@ impl Lang {
     }
 
     #[must_use]
+    pub fn project_label(&self, project: Option<&str>) -> String {
+        match (self, project) {
+            (_, None) => match self {
+                Lang::Zh => "全部".to_string(),
+                Lang::En => "All".to_string(),
+            },
+            (_, Some(p)) => p.to_string(),
+        }
+    }
+
+    #[must_use]
     pub fn dashboard_status_bar(&self) -> &'static str {
         match self {
-            Lang::Zh => "[Tab:切换]  [?:帮助]  [c:配置]  [↑↓:滚动]  [Enter:详情]  [q:退出]",
-            Lang::En => "[Tab:switch]  [?:help]  [c:config]  [↑↓:scroll]  [Enter:detail]  [q:quit]",
+            Lang::Zh => "[p:项目] [Tab:切换] [?:帮助] [c:配置] [↑↓:滚动] [Enter:详情] [q:退出]",
+            Lang::En => {
+                "[p:project] [Tab:switch] [?:help] [c:config] [↑↓:scroll] [Enter:detail] [q:quit]"
+            }
         }
     }
 
@@ -219,10 +232,10 @@ impl Lang {
     pub fn records_status_bar(&self) -> &'static str {
         match self {
             Lang::Zh => {
-                "[Tab:切换] [↑↓:导航] [Enter:详情] [/:搜索] [t:时间范围] [e:导出] [d:返回] [q:退出]"
+                "[p:项目] [Tab:切换] [↑↓:导航] [Enter:详情] [/:搜索] [t:时间范围] [e:导出] [d:返回] [q:退出]"
             }
             Lang::En => {
-                "[Tab:switch] [↑↓:navigate] [Enter:detail] [/:search] [t:time range] [e:export] \
+                "[p:project] [Tab:switch] [↑↓:navigate] [Enter:detail] [/:search] [t:time range] [e:export] \
                  [d:back] [q:quit]"
             }
         }
@@ -455,7 +468,7 @@ impl Lang {
     #[must_use]
     pub fn help_key(&self, key: &str) -> &'static str {
         match key {
-            "tab" => "Tab / \u{2190}\u{2192}",
+            "tab" => "h / Tab",
             "up_down" => "\u{2191}\u{2193}",
             "enter" => "Enter",
             "slash" => "/",
@@ -463,6 +476,9 @@ impl Lang {
             "e" => "e",
             "c" => "c",
             "question" => "?",
+            "p" => "p",
+            "d" => "d",
+            "esc" => "Esc",
             "q" => "q",
             _ => "?",
         }
@@ -488,6 +504,12 @@ impl Lang {
             (Lang::En, "config") => "config panel",
             (Lang::Zh, "help") => "帮助",
             (Lang::En, "help") => "help",
+            (Lang::Zh, "project") => "项目筛选",
+            (Lang::En, "project") => "project filter",
+            (Lang::Zh, "back") => "从详情返回",
+            (Lang::En, "back") => "back from detail",
+            (Lang::Zh, "dismiss") => "关闭浮层",
+            (Lang::En, "dismiss") => "dismiss overlay",
             (Lang::Zh, "quit") => "退出",
             (Lang::En, "quit") => "quit",
             _ => match self {
@@ -540,6 +562,14 @@ impl Lang {
     }
 
     #[must_use]
+    pub fn config_experimental(&self) -> &'static str {
+        match self {
+            Lang::Zh => "实验模式",
+            Lang::En => "Experimental",
+        }
+    }
+
+    #[must_use]
     pub fn config_enabled(&self) -> &'static str {
         match self {
             Lang::Zh => "已启用",
@@ -552,6 +582,48 @@ impl Lang {
         match self {
             Lang::Zh => "已禁用",
             Lang::En => "Disabled",
+        }
+    }
+
+    // ── Project picker ──
+
+    #[must_use]
+    pub fn project_picker_title(&self) -> &'static str {
+        match self {
+            Lang::Zh => "选择项目",
+            Lang::En => "Select Project",
+        }
+    }
+
+    #[must_use]
+    pub fn project_all(&self) -> &'static str {
+        match self {
+            Lang::Zh => "全部项目",
+            Lang::En => "All Projects",
+        }
+    }
+
+    #[must_use]
+    pub fn project_unassigned(&self) -> &'static str {
+        match self {
+            Lang::Zh => "未分配",
+            Lang::En => "Unassigned",
+        }
+    }
+
+    #[must_use]
+    pub fn project_dismiss_hint(&self) -> &'static str {
+        match self {
+            Lang::Zh => "Enter:选择 Esc:取消",
+            Lang::En => "Enter: select  Esc: cancel",
+        }
+    }
+
+    #[must_use]
+    pub fn config_toggle_hint(&self) -> &'static str {
+        match self {
+            Lang::Zh => "e: 切换实验模式",
+            Lang::En => "e: toggle experimental mode",
         }
     }
 

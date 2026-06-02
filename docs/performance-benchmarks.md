@@ -1,6 +1,6 @@
 # Performance Benchmarks
 
-> Generated: 2026-05-29 — measured on macOS arm64 (Apple M-series)
+> Generated: 2026-05-29 — measured on macOS arm64 (Apple M-series) [last updated: 2026-06]
 
 ## Compression Savings (fixture data)
 
@@ -25,7 +25,7 @@
 |--------|-------|
 | Rust edition | 2024 |
 | Release profile | `opt-level=3`, `lto=true`, `codegen-units=1`, `panic=abort`, `strip=true` |
-| Workspace crates | 4 (`schema`, `stats`, `cli`, `tui`) |
+| Workspace crates | 7 (`tokenless-cli`, `tokenless-schema`, `tokenless-stats`, `tokenless-tui`, `tokenless-semantic`, `core`, `apps/tui`) |
 | Dependencies | ~42 crates (transitive) |
 | Tests | 291 passed |
 

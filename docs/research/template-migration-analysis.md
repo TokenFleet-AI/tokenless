@@ -115,7 +115,7 @@ rust-tui-template/ (workspace: crates/*, apps/*)
 | 文件 | 原因 |
 |------|------|
 | `clippy.toml` | 强制执行 async `tokio::fs`（禁止 `std::fs`）|
-| `dev-install.sh` | 开发安装流程 |
+| `scripts/dev-install.sh` | 开发安装流程 |
 | `adapters/` | 12 个 Agent 的钩子适配器 |
 | `_typos.toml` (扩展豁免词) | `caf`, `wriet` 业务词汇 |
 | `.pre-commit-config.yaml` (独有钩子) | `psf/black`, `check-agent-sync` |
@@ -204,12 +204,12 @@ rust-tui-template/ (workspace: crates/*, apps/*)
 
 | 类别 | tokenless 现状 | 模板标准 | 严重度 | 修复 |
 |------|------|------|:---:|:---:|
-| `.gitignore` 密钥排除 | 0 条规则 | ~15 条 | 🔴 | 复制模板配置 |
-| gitleaks 预提交扫描 | 无 | 有 | 🔴 | 添加到 pre-commit |
-| `deny.toml` wildcards | `allow` | `deny` | 🔴 | 改为 deny |
-| `deny.toml` 未知源 | `warn` | `deny` | 🔴 | 改为 deny |
+| `.gitignore` 密钥排除 | 0 条规则 | ~15 条 | 🔴 | ✅ Done: 8+ 条规则 |
+| gitleaks 预提交扫描 | 无 | 有 | 🔴 | ✅ Done: 已添加到 pre-commit |
+| `deny.toml` wildcards | `allow` | `deny` | 🔴 | ✅ Done: 改为 deny |
+| `deny.toml` 未知源 | `warn` | `deny` | 🔴 | ✅ Done: 改为 deny |
 | CI `cargo audit` | 不在 CI 中 | 每次 PR | 🔴 | 添加到 CI |
-| 链接器加固 | 无 `.cargo/config.toml` | 全平台 | 🟡 | 新建配置 |
+| 链接器加固 | 无 `.cargo/config.toml` | 全平台 | 🟡 | ✅ Done: 新建配置 |
 | CI 最小权限 | 未设置 | `contents: read` | 🟡 | 添加 permissions |
 | CI `cargo deny check` | 仅 pre-commit | CI 中执行 | 🟡 | 添加到 CI |
 | 构建来源证明 | 无 | SLSA attestation | 🟢 | 后续添加 |
@@ -226,16 +226,16 @@ rust-tui-template/ (workspace: crates/*, apps/*)
 
 ## 分阶段实施计划
 
-### 阶段一：安全加固（~0.5 天，低风险）
+### ✅ 阶段一：安全加固（~0.5 天，低风险）— 基本完成
 
 纯配置文件变更，不涉及代码：
 
-1. 复制 `.cargo/config.toml`（链接器安全标志）
-2. 增强 `.gitignore`（密钥排除：`.env`, `*.pem`, `*.key`, `secrets/`, `credentials/`）
-3. 添加 gitleaks 到 `.pre-commit-config.yaml`
-4. 强化 `deny.toml`（wildcards=deny, unknown=deny, 禁止 openssl-sys）
-5. 创建 `.env.example`
-6. 创建 `CODE_OF_CONDUCT.md`
+- [x] 1. 复制 `.cargo/config.toml`（链接器安全标志）— ✅ Done
+- [x] 2. 增强 `.gitignore`（密钥排除：`.env`, `*.pem`, `*.key`, `secrets/`, `credentials/`）— ✅ Done: 8+ 条规则
+- [x] 3. 添加 gitleaks 到 `.pre-commit-config.yaml` — ✅ Done
+- [x] 4. 强化 `deny.toml`（wildcards=deny, unknown=deny, 禁止 openssl-sys）— ✅ Done
+- [ ] 5. 创建 `.env.example`
+- [x] 6. 创建 `CODE_OF_CONDUCT.md` — ✅ Done
 
 ### 阶段二：CI 加固（~0.5 天）
 
@@ -256,15 +256,15 @@ rust-tui-template/ (workspace: crates/*, apps/*)
 5. 添加 workspace dev-deps（`criterion`, `rstest`, `proptest`）
 6. 锁定松弛的补丁版本
 
-### 阶段四：lint 严格化（~1 天）
+### ✅ 阶段四：lint 严格化（~1 天）— 基本完成
 
-1. 升级 `todo` 从 `warn` → `deny`
-2. 添加 `dbg_macro = "deny"`
-3. 添加 `indexing_slicing = "warn"`
-4. 添加 `missing_errors_doc = "warn"`
-5. 添加 `missing_panics_doc = "warn"`
-6. 添加 `unwrap_in_result = "warn"`
-7. 添加 crate-level `#![forbid(unsafe_code)]` 到缺失的 crate
+- [x] 1. 升级 `todo` 从 `warn` → `deny` — ✅ Done
+- [x] 2. 添加 `dbg_macro = "deny"` — ✅ Done
+- [ ] 3. 添加 `indexing_slicing = "warn"`
+- [x] 4. 添加 `missing_errors_doc = "warn"` — ✅ Done
+- [x] 5. 添加 `missing_panics_doc = "warn"` — ✅ Done
+- [x] 6. 添加 `unwrap_in_result = "warn"` — ✅ Done
+- [x] 7. 添加 crate-level `#![forbid(unsafe_code)]` 到缺失的 crate — ✅ Done: 5/7 crate roots
 
 ### 阶段五：代码质量提升（持续进行）
 

@@ -7,7 +7,7 @@ use std::{
     sync::{LazyLock, Mutex, OnceLock},
 };
 
-use rtk_registry::{RtkInstallStatus, is_rtk_installed};
+use rtk_registry::{Classification, RtkInstallStatus, is_rtk_installed};
 use tokenless_schema::{CompressionProfile, ResponseCompressor, SchemaCompressor};
 use tokenless_semantic::SemanticCompressor;
 use tokenless_stats::{OperationType, StatsRecorder, TokenlessConfig, estimate_tokens_from_bytes};
@@ -46,6 +46,16 @@ pub(crate) fn strip_leading_bom(input: &str) -> String {
 pub(crate) fn rtk_available() -> bool {
     static RTK_OK: OnceLock<bool> = OnceLock::new();
     *RTK_OK.get_or_init(|| matches!(is_rtk_installed(), RtkInstallStatus::Installed { .. }))
+}
+
+/// Check whether experimental mode is enabled.
+///
+/// Returns `false` when `TOKENLESS_EXPERIMENTAL=0`/`false` or
+/// `experimental_mode: false` in `~/.tokenless/config.json`.
+/// Defaults to `true` (all features enabled).
+#[must_use]
+pub(crate) fn is_experimental_enabled() -> bool {
+    TokenlessConfig::load().is_experimental_enabled()
 }
 
 // ── File & DB utilities ──────────────────────────────────────────────────────
@@ -100,13 +110,19 @@ pub(crate) fn open_recorder() -> Result<StatsRecorder, (String, i32)> {
 // ── Stats helpers ────────────────────────────────────────────────────────────
 
 /// Record compression stats — fail-silent so compression output is never blocked.
+///
+/// `experimental` should be `true` only when the operation used experimental
+/// features (format router, semantic compression, diff, etc.).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn record_compression_stats(
     op: OperationType,
     agent_id: Option<String>,
     session_id: Option<String>,
     tool_use_id: Option<String>,
+    project: Option<String>,
     before_text: String,
     after_text: String,
+    experimental: bool,
 ) {
     if !TokenlessConfig::load().is_stats_enabled() {
         return;
@@ -115,8 +131,19 @@ pub(crate) fn record_compression_stats(
     let (before_bytes, after_bytes, before_tokens, after_tokens) =
         if op == OperationType::RewriteCommand {
             let n = before_text.len();
-            let t = estimate_tokens_from_bytes(n);
-            (n, n, t, t)
+            let bt = estimate_tokens_from_bytes(n);
+            // Use RTK's own classification to estimate savings rate and
+            // average output tokens per command category.
+            let (rate, avg_out) = estimate_rtk_savings(&before_text);
+            // Use RTK's per-category avg output tokens if available (more
+            // accurate than flat percentage), otherwise fall back to rate.
+            let at = if avg_out > 0 && avg_out < bt {
+                avg_out
+            } else {
+                (bt as f64 * (1.0 - rate)).ceil() as usize
+            };
+            let ab = (n as f64 * (1.0 - rate)).ceil() as usize;
+            (n, ab, bt, at)
         } else {
             let bb = before_text.len();
             let ab = after_text.len();
@@ -139,17 +166,57 @@ pub(crate) fn record_compression_stats(
         after_tokens,
     )
     .with_before_text(before_text)
-    .with_after_text(after_text);
+    .with_after_text(after_text)
+    .with_experimental_mode(experimental);
     if let Some(sid) = session_id {
         record = record.with_session_id(sid);
     }
     if let Some(tuid) = tool_use_id {
         record = record.with_tool_use_id(tuid);
     }
+    if let Some(p) = project {
+        record = record.with_project(p);
+    }
     record = record.with_source_pid(pid as i64);
 
     if let Ok(recorder) = open_recorder() {
         let _ = recorder.record(&record);
+    }
+}
+
+/// Estimate RTK token savings using `rtk-registry`'s built-in classification.
+///
+/// Returns `(savings_rate, avg_output_tokens)` where `savings_rate` is 0.0–1.0
+/// and `avg_output_tokens` is RTK's estimate of the raw command output size.
+fn estimate_rtk_savings(before_text: &str) -> (f64, usize) {
+    // Parse the original command from the PreToolUse payload.
+    let cmd = serde_json::from_str::<serde_json::Value>(before_text)
+        .ok()
+        .and_then(|v| {
+            v.pointer("/tool_input/command")
+                .and_then(|c| c.as_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_default();
+
+    if cmd.is_empty() {
+        return (0.60, 0);
+    }
+
+    let classification = rtk_registry::classify_command(&cmd);
+    match classification {
+        Classification::Supported {
+            estimated_savings_pct,
+            category,
+            ..
+        } => {
+            let rate = (estimated_savings_pct / 100.0).clamp(0.0, 1.0);
+            // Extract subcommand for finer token estimation
+            let subcmd = cmd.split_whitespace().nth(1).unwrap_or("");
+            let avg_tokens = rtk_registry::category_avg_tokens(category, subcmd);
+            (rate, avg_tokens)
+        }
+        _ => (0.60, 0),
     }
 }
 

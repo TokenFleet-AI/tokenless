@@ -8,7 +8,7 @@
 - [1. Overview](#1-overview)
 - [2. Installation](#2-installation)
 - [3. CLI Usage](#3-cli-usage)
-  - [3.8 TUI Dashboard](#38-tui-dashboard)
+  - [3.11 TUI Dashboard](#311-tui-dashboard)
 - [4. Agent Integration](#4-agent-integration)
 - [5. OpenClaw Plugin](#5-openclaw-plugin)
 - [6. Hermes Agent Plugin](#6-hermes-agent-plugin)
@@ -24,8 +24,8 @@
 |------------|-----------|-----------|
 | 🚀 Want auto token savings in your agent | [Quick Start](#quick-start-5-minutes) → `tokenless init` | 3 min |
 | 🔍 Want to verify compression first | [CLI Usage](#3-cli-usage) → run with fixtures | 10 min |
-| 🎯 Want a one-command demo | [`tokenless demo`](#39-demo) → all strategies at once | 10 sec |
-| 📊 Want to visualize savings | [`tokenless tui`](#38-tui-dashboard) → interactive dashboard | 1 min |
+| 🎯 Want a one-command demo | [`tokenless demo`](#312-demo) → all strategies at once | 10 sec |
+| 📊 Want to visualize savings | [`tokenless tui`](#311-tui-dashboard) → interactive dashboard | 1 min |
 | 🔧 Integrating with OpenClaw/Hermes | [Workflow Comparison](#7-workflow-comparison) → plugin chapters | 15 min |
 | 📦 Embedding compression in your system | [Crate API](#8-crate-api-rust-library) | 5 min |
 | 🛠 Want to contribute | [Build & Development](#11-build--development) | — |
@@ -146,7 +146,7 @@ Installs binary to `~/.local/bin/tokenless`, adapter files to `~/.local/share/an
 **Development mode** (installs to `~/.cargo/bin/`):
 
 ```bash
-./dev-install.sh
+./scripts/dev-install.sh
 ```
 
 This is equivalent to `make install` but places the binary in `~/.cargo/bin/` for local development convenience.
@@ -184,6 +184,8 @@ Compression effects: removes `title`, `examples`, truncates descriptions, strips
 // After: description truncated to 256/160 chars, examples removed
 ```
 
+Options: `-f`/`--file`, `--batch`, `--report`, `--project`, `--agent-id`, `--session-id`, `--tool-use-id`
+
 ### 3.2 Response Compression
 
 Compress API response JSON:
@@ -201,6 +203,8 @@ Compression rules:
 - Truncates arrays to 16 items
 - Truncates nesting depth beyond 8 levels
 
+Options: `-f`/`--file`, `--report`, `--context`, `--semantic`, `--project`, `--agent-id`, `--session-id`, `--tool-use-id`
+
 ### 3.3 TOON Encoding
 
 ```bash
@@ -212,7 +216,18 @@ echo 'name: Alice\nage: 30' | tokenless decompress-toon
 # → {"name":"Alice","age":30}
 ```
 
-### 3.4 Command Rewriting
+### 3.4 Auto Compression
+
+Auto-selects the best compression format based on JSON structure:
+
+```bash
+tokenless compress-auto -f input.json
+cat input.json | tokenless compress-auto
+```
+
+Options: `-f`/`--file`, `--report`, `--project`, `--agent-id`, `--session-id`, `--tool-use-id`
+
+### 3.5 Command Rewriting
 
 ```bash
 tokenless rewrite "git status"
@@ -224,7 +239,18 @@ tokenless rewrite "cargo test && git push"
 
 Falls back to the original command with an install prompt when RTK is not installed.
 
-### 3.5 Environment Check
+Options: `--exclude`, `--transparent-prefix`, `--project`
+
+### 3.6 Hook Diff
+
+PostToolUse hook variant that returns a unified diff instead of full text (experimental):
+
+```bash
+tokenless hook diff -f response.json
+curl -s https://api.example.com/data | tokenless hook diff
+```
+
+### 3.7 Environment Check
 
 ```bash
 # Check a specific tool
@@ -242,16 +268,36 @@ tokenless env-check --tool Shell --fix
 
 Dependency declarations live in `adapters/tokenless/common/tool-ready-spec.json`, covering 6 tool categories: Shell, WebFetch, Read, Write, Git, Python.
 
-### 3.6 Statistics
+Options: `--json` (output results as JSON)
+
+### 3.8 Statistics
 
 ```bash
-tokenless stats summary           # Aggregated metrics
-tokenless stats list              # Recent records
-tokenless stats show <ID>         # Record details
-tokenless stats enable/disable    # Toggle recording
+tokenless stats summary [--project <NAME>] [--namespace <NS>]  # Aggregated metrics
+tokenless stats list [--project <NAME>] [--namespace <NS>]     # Recent records
+tokenless stats show <ID>                                       # Record details
+tokenless stats enable/disable                                  # Toggle recording
+tokenless stats clear                                           # Clear all records
+tokenless stats rewrites                                        # Show rewrite history
+tokenless stats status                                          # Show recording status
+tokenless stats diff                                            # Show diff-based savings
+tokenless stats experimental-on                                 # Enable experimental features
+tokenless stats experimental-off                                # Disable experimental features
 ```
 
-### 3.7 Environment Variables
+### 3.9 MCP Server
+
+Start a local MCP server for AI agent integration:
+
+```bash
+tokenless mcp start --port <PORT>
+```
+
+> **Prerequisite**: Run `tokenless stats experimental-on` first to enable experimental features.
+
+Options: `--port` (TCP port for the MCP server)
+
+### 3.10 Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -261,17 +307,19 @@ tokenless stats enable/disable    # Toggle recording
 | `TOKENLESS_STATS_ENABLED` | — | Disable stats via env var (set to `0` or `false`) |
 | `TOKENLESS_LANG` | `zh` | TUI language (`zh` or `en`). Also resolved from `LANG` env var |
 
-### 3.8 TUI Dashboard
+### 3.11 TUI Dashboard
 
 Launch an interactive terminal dashboard for real-time compression statistics:
 
 ```bash
-tokenless tui                     # Default: zh, 5s refresh
+tokenless tui                     # Default: zh, 1s refresh
 tokenless tui --lang en           # English UI
 tokenless tui --refresh 3         # 3-second refresh interval
 ```
 
-The dashboard has **4 tabs**, switchable with `Tab` or `←` / `→`:
+> **Prerequisite**: Run `tokenless stats experimental-on` first to enable experimental features.
+
+The dashboard has **4 tabs**, switchable with `h` / `Tab` (next) and `Shift+Tab` (prev):
 
 | Tab | Description |
 |-----|-------------|
@@ -284,20 +332,23 @@ The dashboard has **4 tabs**, switchable with `Tab` or `←` / `→`:
 
 | Key | Action |
 |-----|--------|
-| `Tab` / `←→` | Switch tabs |
+| `h` / `Tab` (next), `Shift+Tab` (prev) | Switch tabs |
 | `↑↓` / `j``k` | Scroll / navigate |
 | `Enter` | View detail (record or agent drill-down) |
 | `d` | Back from detail view |
 | `/` | Search / filter records |
 | `t` | Cycle time range: Today → This Week → All Time |
+| `p` | Toggle project filter picker |
 | `e` | Export filtered records to JSON file |
-| `c` | Toggle config panel (stats, cache, threshold) |
+| `c` | Toggle config panel (stats, cache, threshold, experimental mode) |
 | `?` | Toggle help overlay |
 | `q` / `Esc` | Quit |
 
+> In the config panel, pressing `e` toggles experimental mode.
+
 > The TUI reads from the same SQLite database as `tokenless stats`. Enable stats recording with `tokenless stats enable` if you don't see data.
 
-### 3.9 Demo
+### 3.12 Demo
 
 Run a one-command demo showing all compression strategies with built-in test data:
 
@@ -323,6 +374,9 @@ tokenless init --global
 # Other agents
 tokenless init --global --agent cursor
 tokenless init --agent windsurf
+
+# Debug mode (verbose output)
+tokenless init --debug
 ```
 
 Supported 12 agents:
@@ -355,18 +409,18 @@ Full Claude Code hooks config (auto-generated by `tokenless init`):
         "hooks": [
           {
             "type": "command",
-            "command": "tokenless hook rewrite claude"
+            "command": "tokenless hook rewrite --target claude --project <project-name>"
           }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "*",
+        "matcher": "^(?!Bash$).*",
         "hooks": [
           {
             "type": "command",
-            "command": "tokenless hook compress"
+            "command": "tokenless hook compress --semantic --target claude --project <project-name>"
           }
         ]
       }
@@ -375,7 +429,7 @@ Full Claude Code hooks config (auto-generated by `tokenless init`):
 }
 ```
 
-> **Note**: Hooks use the `tokenless hook` subcommand, not `tokenless rewrite` or `tokenless compress-response` directly. The `hook` subcommand communicates with Claude Code via stdin/stdout JSON protocol, automatically reading the command from hook input and outputting the rewritten result. Use `tokenless hook rewrite claude` and `tokenless hook compress` when configuring manually.
+> **Note**: Hooks use the `tokenless hook` subcommand, not `tokenless rewrite` or `tokenless compress-response` directly. The `hook` subcommand communicates with Claude Code via stdin/stdout JSON protocol, automatically reading the command from hook input and outputting the rewritten result. Use `tokenless hook rewrite --target claude --project <project-name>` and `tokenless hook compress --semantic --target claude --project <project-name>` when configuring manually.
 
 ---
 

@@ -10,6 +10,7 @@ use crate::{
 /// Handle `tokenless compress-toon`.
 pub(crate) fn compress_toon(
     file: Option<String>,
+    project: Option<String>,
     agent_id: Option<String>,
     session_id: Option<String>,
     tool_use_id: Option<String>,
@@ -31,8 +32,10 @@ pub(crate) fn compress_toon(
         agent_id,
         session_id,
         tool_use_id,
+        project,
         input,
         encoded,
+        false, // basic TOON is always core
     );
     Ok(())
 }

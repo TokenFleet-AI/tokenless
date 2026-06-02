@@ -307,6 +307,8 @@ fn handle_tools_list(req: &McpRequest) -> McpResponse {
                     "inputSchema": {
                         "type": "object",
                         "properties": {
+                            "project": { "type": "string", "description": "Filter by project name" },
+                            "namespace": { "type": "string", "description": "Filter by namespace" },
                             "limit": { "type": "integer", "description": "Max records to include" }
                         }
                     }
@@ -569,6 +571,8 @@ fn exec_stats_summary(args: &Value) -> Result<Value, String> {
         .get("limit")
         .and_then(|v| v.as_u64())
         .map(|n| n as usize);
+    let project = args.get("project").and_then(|v| v.as_str());
+    let namespace = args.get("namespace").and_then(|v| v.as_str());
 
     if !TokenlessConfig::load().is_stats_enabled() {
         return Ok(serde_json::json!({
@@ -585,7 +589,7 @@ fn exec_stats_summary(args: &Value) -> Result<Value, String> {
 
     let recorder = open_recorder()?;
     let records = recorder
-        .all_records(limit)
+        .records_filtered(None, None, project, namespace, limit)
         .map_err(|e| format!("Failed to query records: {e}"))?;
 
     let summary = StatsSummary::from_records(&records);
@@ -601,6 +605,8 @@ fn exec_stats_summary(args: &Value) -> Result<Value, String> {
             "total_after_tokens": summary.total_after_tokens,
             "chars_percent": summary.chars_percent(),
             "tokens_percent": summary.tokens_percent(),
+            "project": project,
+            "namespace": namespace,
         }
     }))
 }
