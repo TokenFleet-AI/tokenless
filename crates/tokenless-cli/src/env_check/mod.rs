@@ -69,7 +69,7 @@ pub fn run(
                         &[],
                         &[]
                     ))
-                    .expect("JSON serialization should not fail")
+                    .map_err(|e| (e.to_string(), 2))?
                 );
                 return Ok(());
             }
@@ -137,7 +137,7 @@ pub fn run(
                         &fixed,
                         &post_missing
                     ))
-                    .expect("JSON serialization should not fail")
+                    .map_err(|e| (e.to_string(), 2))?
                 );
             } else {
                 println!("{}: {}", tool_name, format_status(&post_result.status));
@@ -151,7 +151,7 @@ pub fn run(
                     &[],
                     &missing_names
                 ))
-                .expect("JSON serialization should not fail")
+                .map_err(|e| (e.to_string(), 2))?
             );
         } else {
             println!("{}: {}", tool_name, format_status(&result.status));
