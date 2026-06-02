@@ -255,7 +255,7 @@ pub fn format_diff(records: &[StatsRecord], since: &str, until: &str) -> String 
 
     // Estimated cost savings (assuming $3/1M input tokens, $15/1M output tokens blended ~$8/1M)
     let est_cost = summary.tokens_saved() as f64 * 8.0 / 1_000_000.0;
-    output.push_str(&format!("Est. cost saved: ~${est_cost:.2}\n",));
+    output.push_str(&format!("Est. cost saved: ~${est_cost:.2}\n"));
 
     // Per-agent breakdown
     let mut by_agent: std::collections::BTreeMap<&str, (usize, usize)> =
