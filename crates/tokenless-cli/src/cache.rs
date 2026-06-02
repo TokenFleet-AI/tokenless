@@ -266,6 +266,7 @@ fn unified_diff(old: &str, new: &str) -> String {
 
 /// Clear stored response baselines (test-only helper).
 #[cfg(test)]
+#[allow(dead_code)]
 pub fn clear_diff_cache() {
     LAST_RESPONSES
         .lock()
@@ -278,7 +279,16 @@ pub fn clear_diff_cache() {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use super::*;
+
+    /// Unique per-execution test key to avoid races when tests run in parallel
+    /// and share the global `LAST_RESPONSES` cache.
+    static KEY_SEQ: AtomicUsize = AtomicUsize::new(0);
+    fn test_key(name: &str) -> String {
+        format!("{name}-{}", KEY_SEQ.fetch_add(1, Ordering::Relaxed))
+    }
 
     #[test]
     fn test_hash_key_version_prefix_affects_key() {
@@ -320,8 +330,7 @@ mod tests {
 
     #[test]
     fn test_diff_first_call_returns_none() {
-        clear_diff_cache();
-        let result = compute_diff("test-first-call", "line1\nline2\n");
+        let result = compute_diff(&test_key("first-call"), "line1\nline2\n");
         assert!(
             result.is_none(),
             "first call should return None (no baseline)"
@@ -330,8 +339,7 @@ mod tests {
 
     #[test]
     fn test_diff_second_call_returns_diff() {
-        clear_diff_cache();
-        let key = "test-second-call";
+        let key = test_key("second-call");
         // threshold=2.0 disables size-gating so we can verify diff content.
         let baseline: String = (0..20)
             .map(|i| format!("line{i:02}"))
@@ -347,8 +355,8 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        compute_diff_inner(key, &baseline, 2.0);
-        let result = compute_diff_inner(key, &changed, 2.0);
+        compute_diff_inner(&key, &baseline, 2.0);
+        let result = compute_diff_inner(&key, &changed, 2.0);
         assert!(
             result.is_some(),
             "second call with changes should return diff"
@@ -366,21 +374,19 @@ mod tests {
 
     #[test]
     fn test_diff_no_changes_returns_unchanged() {
-        clear_diff_cache();
-        let key = "test-no-changes";
-        compute_diff_inner(key, "line1\nline2\n", 0.7);
-        let result = compute_diff_inner(key, "line1\nline2\n", 0.7);
+        let key = test_key("no-changes");
+        compute_diff_inner(&key, "line1\nline2\n", 0.7);
+        let result = compute_diff_inner(&key, "line1\nline2\n", 0.7);
         assert_eq!(result.unwrap(), "(unchanged)");
     }
 
     #[test]
     fn test_diff_too_large_returns_none() {
-        clear_diff_cache();
-        let key = "test-too-large";
-        compute_diff_inner(key, "a\n", 0.7);
+        let key = test_key("too-large");
+        compute_diff_inner(&key, "a\n", 0.7);
         // Generate a completely different output
         let new = "b\nc\nd\ne\nf\ng\nh\ni\nj\nk\n";
-        let result = compute_diff_inner(key, new, 0.7);
+        let result = compute_diff_inner(&key, new, 0.7);
         assert!(
             result.is_none(),
             "majority change should return None (full output)"
@@ -389,16 +395,15 @@ mod tests {
 
     #[test]
     fn test_diff_threshold_strict() {
-        clear_diff_cache();
         // With threshold 0.3, even moderate changes should fallback to full
-        compute_diff_inner("test-strict", "a\nb\nc\n", 0.3);
-        let result = compute_diff_inner("test-strict", "x\ny\nz\n", 0.3); // 100% different
+        let key = test_key("strict");
+        compute_diff_inner(&key, "a\nb\nc\n", 0.3);
+        let result = compute_diff_inner(&key, "x\ny\nz\n", 0.3); // 100% different
         assert!(result.is_none(), "strict threshold should reject full diff");
     }
 
     #[test]
     fn test_diff_threshold_lenient() {
-        clear_diff_cache();
         // threshold=2.0 disables size-gating; verifies diff content.
         let baseline: String = (0..20)
             .map(|i| format!("line{i:02}"))
@@ -414,8 +419,9 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        compute_diff_inner("test-lenient", &baseline, 2.0);
-        let result = compute_diff_inner("test-lenient", &changed, 2.0);
+        let key = test_key("lenient");
+        compute_diff_inner(&key, &baseline, 2.0);
+        let result = compute_diff_inner(&key, &changed, 2.0);
         assert!(
             result.is_some(),
             "lenient threshold should accept small changes"

@@ -29,7 +29,11 @@ fn test_safe_path_valid() {
 
 #[test]
 fn test_safe_path_rejects_absolute() {
+    // Use a platform-appropriate absolute path.
+    #[cfg(unix)]
     assert!(SafePath::new("/etc/passwd").is_err());
+    #[cfg(windows)]
+    assert!(SafePath::new("C:\\Windows\\System32").is_err());
 }
 
 #[test]

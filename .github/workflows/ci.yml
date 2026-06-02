@@ -35,6 +35,8 @@ jobs:
         run: cargo build --release --workspace
 
       - name: Test
+        env:
+          INSTA_UPDATE: always
         run: cargo test --workspace
 
       - name: Clippy
