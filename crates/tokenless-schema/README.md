@@ -4,6 +4,13 @@ Schema and response compression for LLM token optimization.
 
 Part of the [tokenless](https://github.com/TokenFleet-AI/tokenless) toolkit.
 
+## Quick Start
+
+```toml
+[dependencies]
+tokenless-schema = "0.4"
+```
+
 ## SchemaCompressor
 
 Compresses OpenAI Function Calling tool definitions:
@@ -13,14 +20,24 @@ use tokenless_schema::SchemaCompressor;
 
 let compressed = SchemaCompressor::new()
     .with_func_desc_max_len(200)
+    .with_param_desc_max_len(160)
+    .with_max_enum_values(8)
+    .with_remove_examples(true)
     .compress(&tool_json);
 ```
 
-- Truncates function/parameter descriptions (default 256/160 chars)
-- Removes `title` and `examples` fields
-- Strips markdown formatting from descriptions
-- Handles nested `anyOf`/`oneOf`/`allOf` schemas
-- Returns original unchanged if no savings
+| Builder Method | Default | Description |
+|---------------|---------|-------------|
+| `with_func_desc_max_len(n)` | 256 | Max function description chars |
+| `with_param_desc_max_len(n)` | 160 | Max parameter description chars |
+| `with_max_enum_values(n)` | 16 | Truncate enum arrays |
+| `with_remove_examples(bool)` | true | Drop `examples` fields |
+| `with_max_depth(n)` | 8 | Max nesting depth |
+| `with_profile(profile)` | — | Apply a `CompressionProfile` preset |
+
+### `CompressionProfile`
+
+Presets: `Minimal`, `Standard`, `Aggressive`, `Custom`.
 
 ## ResponseCompressor
 
@@ -31,13 +48,58 @@ use tokenless_schema::ResponseCompressor;
 
 let compressed = ResponseCompressor::new()
     .with_truncate_arrays_at(10)
+    .with_truncate_strings_at(512)
+    .with_max_depth(8)
+    .with_profile(CompressionProfile::Aggressive)
     .compress(&response_json);
 ```
 
 - Drops debug fields (`debug`, `trace`, `stacktrace`, `logs`)
 - Removes `null` values and empty fields
-- Truncates strings (default 512 chars) and arrays (default 16 items)
-- Depth-limited (default 8 levels)
+- Truncates strings and arrays
+- Depth-limited traversal
 - Returns original unchanged if no savings
+
+## Format Router
+
+Intelligently selects the optimal encoding strategy based on JSON structure:
+
+```rust
+use tokenless_schema::{compress_auto, Strategy, select_strategy, strategy_name};
+
+let strategy = select_strategy(&json_value);
+println!("Selected: {}", strategy_name(strategy));
+// Strategy::ToonHrv, Strategy::EnhancedToon, Strategy::CjsonCompact, Strategy::Core
+
+let compressed = compress_auto(&json_value);
+```
+
+## Shape Analyzer
+
+```rust
+use tokenless_schema::{analyze, JsonShape, TopType};
+
+let shape = analyze(&json_value);
+// JsonShape { top_type: TopType::Object, depth: 3, total_nodes: 42, ... }
+```
+
+## Experimental Mode
+
+Control enhanced features (format router, enhanced TOON encoders):
+
+```rust
+use tokenless_schema;
+
+tokenless_schema::set_experimental_mode(false);
+// Falls back to core compression only
+
+if tokenless_schema::is_experimental_mode() {
+    // Enhanced features available
+}
+```
+
+## Minimum Rust Version
+
+Rust 2024 edition, MSRV 1.89.
 
 License: Apache-2.0
