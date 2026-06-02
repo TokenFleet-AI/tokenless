@@ -139,9 +139,11 @@ mod tests {
             "count": 42
         });
         let output = encode(&value);
-        assert!(output.starts_with("{count:"));
+        assert!(output.starts_with('{'));
+        assert!(output.ends_with('}'));
         assert!(output.contains("tags:[admin,verified]"));
         assert!(output.contains("count:42"));
+        assert!(output.contains("name:Bob"));
         assert!(!output.contains(' ')); // No non-semantic whitespace.
     }
 

@@ -61,6 +61,9 @@ jobs:
       - name: Dependency license & source audit
         run: cargo deny check
 
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
       - name: Vulnerability audit
         run: cargo audit
 
