@@ -4,6 +4,8 @@
 [![Docs](https://docs.rs/tokenless-semantic/badge.svg)](https://docs.rs/tokenless-semantic)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/TokenFleet-AI/tokenless/blob/master/LICENSE)
 
+![tokenless](https://raw.githubusercontent.com/TokenFleet-AI/tokenless/master/assets/tokenless.svg)
+
 Semantic-aware JSON field compression with ONNX embeddings.
 
 Part of the [tokenless](https://github.com/TokenFleet-AI/tokenless) toolkit.

@@ -4,6 +4,8 @@
 [![Docs](https://docs.rs/tokenless-tui/badge.svg)](https://docs.rs/tokenless-tui)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/TokenFleet-AI/tokenless/blob/master/LICENSE)
 
+![tokenless](https://raw.githubusercontent.com/TokenFleet-AI/tokenless/master/assets/tokenless.svg)
+
 Interactive terminal dashboard for tokenless compression statistics.
 
 Part of the [tokenless](https://github.com/TokenFleet-AI/tokenless) toolkit.

@@ -1,0 +1,66 @@
+<svg viewBox="0 0 520 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">tokenless</title>
+  <desc id="desc">tokenless: LLM Token Optimization Toolkit — six tokens compressed to two</desc>
+
+  <defs>
+    <linearGradient id="brand" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1E3A8A"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+
+    <style>
+      @keyframes dotIn {
+        0%   { transform: scale(0); animation-timing-function: ease-out; }
+        40%  { transform: scale(1.3); animation-timing-function: ease-in; }
+        55%  { transform: scale(1); }
+        100% { transform: scale(1); }
+      }
+      @keyframes arrowIn {
+        0%   { opacity: 0; }
+        100% { opacity: 1; }
+      }
+      @keyframes textIn {
+        0%   { opacity: 0; transform: translateX(-20px); }
+        100% { opacity: 1; transform: translateX(0); }
+      }
+
+      .d1 { animation: dotIn 4s 0.00s infinite backwards; }
+      .d2 { animation: dotIn 4s 0.08s infinite backwards; }
+      .d3 { animation: dotIn 4s 0.16s infinite backwards; }
+      .d4 { animation: dotIn 4s 0.24s infinite backwards; }
+      .d5 { animation: dotIn 4s 0.32s infinite backwards; }
+      .d6 { animation: dotIn 4s 0.40s infinite backwards; }
+
+      .arrow { animation: arrowIn 4s 0.72s infinite backwards; }
+      .bd1   { animation: dotIn 4s 0.96s infinite backwards; }
+      .bd2   { animation: dotIn 4s 1.04s infinite backwards; }
+      .t     { animation: textIn 4s 1.28s infinite backwards; }
+
+      @media (prefers-reduced-motion: reduce) {
+        .d1,.d2,.d3,.d4,.d5,.d6,.arrow,.bd1,.bd2,.t {
+          animation: none;
+        }
+      }
+    </style>
+  </defs>
+
+  <g transform="translate(30, 50)">
+    <!-- 压缩前：6个灰点（纯色，渐变在14px以下人眼不可辨） -->
+    <circle cx="0" cy="0" r="6" fill="#6B7280" class="d1"/>
+    <circle cx="18" cy="0" r="6" fill="#6B7280" class="d2"/>
+    <circle cx="36" cy="0" r="6" fill="#6B7280" class="d3"/>
+    <circle cx="54" cy="0" r="6" fill="#6B7280" class="d4"/>
+    <circle cx="72" cy="0" r="6" fill="#6B7280" class="d5"/>
+    <circle cx="90" cy="0" r="6" fill="#6B7280" class="d6"/>
+
+    <!-- 箭头 -->
+    <text x="115" y="6" font-size="22" fill="#9CA3AF" font-family="monospace" class="arrow">→</text>
+
+    <!-- 压缩后：2个蓝点（纯色，不用渐变） -->
+    <circle cx="155" cy="0" r="7" fill="#1E3A8A" class="bd1"/>
+    <circle cx="175" cy="0" r="7" fill="#06B6D4" class="bd2"/>
+
+    <!-- 品牌名 -->
+    <text x="206" y="8" font-size="28" font-family="'Inter', system-ui, sans-serif" font-weight="800" fill="url(#brand)" class="t">tokenless</text>
+  </g>
+</svg>

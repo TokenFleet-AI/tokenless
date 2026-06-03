@@ -4,6 +4,8 @@
 [![Docs](https://docs.rs/tokenless-core/badge.svg)](https://docs.rs/tokenless-core)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/TokenFleet-AI/tokenless/blob/master/LICENSE)
 
+![tokenless](https://raw.githubusercontent.com/TokenFleet-AI/tokenless/master/assets/tokenless.svg)
+
 Shared core types and utilities for the tokenless workspace.
 
 Part of the [tokenless](https://github.com/TokenFleet-AI/tokenless) toolkit.

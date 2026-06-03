@@ -4,6 +4,8 @@
 [![Docs](https://docs.rs/tokenless/badge.svg)](https://docs.rs/tokenless)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/TokenFleet-AI/tokenless/blob/master/LICENSE)
 
+![tokenless](https://raw.githubusercontent.com/TokenFleet-AI/tokenless/master/assets/tokenless.svg)
+
 LLM token optimization CLI — schema/response compression, command rewriting, TOON encoding, environment checks.
 
 ```bash

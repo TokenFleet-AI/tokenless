@@ -1,6 +1,6 @@
 # Token-Less
 
-![Token-Less Logo](./assets/tokenless.jpg)
+![Token-Less Logo](./assets/tokenless.svg)
 
 **LLM Token 优化工具包** — Schema/Response 压缩 + 智能格式路由 + 差分响应 + 预测缓存 + TOON 编码 + 命令重写 + MCP Server + 工具环境就绪检查。
 

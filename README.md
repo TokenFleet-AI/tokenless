@@ -1,6 +1,6 @@
 # Token-Less
 
-![Token-Less Logo](./assets/tokenless.jpg)
+![Token-Less Logo](./assets/tokenless.svg)
 
 **LLM token optimization toolkit** — schema/response compression + intelligent format routing + differential response + predictive cache + TOON encoding + command rewriting + MCP server + tool environment readiness.
 

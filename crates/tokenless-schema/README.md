@@ -4,6 +4,8 @@
 [![Docs](https://docs.rs/tokenless-schema/badge.svg)](https://docs.rs/tokenless-schema)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/TokenFleet-AI/tokenless/blob/master/LICENSE)
 
+![tokenless](https://raw.githubusercontent.com/TokenFleet-AI/tokenless/master/assets/tokenless.svg)
+
 Schema and response compression for LLM token optimization.
 
 Part of the [tokenless](https://github.com/TokenFleet-AI/tokenless) toolkit.
