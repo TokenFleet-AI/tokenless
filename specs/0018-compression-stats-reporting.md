@@ -1,6 +1,6 @@
-# 0018 — Compression Stats Reporting (agent-proxy → tokenless)
+# 0018 — Compression Stats Reporting (tokenless ↔ agent-proxy)
 
-> 每个 API 请求完成后，agent-proxy-rust 将消耗统计和压缩数据回传给 tokenless，统一存储和展示。
+> tokenless hook 通过文件队列上报压缩统计，agent-proxy 通过 rename-then-read 消费，统一写入 CostRecord。
 
 ---
 
@@ -15,244 +15,270 @@ tokenless stats (SQLite)          agent-proxy cost_records (SQLite)
 └─ 实验模式效果                   └─ 代理层压缩统计（CompressMiddleware）
 ```
 
-**问题**：同一个请求的压缩效果（tokenless）和实际消耗（agent-proxy）分散在两个数据库，无法关联查询。
-
-**目标**：每个请求结束后，agent-proxy 将数据回传给 tokenless，由 tokenless 统一存储，提供完整的"该请求省了多少钱"视图。
+**目标**：每个 API 请求的压缩效果（tokenless）和实际消耗（agent-proxy）关联到同一条 CostRecord。
 
 ---
 
 ## 2. 数据模型
 
-### 2.1 回传数据格式 `RequestReport`
+### 2.1 传输格式 `ProxyReport`
+
+Tokenless hook 在压缩/改写完成后，追加一行 JSON 到报告文件：
+
+```
+~/.tokenfleet-ai/tokenless/reports/{session_id}.jsonl
+```
+
+每行一条（JSONL 格式）：
 
 ```json
 {
-  "session_id": "sess_abc123",
-  "project": "/Users/baoyx/my-project",
-  "model": "deepseek-v4-flash",
-  "channel": "deepseek",
-  "timestamp": "2026-06-02T10:30:00Z",
-
-  "usage": {
-    "input_tokens": 500,
-    "output_tokens": 200,
-    "cache_read_tokens": 50,
-    "cache_write_tokens": 0,
-    "thinking_tokens": 100
-  },
-
-  "pricing": {
-    "type": "per_token",
-    "input_per_mtok": 1.0,
-    "output_per_mtok": 2.0,
-    "unit": "CNY"
-  },
-
-  "actual_cost": 0.0012,
-
-  "compression": {
-    "proxy_schema_pre": 300,
-    "proxy_schema_post": 220,
-    "proxy_response_pre": 0,
-    "proxy_response_post": 0,
-    "total_saved": 80
-  },
-
-  "saved_cost": 0.00008
+  "sessionId": "sess_abc123",
+  "agentId": "claude",
+  "projectPath": null,
+  "opType": "CompressSchema",
+  "method": "ToonHrv",
+  "beforeTokens": 1500,
+  "afterTokens": 700,
+  "savedTokens": 800,
+  "beforeBytes": 6000,
+  "afterBytes": 2800,
+  "savedBytes": 3200,
+  "timestamp": "2026-06-03T10:30:00Z"
 }
 ```
 
-### 2.2 字段说明
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `sessionId` | string | Claude Code 会话 ID |
+| `agentId` | string | 代理标识（如 "claude"） |
+| `projectPath` | string\|null | 项目路径 |
+| `opType` | string | 操作类型（kebab-case）：`compress-schema` / `compress-response` / `rewrite-command` / `compress-toon` |
+| `method` | string\|null | 压缩策略，见下表 |
+| `beforeTokens` | u64 | 压缩前估算 token |
+| `afterTokens` | u64 | 压缩后估算 token |
+| `savedTokens` | u64 | 节省 token |
+| `beforeBytes` | u64 | 压缩前字节数 |
+| `afterBytes` | u64 | 压缩后字节数 |
+| `savedBytes` | u64 | 节省字节数 |
+| `timestamp` | string | RFC 3339 时间戳 |
 
-| 字段 | 类型 | 来源 | 说明 |
-|------|------|------|------|
-| `session_id` | string | Claude Code `x-session-id` header | 会话 ID，关联多次请求 |
-| `project` | string | Claude Code `x-project-path` header | 项目路径 |
-| `model` | string | SelectedMappingInfo.upstream_name | 上游实际使用的模型名 |
-| `channel` | string | SelectedMappingInfo.channel_id | 选中的渠道 ID |
-| `timestamp` | string | 请求完成时间 | RFC 3339 |
-| `usage` | object | 上游 API 响应 `usage` 字段 | 实际 token 消耗 |
-| `pricing` | object | SelectedMappingInfo.pricing | 定价快照 |
-| `actual_cost` | f64 | calc_cost(usage, pricing) | 实际花费 |
-| `compression` | object | CompressMiddleware | 代理层压缩统计 |
-| `compression.total_saved` | u64 | proxy_schema_saved + proxy_response_saved | 代理层共省 token |
-| `saved_cost` | f64 | total_saved × pricing | 压缩节省金额 |
+#### method 枚举值
 
-### 2.3 Session ID 和 Project 来源
+**CompressSchema / compress-schema**
 
-agent-proxy 需要新增对两个 header 的提取：
+| method | 触发条件 |
+|--------|---------|
+| `CompressorOnly` | 基础 schema 压缩器（截断描述、移除 title/example） |
+| `ToonHrv` | 统一对象数组 >= 5 项 |
+| `EnhancedToon` | schema 含枚举/约束，或深层嵌套 > 3 层 |
+| `CjsonCompact` | 其他情况 |
+| `CompressorOnly` | 输入 < 200 字符，跳过编码 |
 
-```
-x-session-id:  sess_abc123    → ConnectionContext.session_id
-x-project-path:  /Users/baoyx/my-project  → ConnectionContext.project
-```
+**CompressResponse / compress-response**
 
-这两个 header 由 Claude Code 在上层配置的自定义 API endpoint 请求中携带。如果未携带，使用默认值（`session_id = ""`，`project` 从环境变量或当前目录推断）。
+| method | 触发条件 |
+|--------|---------|
+| `Standard` | 标准响应压缩（截断字符串/数组、删除 null） |
+| `HighFidelity` | Bash 输出压缩（更宽松的截断限制） |
+| `Semantic` | 语义感知字段过滤（`--semantic` 标志） |
 
----
+**RewriteCommand / rewrite-command**
 
-## 3. 传输机制
+| method | 触发条件 |
+|--------|---------|
+| `RtkStandard` | RTK 命令改写 |
 
-agent-proxy 在 `CostMiddleware::record()` 中，写完自己的 cost_records 后，调用 tokenless CLI 子进程回传数据。
+**CompressToon / compress-toon**
 
-### 3.1 CLI 命令
+| method | 触发条件 |
+|--------|---------|
+| `ToonDefault` | 基础 TOON 编码 |
 
-```
-tokenless stats report --json '<RequestReport>'
-```
+### 2.2 消费端 `CostRecord`（agent-proxy 侧）
 
-### 3.2 agent-proxy 调用方式
+agent-proxy 消费报告文件后，写入统一的 CostRecord：
 
 ```rust
-// CostMiddleware::record() 末尾
-let report = serde_json::to_string(&report).unwrap_or_default();
-let result = std::process::Command::new("tokenless")
-    .args(["stats", "report", "--json", &report])
-    .stdout(std::process::Stdio::null())
-    .stderr(std::process::Stdio::null())
-    .spawn(); // fire-and-forget，不阻塞主线程
-```
+struct CostRecord {
+    // ── 关联 ──
+    session_id: Option<String>,              // X-Claude-Code-Session-Id
+    channel_id: String,                      // 渠道 ID
+    project: String,                         // 项目路径
+    user_id: String,                         // 用户
+    agent_type: String,                      // ClaudeCode / Codex / ...
 
-**设计决策**：
-- `spawn()` 而非 `output()`，不阻塞代理请求处理
-- 失败不影响代理正常运行（静默丢弃，记录 tracing::debug）
-- 如果 tokenless 不在 PATH，使用环境变量 `TOKENLESS_BIN` 指定路径
+    // ── 上游消耗 ──
+    input_tokens: i64,
+    output_tokens: i64,
+    cache_write_tokens: i64,
+    cache_read_tokens: i64,
+    thinking_tokens: i64,
+    cost: f64,
+    unit: String,                            // USD / CNY / credits
 
-### 3.3 tokenless 接收端
+    // ── 压缩统计 ──
+    schema_saved_tokens: i64,                // agent-proxy 侧 schema 压缩
+    response_saved_tokens: i64,              // agent-proxy 侧 response 压缩
+    rtk_saved_tokens: i64,                   // RTK 命令改写
+    pre_compress_tokens: i64,
+    post_compress_tokens: i64,
+    compression_tokens_saved: i64,           // agent-proxy 侧总节省
 
-```
-crates/tokenless-cli/src/commands/stats.rs  (或新建)
+    // ── 计费关联（来自 tokenless） ──
+    before_tokens: i64,                      // 压缩前估算（≈ after + saved）
+    after_tokens: i64,                       // 实际消耗（input + output）
+    tokens_saved: i64,                       // 总节省
+    compression_breakdown_json: String,      // JSON 数组明细
 
-fn cmd_stats_report(json: &str) -> Result<()> {
-    let report: RequestReport = serde_json::from_str(json)?;
-    stats::insert_request_report(&report)?;
-    Ok(())
+    // ── 审计 ──
+    pricing_snapshot_json: String,
+    timestamp: String,                       // RFC 3339
 }
 ```
 
-tokenless 在自己的数据库中新增表 `request_reports`（或合并到现有 `stats_records`），存储完整报告。
+`compression_breakdown_json` 示例：
+
+```json
+[
+  {"op": "CompressSchema", "method": "ToonHrv", "beforeTokens": 1500, "afterTokens": 700, "savedTokens": 800},
+  {"op": "RewriteCommand", "method": "RtkStandard", "beforeTokens": 200, "afterTokens": 50, "savedTokens": 150}
+]
+```
+
+### 2.3 Session ID 来源
+
+agent-proxy 从 Claude Code HTTP 请求的 header 中提取：
+
+```
+X-Claude-Code-Session-Id: sess_abc123  → ConnectionContext.session_id
+```
 
 ---
 
-## 4. agent-proxy 需要补充的实现
+## 3. 传输机制：文件队列 + rename-then-read
 
-### 4.1 ConnectionContext 扩展
+### 3.1 整体流程
+
+```
+tokenless hook                     agent-proxy
+─────────────                      ───────────
+1. 压缩/改写
+2. 写 stats.db（现有逻辑不变）
+3. append 一行 JSONL 到
+   ~/.tokenfleet-ai/tokenless/
+   reports/{session_id}.jsonl
+                                   4. 收到 Claude Code API 请求
+                                   5. 读 X-Claude-Code-Session-Id header
+                                   6. rename reports/{id}.jsonl
+                                      → reports/{id}.processing（原子操作）
+                                   7. 解析 processing 文件
+                                   8. 累积 saved_tokens + breakdown
+                                   9. 删除 processing 文件
+                                   10. 注入 ctx（tokenless_saved_tokens 等）
+                                   11. 正常处理请求（压缩、转发）
+                                   12. CostRecorder.record() 写 CostRecord
+```
+
+### 3.2 为什么用文件而非 HTTP
+
+- tokenless hook 是**短生命周期 CLI 进程**，启动 HTTP server 太重
+- 文件 append 是 O(1)，不阻塞 hook
+- `rename` 同文件系统内是**原子操作**，天然处理并发写入
+- agent-proxy 已经在处理请求时做文件 I/O，无额外开销
+
+### 3.3 agent-proxy 消费代码
 
 ```rust
-// crates/core/src/types.rs — ConnectionContext 新增字段
-pub struct ConnectionContext {
-    // ... 现有字段 ...
-    /// Session ID from x-session-id header
-    pub session_id: Option<String>,
-    /// Project path from x-project-path header
-    pub project: Option<String>,
+// crates/core/src/report.rs
+pub(crate) fn consume_report(session_id: &str) -> Option<TokenlessAccumulator> {
+    let source = reports_dir.join(format!("{safe_sid}.jsonl"));
+    let target = reports_dir.join(format!("{safe_sid}.processing"));
+
+    // 原子 rename 认领文件
+    fs::rename(&source, &target).ok()?;
+
+    // 解析
+    let result = parse_report_file(&target);
+
+    // 清理
+    let _ = fs::remove_file(&target);
+
+    result
 }
 ```
 
-### 4.2 Header 提取
+### 3.4 tokenless 写入代码
 
 ```rust
-// crates/core/src/server.rs — handle_proxy_request 中提取
-let session_id = parts.headers
-    .get("x-session-id")
-    .and_then(|v| v.to_str().ok())
-    .map(|s| s.to_string());
-let project = parts.headers
-    .get("x-project-path")
-    .and_then(|v| v.to_str().ok())
-    .map(|s| s.to_string());
-```
-
-### 4.3 CostMiddleware 集成
-
-在 `record()` 中构造 `RequestReport`，序列化为 JSON，调用 tokenless CLI。
-
----
-
-## 5. tokenless 需要补充的实现
-
-### 5.1 新增 `stats report` 子命令
-
-```
-crates/tokenless-cli/src/commands/stats.rs
-
-tokenless stats report --json '...'
-```
-
-接收 `RequestReport` JSON，写入 stats 数据库。
-
-### 5.2 数据库表设计
-
-```sql
-CREATE TABLE IF NOT EXISTS request_reports (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id TEXT NOT NULL DEFAULT '',
-    project TEXT NOT NULL DEFAULT '',
-    model TEXT NOT NULL DEFAULT '',
-    channel TEXT NOT NULL DEFAULT '',
-    timestamp TEXT NOT NULL,
-    report_json TEXT NOT NULL,      -- 完整 RequestReport JSON
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_reports_session ON request_reports(session_id);
-CREATE INDEX IF NOT EXISTS idx_reports_project ON request_reports(project);
-CREATE INDEX IF NOT EXISTS idx_reports_timestamp ON request_reports(timestamp);
-```
-
-`report_json` 存储完整 JSON，方便查询和导出。
-
----
-
-## 6. 展示层
-
-tokenless 侧新增查询命令：
-
-```
-tokenless stats summary --project /Users/baoyx/my-project --days 7
-
-输出:
-┌────────────────────────────────────────────────────────┐
-│  项目: /Users/baoyx/my-project (最近 7 天)             │
-├─────────────┬──────────┬──────────┬──────────┬─────────┤
-│ 日期         │ 请求数    │ 实际花费  │ 节省金额  │ 节省率  │
-├─────────────┼──────────┼──────────┼──────────┼─────────┤
-│ 2026-06-02  │    45    │ ¥0.23   │ ¥0.08   │ 25.8%  │
-│ 2026-06-01  │    38    │ ¥0.19   │ ¥0.06   │ 24.0%  │
-│ ...         │    ...   │ ...     │ ...     │ ...    │
-├─────────────┼──────────┼──────────┼──────────┼─────────┤
-│ 合计         │   283    │ ¥1.42   │ ¥0.52   │ 26.8%  │
-└─────────────┴──────────┴──────────┴──────────┴─────────┘
+// crates/tokenless-cli/src/shared.rs
+fn append_report_to_file(report: ProxyReport) -> Result<(), ()> {
+    let file_path = get_reports_dir().join(format!("{safe_sid}.jsonl"));
+    let line = serde_json::to_string(&report)?;
+    let mut f = fs::OpenOptions::new()
+        .create(true).append(true)
+        .open(&file_path)?;
+    writeln!(f, "{line}")
+}
 ```
 
 ---
 
-## 7. 错误处理
+## 4. CostRecorder Trait（agent-proxy 侧）
+
+Cost recording 不属于 `ProxyMiddleware` 链。核心 crate 定义独立 trait：
+
+```rust
+#[async_trait]
+pub trait CostRecorder: Send + Sync + std::fmt::Debug {
+    async fn record(
+        &self,
+        ctx: &ConnectionContext,
+        response_body: &serde_json::Value,
+    ) -> Result<(), ProxyError>;
+}
+```
+
+成本 crate (`agent-proxy-rust-cost`) 实现该 trait，通过 `AgentProxyBuilder::cost_recorder()` 注册。服务器引擎在 `on_response` 链完成后调用。
+
+---
+
+## 5. 错误处理
 
 | 情况 | 处理 |
 |------|------|
-| tokenless 二进制不在 PATH | agent-proxy 静默跳过（非关键路径） |
-| JSON 解析失败 | 记录 tracing::debug，不重试 |
-| 子进程启动失败 | spawn() 失败不阻塞代理 |
-| 数据库写入失败 | tokenless 侧记录错误日志 |
+| tokenless 写入报告失败 | `tracing::warn!`，不阻塞 hook 输出 |
+| agent-proxy rename 失败（文件不存在） | 静默跳过，本次请求不计 before |
+| 报告文件解析失败 | `tracing::warn!`，删除 processing 文件 |
+| CostRecord 写入失败 | `tracing::warn!`，不影响响应返回 |
+| session_id 为空 | 跳过整个关联流程 |
+
+所有错误日志通过 `tracing` 同时输出到 stderr 和 `~/.tokenfleet-ai/tokenless/tokenless.log`。
 
 ---
 
-## 8. 实施计划
+## 6. 展示层（未来）
 
-```
-Phase 1: agent-proxy 侧
-├── ConnectionContext 加 session_id + project
-├── server.rs 提取 x-session-id / x-project-path header
-├── CostRecord 已有完整字段，无需改动
-└── CostMiddleware::record() 调用 tokenless stats report
+从 CostRecord 直接查询：
 
-Phase 2: tokenless 侧
-├── 新增 stats report 子命令
-├── 创建 request_reports 表
-├── 实现 stats summary 查询命令
-└── 单元测试
+```sql
+-- 按会话汇总
+SELECT session_id,
+       COUNT(*) as requests,
+       SUM(cost) as total_cost,
+       SUM(tokens_saved) as total_saved,
+       SUM(before_tokens) as before,
+       SUM(after_tokens) as after
+FROM cost_records
+WHERE session_id IS NOT NULL
+GROUP BY session_id;
+
+-- 压缩明细
+SELECT session_id, compression_breakdown_json
+FROM cost_records
+WHERE compression_breakdown_json != '[]';
 ```
 
 ---
 
-> Owner: baoyx · 版本：v1.0 · 生效日期：2026-06-02
+> Owner: baoyx · 版本：v2.0 · 更新：2026-06-03（反映文件队列 + CostRecorder 实际实现）

@@ -13,7 +13,7 @@ use std::{
 pub struct InitConfig {
     /// Install globally vs project-local.
     pub global: bool,
-    /// Enable debug logging for compress hook (~/.tokenless/compress-debug.log).
+    /// Enable debug logging for compress hook (~/.tokenfleet-ai/tokenless/compress-debug.log).
     pub debug: bool,
 }
 
@@ -403,7 +403,7 @@ fn init_claude(config: &InitConfig) -> Result<(), String> {
     println!("[tokenless] Installed hooks for Claude Code ({scope})");
     println!("  project: {project_name}");
     if config.debug {
-        println!("  debug: ~/.tokenless/compress-debug.log");
+        println!("  debug: ~/.tokenfleet-ai/tokenless/compress-debug.log");
     }
     println!("  {}", path_display(&settings_path));
     Ok(())

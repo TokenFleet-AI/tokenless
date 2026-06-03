@@ -52,7 +52,8 @@ pub(crate) fn rewrite(
                     project,
                     input,
                     rewritten,
-                    false, // RTK rewrite is always core
+                    false,                      // RTK rewrite is always core
+                    Some("RtkStandard".into()), // method
                 );
             }
         }

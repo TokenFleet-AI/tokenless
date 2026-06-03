@@ -52,9 +52,9 @@ tokenless binary
     │   └── Package manager     → auto-fix (dnf/yum/apt/apk)
     │
     └── Runtime state:
-        ├── ~/.tokenless/stats.db        → compression metrics (SQLite)
-        ├── ~/.tokenless/config.json     → persistent configuration
-        └── ~/.tokenless/tool-ready-spec.json → tool dependency specs
+        ├── ~/.tokenfleet-ai/tokenless/stats.db        → compression metrics (SQLite)
+        ├── ~/.tokenfleet-ai/tokenless/config.json     → persistent configuration
+        └── ~/.tokenfleet-ai/tokenless/tool-ready-spec.json → tool dependency specs
 ```
 
 ## Configuration Layers
@@ -69,7 +69,7 @@ Priority order (highest first):
    ├── TOKENLESS_PACKAGE_MANAGER → Force package manager
    └── TOKENLESS_ENV_FIX_SCRIPT  → Override fix script path
 
-2. Config file (~/.tokenless/config.json)
+2. Config file (~/.tokenfleet-ai/tokenless/config.json)
    └── { "stats_enabled": true/false }
 
 3. CLI flags (per-invocation)
@@ -79,7 +79,7 @@ Priority order (highest first):
 4. Compiled defaults
    ├── SchemaCompressor::default()
    ├── ResponseCompressor::default()
-   └── DB path: ~/.tokenless/stats.db
+   └── DB path: ~/.tokenfleet-ai/tokenless/stats.db
 ```
 
 ## Agent Hook Installation
@@ -174,7 +174,7 @@ tokenless stats summary
     └──────────────┴──────────┴──────────────┴─────────────┘
 ```
 
-Stats database path: `~/.tokenless/stats.db`
+Stats database path: `~/.tokenfleet-ai/tokenless/stats.db`
 - SQLite WAL mode with 5s busy timeout
 - Indexed on: timestamp, operation, agent_id, session_id
 - No built-in retention — manual clear via `tokenless stats clear`

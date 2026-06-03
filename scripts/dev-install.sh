@@ -17,7 +17,7 @@ codesign --force --sign - "$HOME/.cargo/bin/tokenless" 2>/dev/null || true
 
 # Copy ONNX model files for Level 2 semantic compression
 MODEL_SRC="$SCRIPT_DIR/crates/tokenless-semantic/models"
-MODEL_DST="$HOME/.tokenless/models"
+MODEL_DST="$HOME/.tokenfleet-ai/tokenless/models"
 if [ -f "$MODEL_SRC/all-MiniLM-L6-v2.onnx" ] && [ -f "$MODEL_SRC/tokenizer.json" ]; then
   echo "[dev-install] Copying ONNX models to $MODEL_DST"
   mkdir -p "$MODEL_DST"

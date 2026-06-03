@@ -92,7 +92,9 @@ impl TokenlessConfig {
 
     fn config_path() -> PathBuf {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        home.join(".tokenless").join("config.json")
+        home.join(".tokenfleet-ai")
+            .join("tokenless")
+            .join("config.json")
     }
 }
 

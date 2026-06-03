@@ -267,7 +267,7 @@ pub(crate) fn find_spec_path() -> Result<PathBuf, String> {
         cwd.as_ref()
             .map(|d| d.join("adapters/tokenless/common/tool-ready-spec.json")),
         Some(PathBuf::from(format!(
-            "{home}/.tokenless/tool-ready-spec.json"
+            "{home}/.tokenfleet-ai/tokenless/tool-ready-spec.json"
         ))),
         Some(PathBuf::from(format!(
             "{home}/.local/share/anolisa/adapters/tokenless/common/tool-ready-spec.json"

@@ -29,7 +29,7 @@
 ┌──────────── Internal ────────────┐
 │  Compressed output (stdout)      │  ← Clean (validated, compressed)
 │  Stats DB (SQLite, local)        │  ← Trusted (only tokenless writes)
-│  Config files (~/.tokenless/)    │  ← Trusted (user-managed)
+│  Config files (~/.tokenfleet-ai/tokenless/)    │  ← Trusted (user-managed)
 └──────────────────────────────────┘
 ```
 
@@ -148,7 +148,7 @@ Command::new("sh")
 let candidates = [
     env_var_path,           // TOKENLESS_TOOL_READY_SPEC
     repo_relative_path,      // adapters/tokenless/common/tool-ready-spec.json
-    home_config_path,       // ~/.tokenless/tool-ready-spec.json
+    home_config_path,       // ~/.tokenfleet-ai/tokenless/tool-ready-spec.json
     system_share_path,      // ~/.local/share/anolisa/...
     system_usr_path,        // /usr/share/anolisa/...
 ];
@@ -179,7 +179,7 @@ Users can add custom fields via `add_drop_field()`.
 ### Stats Database
 
 The stats database stores **before/after text content**. This is an intentional design choice for debugging and optimization analysis, but it means:
-- Sensitive response data could be persisted to `~/.tokenless/stats.db`
+- Sensitive response data could be persisted to `~/.tokenfleet-ai/tokenless/stats.db`
 - Stats can be disabled: `tokenless stats disable`
 - Stats can be cleared: `tokenless stats clear --yes`
 - The DB file permissions depend on the user's umask

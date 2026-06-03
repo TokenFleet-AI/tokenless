@@ -1,6 +1,7 @@
 //! Handlers for `compress-schema`, `compress-response`, `compress-auto`.
 
 use tokenless_schema::compress_auto as schema_compress_auto;
+use tokenless_schema::strategy_name;
 use tokenless_stats::estimate_tokens_from_bytes;
 
 use crate::{
@@ -76,7 +77,8 @@ pub(crate) fn compress_schema(
         project,
         input,
         output_text,
-        false, // core schema compression
+        false,                         // core schema compression
+        Some("CompressorOnly".into()), // method: basic schema compressor
     );
     Ok(())
 }
@@ -175,6 +177,14 @@ pub(crate) fn compress_response(
         input,
         output_text,
         used_experimental, // only true when semantic compression was applied
+        Some(
+            if used_experimental {
+                "Semantic"
+            } else {
+                "Standard"
+            }
+            .into(),
+        ), // method
     );
     Ok(())
 }
@@ -233,6 +243,7 @@ pub(crate) fn compress_auto(
         input,
         output_text,
         is_experimental_enabled(), // format router is experimental
+        Some(strategy_name(&strategy).into()), // method
     );
     Ok(())
 }

@@ -35,7 +35,8 @@ pub(crate) fn compress_toon(
         project,
         input,
         encoded,
-        false, // basic TOON is always core
+        false,                      // basic TOON is always core
+        Some("ToonDefault".into()), // method
     );
     Ok(())
 }

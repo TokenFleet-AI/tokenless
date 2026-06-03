@@ -60,7 +60,8 @@ pub(crate) fn hook_rewrite(target: &str, project: Option<String>) -> Result<(), 
                 project,
                 input,
                 output,
-                false, // RTK rewrite is always core
+                false,                      // RTK rewrite is always core
+                Some("RtkStandard".into()), // method
             );
             return Ok(());
         }
@@ -121,6 +122,13 @@ pub(crate) fn hook_compress(
             // Use the actual tool output text for before/after comparison,
             // not the entire hook payload (which may contain tool_response
             // fields that inflate the after-text size).
+            let method = if use_semantic {
+                "Semantic"
+            } else if tool_name.eq_ignore_ascii_case("Bash") {
+                "HighFidelity"
+            } else {
+                "Standard"
+            };
             record_compression_stats(
                 tokenless_stats::OperationType::CompressResponse,
                 Some(target.to_string()),
@@ -130,6 +138,7 @@ pub(crate) fn hook_compress(
                 output.to_string(),
                 compressed_str.clone(),
                 use_semantic, // experimental only when semantic is active
+                Some(method.into()),
             );
 
             // Debug log: write original + compressed to a file for inspection.
@@ -157,7 +166,8 @@ pub(crate) fn hook_compress(
                     project.clone(),
                     output.to_string(),
                     cleaned.clone(),
-                    false, // plain text compression is always core
+                    false,                   // plain text compression is always core
+                    Some("Standard".into()), // method
                 );
                 if debug {
                     write_debug_log(tool_name, &project, output, &cleaned, "compressed");
@@ -211,7 +221,8 @@ fn write_debug_log(
     action: &str,
 ) {
     let log_path = std::path::PathBuf::from(get_home_dir())
-        .join(".tokenless")
+        .join(".tokenfleet-ai")
+        .join("tokenless")
         .join("compress-debug.log");
 
     let truncate = |s: &str, max: usize| {

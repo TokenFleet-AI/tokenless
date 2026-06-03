@@ -139,7 +139,7 @@ pub struct Embedder {
 }
 
 impl Embedder {
-    /// Load model from ~/.tokenless/models/model.onnx.
+    /// Load model from ~/.tokenfleet-ai/tokenless/models/model.onnx.
     /// Downloads automatically on first run if missing.
     pub fn load() -> Result<Self, EmbedderError> {
         let model_path = model_path()?;

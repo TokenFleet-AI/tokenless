@@ -39,7 +39,7 @@ fn load_fixture(name: &str) -> Value {
 #[test]
 fn golden_schema_weather_function() {
     let input = load_fixture("schema_weather.json");
-    let compressor = tokenless_schema::SchemaCompressor::new();
+    let compressor = tokenless_schema::SchemaCompressor::new().with_compress_all(true);
     let result = compressor.compress(&input);
     insta::assert_json_snapshot!(result);
 }
@@ -47,7 +47,7 @@ fn golden_schema_weather_function() {
 #[test]
 fn golden_schema_bare_with_defs() {
     let input = load_fixture("schema_bare.json");
-    let compressor = tokenless_schema::SchemaCompressor::new();
+    let compressor = tokenless_schema::SchemaCompressor::new().with_compress_all(true);
     let result = compressor.compress(&input);
     insta::assert_json_snapshot!(result);
 }
@@ -55,7 +55,9 @@ fn golden_schema_bare_with_defs() {
 #[test]
 fn golden_schema_with_enum_truncation() {
     let input = load_fixture("schema_bare.json");
-    let compressor = tokenless_schema::SchemaCompressor::new().with_max_enum_items(3);
+    let compressor = tokenless_schema::SchemaCompressor::new()
+        .with_compress_all(true)
+        .with_max_enum_items(3);
     let result = compressor.compress(&input);
     insta::assert_json_snapshot!(result);
 }
@@ -64,6 +66,7 @@ fn golden_schema_with_enum_truncation() {
 fn golden_schema_with_token_limits() {
     let input = load_fixture("schema_weather.json");
     let compressor = tokenless_schema::SchemaCompressor::new()
+        .with_compress_all(true)
         .with_func_desc_max_tokens(20)
         .with_param_desc_max_tokens(10);
     let result = compressor.compress(&input);

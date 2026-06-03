@@ -147,7 +147,7 @@ tokenless stats vacuum
 |------|------|
 | **预览优先** | 所有删除命令默认 `--dry-run`，只显示影响范围不执行 |
 | **确认门禁** | 非 dry-run 模式需要 `--yes` 或交互式确认 |
-| **删除前备份** | 自动导出到 `~/.tokenless/backups/<timestamp>.json`（`export_on_delete` 选项） |
+| **删除前备份** | 自动导出到 `~/.tokenfleet-ai/tokenless/backups/<timestamp>.json`（`export_on_delete` 选项） |
 | **最小权限** | 所有方法 `&self`（只读借用），无全局副作用 |
 | **事务性** | 删除操作在单个 SQLite 事务内执行 |
 
@@ -172,7 +172,7 @@ tokenless stats vacuum
 ## 6. 配置格式
 
 ```json
-// ~/.tokenless/config.json
+// ~/.tokenfleet-ai/tokenless/config.json
 {
   "stats_enabled": true,
   "retention": {
@@ -247,7 +247,7 @@ tokenless tui 已有标签:
 │                                                    │
 │  Database Info                                     │
 │  ┌──────────────────────────────────────────────┐ │
-│  │ Path:    ~/.tokenless/stats.db                │ │
+│  │ Path:    ~/.tokenfleet-ai/tokenless/stats.db                │ │
 │  │ Size:    12.3 MB                              │ │
 │  │ Records: 4,821                                │ │
 │  │ Range:   2026-03-15 ~ 2026-06-01              │ │
@@ -293,7 +293,7 @@ tokenless tui 已有标签:
 │    from before 2026-03-01.                        │
 │                                                    │
 │  A backup will be saved to:                       │
-│  ~/.tokenless/backups/2026-06-01T12:00:00.json    │
+│  ~/.tokenfleet-ai/tokenless/backups/2026-06-01T12:00:00.json    │
 │                                                    │
 │  [ Enter ] Confirm    [ Esc ] Cancel              │
 │                                                    │

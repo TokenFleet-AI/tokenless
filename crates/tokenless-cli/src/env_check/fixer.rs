@@ -138,7 +138,9 @@ pub(crate) fn auto_fix(missing_deps: &[DepEntry]) -> Result<String, String> {
                 .to_string_lossy()
                 .to_string()
         }),
-        Some(format!("{home}/.tokenless/tokenless-env-fix.sh")),
+        Some(format!(
+            "{home}/.tokenfleet-ai/tokenless/tokenless-env-fix.sh"
+        )),
         Some(format!(
             "{home}/.local/share/anolisa/adapters/tokenless/common/tokenless-env-fix.sh"
         )),
@@ -152,7 +154,7 @@ pub(crate) fn auto_fix(missing_deps: &[DepEntry]) -> Result<String, String> {
             std::path::Path::new(p).exists()
         })
         .cloned()
-        .unwrap_or_else(|| format!("{home}/.tokenless/tokenless-env-fix.sh"));
+        .unwrap_or_else(|| format!("{home}/.tokenfleet-ai/tokenless/tokenless-env-fix.sh"));
 
     let deps_json: Vec<Value> = missing_deps
         .iter()

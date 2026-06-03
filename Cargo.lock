@@ -2938,6 +2938,7 @@ dependencies = [
  "tokenless-tui",
  "toon-format",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

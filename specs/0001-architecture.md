@@ -86,8 +86,8 @@ Layer 2: Runtime Infrastructure
   └── MCP Server          → Model Context Protocol (stdio mode, 7 tools)
 
 Layer 1: Persistence
-  ├── ~/.tokenless/stats.db              → SQLite (WAL, indexed)
-  ├── ~/.tokenless/config.json           → Stats enable/disable
+  ├── ~/.tokenfleet-ai/tokenless/stats.db              → SQLite (WAL, indexed)
+  ├── ~/.tokenfleet-ai/tokenless/config.json           → Stats enable/disable
   ├── ruvector.db                        → Vector storage
   ├── .swarm/memory.db                   → Swarm coordination state
   ├── .claude-flow/daemon-state.json     → Worker scheduling + metrics
@@ -496,14 +496,14 @@ MCP Server Mode (stdin/stdout JSON-RPC 2.0):
      ├── TOKENLESS_TOOL_READY_SPEC   → 覆盖 spec 文件路径
      ├── TOKENLESS_PACKAGE_MANAGER   → 覆盖包管理器
      └── TOKENLESS_ENV_FIX_SCRIPT    → 覆盖修复脚本路径
-  2. 配置文件 (~/.tokenless/config.json)
+  2. 配置文件 (~/.tokenfleet-ai/tokenless/config.json)
   3. CLI flags（每次调用指定）
   4. 硬编码默认值
 ```
 
 **持久化存储布局**：
 ```
-~/.tokenless/
+~/.tokenfleet-ai/tokenless/
 ├── stats.db              # SQLite 压缩指标（WAL 模式）
 └── config.json           # { stats_enabled: true/false }
 
@@ -545,7 +545,7 @@ MCP Server Mode (stdin/stdout JSON-RPC 2.0):
                     │
 ┌── Trusted Zone ────────────────────────────┐
 │  stdout (compressed, validated output)      │
-│  ~/.tokenless/stats.db (only tokenless writes)│
+│  ~/.tokenfleet-ai/tokenless/stats.db (only tokenless writes)│
 │  Config files (user-managed)                │
 └─────────────────────────────────────────────┘
 ```

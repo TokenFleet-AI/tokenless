@@ -17,7 +17,7 @@
 //! **Level 2** (`onnx` feature): ONNX embedding model (`all-MiniLM-L6-v2`,
 //! ~15 MB) that computes cosine similarity between field names and the
 //! user's task context.  Model files are auto-downloaded on first use from
-//! GitHub Releases and cached in `~/.tokenless/models/`.  Falls back to
+//! GitHub Releases and cached in `~/.tokenfleet-ai/tokenless/models/`.  Falls back to
 //! Level 1 automatically when the model is unavailable.
 
 mod rules;
@@ -110,7 +110,7 @@ impl SemanticCompressor {
     /// Attempt to load the ONNX embedding model.
     ///
     /// Downloads model files on first use if they are not cached in
-    /// `~/.tokenless/models/`.  Returns `Ok(true)` if Level 2 is ready,
+    /// `~/.tokenfleet-ai/tokenless/models/`.  Returns `Ok(true)` if Level 2 is ready,
     /// `Ok(false)` if the model is unavailable (Level 1 fallback).
     ///
     /// When the `onnx` feature is disabled at compile time, always returns
@@ -248,7 +248,8 @@ impl SemanticCompressor {
 fn model_dir() -> std::path::PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join(".tokenless")
+        .join(".tokenfleet-ai")
+        .join("tokenless")
         .join("models")
 }
 

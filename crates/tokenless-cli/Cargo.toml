@@ -26,6 +26,7 @@ toon-format.workspace = true
 rusqlite.workspace = true
 dirs.workspace = true
 tracing.workspace = true
+tracing-subscriber = { workspace = true }
 rtk-registry.workspace = true
 blake3.workspace = true
 lru.workspace = true

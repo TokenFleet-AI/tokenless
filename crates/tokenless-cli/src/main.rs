@@ -156,7 +156,7 @@ enum Commands {
         /// Agent name (claude, cursor, windsurf, cline, copilot, gemini, etc.).
         #[arg(short, long, default_value = "claude")]
         agent: String,
-        /// Enable debug logging for compress hook (~/.tokenless/compress-debug.log).
+        /// Enable debug logging for compress hook (~/.tokenfleet-ai/tokenless/compress-debug.log).
         #[arg(long)]
         debug: bool,
     },
@@ -222,7 +222,7 @@ enum HookCommands {
         /// Project name for multi-project statistics.
         #[arg(long)]
         project: Option<String>,
-        /// Write original/compressed text to debug log (~/.tokenless/compress-debug.log).
+        /// Write original/compressed text to debug log (~/.tokenfleet-ai/tokenless/compress-debug.log).
         #[arg(long)]
         debug: bool,
     },
@@ -302,6 +302,41 @@ enum StatsCommands {
 // ── Dispatch ─────────────────────────────────────────────────────────────────
 
 fn run() -> Result<(), (String, i32)> {
+    // Init tracing: stderr + log file
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+
+    let log_path = crate::shared::get_tokenless_dir().join("tokenless.log");
+    let log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .ok(); // None if file can't be opened
+
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
+
+    let stderr_layer = tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stderr)
+        .with_target(false);
+
+    if let Some(file) = log_file {
+        let file_layer = tracing_subscriber::fmt::layer()
+            .with_writer(std::sync::Mutex::new(file))
+            .with_ansi(false)
+            .with_target(false);
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(stderr_layer)
+            .with(file_layer)
+            .init();
+    } else {
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(stderr_layer)
+            .init();
+    }
+
     // Sync experimental mode from config/env to the SDK so library
     // callers (compress_auto, etc.) also respect the setting.
     let config = tokenless_stats::TokenlessConfig::load();

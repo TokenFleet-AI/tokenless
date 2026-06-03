@@ -24,7 +24,7 @@ install: build models-install
 	@echo "Installed tokenless to $(BIN_DIR)/tokenless"
 
 models-install:
-	@MODEL_DIR="$${HOME}/.tokenless/models"; \
+	@MODEL_DIR="$${HOME}/.tokenfleet-ai/tokenless/models"; \
 	SRC="crates/tokenless-semantic/models"; \
 	if [ -f "$${SRC}/all-MiniLM-L6-v2.onnx" ] && [ -f "$${SRC}/tokenizer.json" ]; then \
 		mkdir -p "$${MODEL_DIR}"; \

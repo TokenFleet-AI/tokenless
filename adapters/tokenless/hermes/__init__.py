@@ -21,7 +21,7 @@ _MIN_RESPONSE_LEN = 200
 _SKIP_TOOLS: set[str] = {"read_file", "list_directory", "glob", "notebook_read"}
 _SHELL_TOOLS: set[str] = {"terminal"}
 _MIN_RTK_VERSION = (0, 35, 0)
-_CONTEXT_DIR = os.path.join(os.path.expanduser("~"), ".tokenless")
+_CONTEXT_DIR = os.path.join(os.path.expanduser("~"), ".tokenfleet-ai", "tokenless")
 _CONTEXT_FILE = os.path.join(_CONTEXT_DIR, ".rewrite-context")
 
 _resolved: dict[str, str | None] = {}
@@ -58,9 +58,13 @@ def _is_skill_file(text: str) -> bool:
     return False
 
 
-def _run(args: list[str], input_data: str = "", timeout: int = 10) -> subprocess.CompletedProcess | None:
+def _run(
+    args: list[str], input_data: str = "", timeout: int = 10
+) -> subprocess.CompletedProcess | None:
     try:
-        return subprocess.run(args, input=input_data, capture_output=True, text=True, timeout=timeout)
+        return subprocess.run(
+            args, input=input_data, capture_output=True, text=True, timeout=timeout
+        )
     except Exception:
         return None
 
@@ -73,7 +77,9 @@ def _parse_version(ver: str) -> tuple | None:
 # ── 1. Response compression ──────────────────────────────────
 
 
-def _compress_response(tool_name: str, result: str, session_id: str, tool_call_id: str) -> str | None:
+def _compress_response(
+    tool_name: str, result: str, session_id: str, tool_call_id: str
+) -> str | None:
     if not _have("tokenless"):
         return None
     parsed = _try_parse_json(result)
@@ -94,7 +100,9 @@ def _compress_response(tool_name: str, result: str, session_id: str, tool_call_i
 # ── 2. TOON encoding ────────────────────────────────────────
 
 
-def _encode_toon(data: str, session_id: str = "", tool_call_id: str = "") -> tuple[str, int] | None:
+def _encode_toon(
+    data: str, session_id: str = "", tool_call_id: str = ""
+) -> tuple[str, int] | None:
     if not _have("tokenless"):
         return None
     parsed = _try_parse_json(data)
@@ -137,13 +145,17 @@ def _env_check(tool_name: str) -> str | None:
     fix_parsed = json.loads(proc.stdout)
     if fix_parsed.get("status") == "READY":
         return None
-    return fix_parsed.get("diagnostic") or f"[tokenless tool-ready] {tool_name}: NOT_READY"
+    return (
+        fix_parsed.get("diagnostic") or f"[tokenless tool-ready] {tool_name}: NOT_READY"
+    )
 
 
 # ── 4. Command rewriting ────────────────────────────────────
 
 
-def _try_rewrite(args: Any, session_id: str, tool_call_id: str) -> dict[str, str] | None:
+def _try_rewrite(
+    args: Any, session_id: str, tool_call_id: str
+) -> dict[str, str] | None:
     if not _have("rtk"):
         return None
     if not isinstance(args, dict):
@@ -152,7 +164,11 @@ def _try_rewrite(args: Any, session_id: str, tool_call_id: str) -> dict[str, str
     if not command:
         return None
     try:
-        ver = _parse_version(subprocess.run(["rtk", "--version"], capture_output=True, text=True, timeout=3).stdout)
+        ver = _parse_version(
+            subprocess.run(
+                ["rtk", "--version"], capture_output=True, text=True, timeout=3
+            ).stdout
+        )
         if ver and ver < _MIN_RTK_VERSION:
             logger.warning("tokenless: rtk too old, rewrite skipped")
             return None
@@ -165,14 +181,19 @@ def _try_rewrite(args: Any, session_id: str, tool_call_id: str) -> dict[str, str
     env["TOKENLESS_AGENT_ID"] = AGENT_ID
     if session_id:
         env["TOKENLESS_SESSION_ID"] = session_id
-    proc = subprocess.run(["rtk", "rewrite", command], capture_output=True, text=True, timeout=5, env=env)
+    proc = subprocess.run(
+        ["rtk", "rewrite", command], capture_output=True, text=True, timeout=5, env=env
+    )
     if proc.returncode != 0:
         return None
     rewritten = proc.stdout.strip()
     if not rewritten or rewritten == command:
         return None
     logger.info("tokenless: rtk rewrite %s -> %s", command, rewritten)
-    return {"action": "block", "message": f"[tokenless] Rewritten: {command} -> {rewritten}"}
+    return {
+        "action": "block",
+        "message": f"[tokenless] Rewritten: {command} -> {rewritten}",
+    }
 
 
 # ── Hooks ───────────────────────────────────────────────────
@@ -184,7 +205,13 @@ def on_session_start(**kwargs: Any) -> None:
         os.environ["TOKENLESS_SESSION_ID"] = str(session_id)
 
 
-def on_pre_tool_call(tool_name: str = "", args: Any = None, session_id: str = "", tool_call_id: str = "", **kwargs: Any) -> dict[str, str] | None:
+def on_pre_tool_call(
+    tool_name: str = "",
+    args: Any = None,
+    session_id: str = "",
+    tool_call_id: str = "",
+    **kwargs: Any,
+) -> dict[str, str] | None:
     # Step 1: env-check
     if _have("tokenless"):
         if session_id:
@@ -200,7 +227,13 @@ def on_pre_tool_call(tool_name: str = "", args: Any = None, session_id: str = ""
     return None
 
 
-def on_transform_tool_result(tool_name: str = "", result: str = "", session_id: str = "", tool_call_id: str = "", **kwargs: Any) -> str | None:
+def on_transform_tool_result(
+    tool_name: str = "",
+    result: str = "",
+    session_id: str = "",
+    tool_call_id: str = "",
+    **kwargs: Any,
+) -> str | None:
     if not _have("tokenless"):
         return None
     if tool_name in _SKIP_TOOLS:
@@ -212,7 +245,9 @@ def on_transform_tool_result(tool_name: str = "", result: str = "", session_id: 
     if _try_parse_json(result) is None:
         return None
     original_len = len(result)
-    compressed = _compress_response(tool_name, result, str(session_id), str(tool_call_id))
+    compressed = _compress_response(
+        tool_name, result, str(session_id), str(tool_call_id)
+    )
     current = compressed if compressed else result
     toon_result = _encode_toon(current, str(session_id), str(tool_call_id))
     used_compression = compressed is not None
@@ -236,4 +271,7 @@ def register(ctx: Any) -> None:
         features.extend(["response-compression", "toon-encoding", "tool-ready"])
     if _have("rtk"):
         features.append("rtk-rewrite")
-    logger.info("tokenless: Hermes plugin registered — %s", ", ".join(features) if features else "no features (install tokenless/rtk)")
+    logger.info(
+        "tokenless: Hermes plugin registered — %s",
+        ", ".join(features) if features else "no features (install tokenless/rtk)",
+    )

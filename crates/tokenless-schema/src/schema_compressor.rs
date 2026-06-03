@@ -57,6 +57,7 @@ fn estimate_tokens(text: &str) -> usize {
 /// Compresses `OpenAI Function Calling` schemas by truncating descriptions,
 /// removing titles/examples, and reducing token usage.
 #[derive(Debug)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct SchemaCompressor {
     func_desc_max_len: usize,
     param_desc_max_len: usize,
@@ -66,6 +67,7 @@ pub struct SchemaCompressor {
     drop_titles: bool,
     drop_markdown: bool,
     max_enum_items: usize,
+    compress_all: bool,
 }
 
 impl Default for SchemaCompressor {
@@ -79,6 +81,7 @@ impl Default for SchemaCompressor {
             drop_titles: true,
             drop_markdown: true,
             max_enum_items: usize::MAX,
+            compress_all: false,
         }
     }
 }
@@ -146,6 +149,14 @@ impl SchemaCompressor {
     #[must_use]
     pub fn with_max_enum_items(mut self, max: usize) -> Self {
         self.max_enum_items = max;
+        self
+    }
+
+    /// Force compression even when the result is identical to the input
+    /// (default false).  Useful for golden snapshot tests.
+    #[must_use]
+    pub fn with_compress_all(mut self, compress_all: bool) -> Self {
+        self.compress_all = compress_all;
         self
     }
 
@@ -237,7 +248,7 @@ impl SchemaCompressor {
             tracing::warn!("SchemaCompressor: serde serialization failed: {e}");
             String::new()
         });
-        if original_text == compressed_text {
+        if !self.compress_all && original_text == compressed_text {
             return tool.clone();
         }
         result
