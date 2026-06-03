@@ -1,10 +1,21 @@
-# Token-Less
+[![CI](https://github.com/TokenFleet-AI/tokenless/actions/workflows/ci.yml/badge.svg)](https://github.com/TokenFleet-AI/tokenless/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/TokenFleet-AI/tokenless)](https://github.com/TokenFleet-AI/tokenless/releases)
+[![Rust 2024](https://img.shields.io/badge/Rust-2024-orange?logo=rust)](https://www.rust-lang.org/)
+[![License](https://img.shields.io/github/license/TokenFleet-AI/tokenless)](LICENSE)
 
-![Token-Less Logo](./assets/tokenless.svg)
+<p align="center">
+  <img src="./assets/tokenless.svg" alt="tokenless" width="520">
+</p>
 
-**LLM Token 优化工具包** — Schema/Response 压缩 + 智能格式路由 + 差分响应 + 预测缓存 + TOON 编码 + 命令重写 + MCP Server + 工具环境就绪检查。
+# Tokenless
 
-Token-Less 通过多种互补策略最大程度降低 LLM 的 Token 消耗：
+> LLM Token 优化工具包 — Schema/Response 压缩 + 智能格式路由 + 差分响应 + 预测缓存 + TOON 编码 + 命令重写 + MCP Server + 工具环境就绪检查。
+
+English docs: [README.md](README.md). 详细设计文档见 [specs/index.md](specs/index.md) 和 [docs/index.md](docs/index.md).
+
+**快速导航:** [Token 节省对比](#token-节省对比) · [快速开始](#快速开始) · [架构](#架构) · [CLI 使用](#cli-使用) · [构建](#构建) · [参与贡献](#参与贡献)
+
+Tokenless 通过多种互补策略最大程度降低 LLM 的 Token 消耗：
 
 - **Schema 压缩** — 压缩 OpenAI Function Calling 工具定义，在 token 进入上下文窗口前减少约 57% 的结构性开销。
 - **Response 压缩** — 移除调试字段、截断字符串、限制数组大小、去除 null/空值来压缩 API/工具响应（节省约 26–78%）。

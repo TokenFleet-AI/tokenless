@@ -1,10 +1,21 @@
-# Token-Less
+[![CI](https://github.com/TokenFleet-AI/tokenless/actions/workflows/ci.yml/badge.svg)](https://github.com/TokenFleet-AI/tokenless/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/TokenFleet-AI/tokenless)](https://github.com/TokenFleet-AI/tokenless/releases)
+[![Rust 2024](https://img.shields.io/badge/Rust-2024-orange?logo=rust)](https://www.rust-lang.org/)
+[![License](https://img.shields.io/github/license/TokenFleet-AI/tokenless)](LICENSE)
 
-![Token-Less Logo](./assets/tokenless.svg)
+<p align="center">
+  <img src="./assets/tokenless.svg" alt="tokenless" width="520">
+</p>
 
-**LLM token optimization toolkit** — schema/response compression + intelligent format routing + differential response + predictive cache + TOON encoding + command rewriting + MCP server + tool environment readiness.
+# Tokenless
 
-Token-Less combines complementary strategies to minimize LLM token consumption:
+> LLM Token Optimization Toolkit — schema/response compression + intelligent format routing + differential response + predictive cache + TOON encoding + command rewriting + MCP server + tool environment readiness.
+
+Chinese docs: [README.zh.md](README.zh.md). Design specs and delivery docs live in [specs/index.md](specs/index.md) and [docs/index.md](docs/index.md).
+
+**Quick links:** [Token Savings](#token-savings) · [Quick Start](#quick-start) · [Architecture](#architecture) · [CLI Usage](#cli-usage) · [Build](#build) · [Contributing](#contributing)
+
+Tokenless combines complementary strategies to minimize LLM token consumption:
 
 - **Schema Compression** — Compresses OpenAI Function Calling tool definitions, reducing structural overhead by ~57% before tokens reach the context window.
 - **Response Compression** — Compresses API/tool responses by removing debug fields, truncating strings, limiting arrays, and eliminating null/empty values (~26–78% savings).
