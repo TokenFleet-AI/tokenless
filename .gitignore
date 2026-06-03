@@ -1,6 +1,9 @@
 /target/
 .vscode/
 
+# macOS
+.DS_Store
+
 # ONNX model files (downloaded from GitHub Releases on first use)
 crates/tokenless-semantic/models/*.onnx
 crates/tokenless-semantic/models/*.json
