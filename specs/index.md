@@ -21,3 +21,4 @@ Design specifications and technical documentation for tokenless.
 | 0015 | [Security Hardening](./0015-security-hardening.md) | 安全加固：9 项安全配置缺口修复（基于 rust-tui-template 审计） | ✅ 已完成 |
 | 0016 | [Architecture Alignment](./0016-architecture-alignment.md) | 架构对齐：workspace 重组、lint 严格化、CLI 模块化、测试基础设施 | ✅ 已完成 |
 | 0017 | [Stats History Management](./0017-stats-management.md) | 统计数据历史管理：删除、导出、维护 | 📝 Spec 完成 → 🔜 待实施 |
+| 0018 | [Compression Stats Reporting](./0018-compression-stats-reporting.md) | agent-proxy → tokenless 请求完成回传协议：消耗、定价、压缩统计 | 📝 Spec 完成 → 🔜 待实施 |
