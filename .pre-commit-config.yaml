@@ -34,6 +34,13 @@ repos:
         language: system
         files: \.rs$
         pass_filenames: false
+      - id: cargo-audit
+        name: cargo audit
+        description: Check for known security vulnerabilities
+        entry: bash -c 'cargo audit'
+        language: system
+        files: (Cargo\.lock|Cargo\.toml)$
+        pass_filenames: false
       - id: typos
         name: typos
         description: check typo

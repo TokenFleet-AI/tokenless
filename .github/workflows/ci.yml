@@ -45,6 +45,12 @@ jobs:
       - name: Format
         run: cargo fmt --check
 
+      - name: Typos
+        uses: crate-ci/typos@master
+
+      - name: Check agent sync
+        run: make check-agent-sync
+
   audit:
     name: Security Audit
     runs-on: ubuntu-latest
@@ -68,6 +74,11 @@ jobs:
 
       - name: Vulnerability audit
         run: cargo audit
+
+      - name: Detect secrets (gitleaks)
+        uses: gitleaks/gitleaks-action@v1
+        with:
+          args: detect --source . --verbose
 
   msrv:
     name: MSRV Check
