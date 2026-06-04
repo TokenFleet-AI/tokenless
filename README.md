@@ -108,12 +108,21 @@ The actual RTK binary is still required at runtime for output filtering — the 
 ### init (Agent Integration)
 
 ```bash
-tokenless init                  # Install hooks for Claude Code (project-local)
-tokenless init --global         # Install globally for all projects
+tokenless init                  # Project-level: hooks + --project tag for per-project stats
+tokenless init --global         # Global: hooks for all projects, auto-detect project at runtime
 tokenless init --agent cursor   # Install for Cursor editor
 ```
 
 Auto-installs hooks into `.claude/settings.json` (or the equivalent for other agents). Once installed, all shell commands are automatically rewritten and responses compressed — zero manual steps after `init`.
+
+**Project-level vs Global:**
+
+| Mode | Command | `--project` in hooks | Stats behavior |
+|------|---------|---------------------|----------------|
+| Project-level | `tokenless init` | ✅ Written (detected from dir) | Stats attributed to this project only |
+| Global | `tokenless init --global` | ❌ Omitted | Auto-detects project per invocation |
+
+Use **project-level** `init` when you want per-project statistics isolation (e.g., `tokenless stats summary` shows only this project's savings). Use **global** `init` for a fire-and-forget setup across all repositories.
 
 > See [user guide §4](./docs/user-guide.md#4-agent-integration) for all 12 agents and manual configuration.
 

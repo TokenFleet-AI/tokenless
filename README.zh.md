@@ -74,12 +74,21 @@ tokenless stats summary
 ### init（Agent 接入）
 
 ```bash
-tokenless init                  # 安装 Claude Code hooks（项目级）
-tokenless init --global         # 全局安装（所有项目生效）
+tokenless init                  # 项目级：写入 hooks + --project 标签，实现按项目统计
+tokenless init --global         # 全局级：所有项目生效，运行时自动检测项目名
 tokenless init --agent cursor   # 为 Cursor 编辑器安装
 ```
 
 自动将 hooks 写入 `.claude/settings.json`（或其他 Agent 的等效配置文件）。安装完成后，所有 Shell 命令自动重写、响应自动压缩。
+
+**项目级 vs 全局级：**
+
+| 模式 | 命令 | hooks 中的 `--project` | 统计行为 |
+|------|------|----------------------|----------|
+| 项目级 | `tokenless init` | ✅ 写入（自动检测目录名） | 统计仅归属于当前项目 |
+| 全局级 | `tokenless init --global` | ❌ 不写入 | 每次调用自动检测项目 |
+
+使用 **项目级** `init` 可实现按项目隔离统计（如 `tokenless stats summary` 仅显示当前项目的节省数据）。使用 **全局级** `init` 适合一次配置、所有仓库通用的场景。
 
 > 详见 [用户指南 §4](./docs/user-guide.md#4-agent-integration) 了解全部 12 种 Agent 及手动配置方式。
 
