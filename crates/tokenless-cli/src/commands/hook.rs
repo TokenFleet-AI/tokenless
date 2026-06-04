@@ -2,7 +2,8 @@
 
 use std::io::Write;
 
-use tokenless_stats::OperationType;
+use tokenless_stats::compress_log::{CompressLogEntry, HookType, OpCategory, append_compress_log};
+use tokenless_stats::{OperationType, TokenlessConfig, estimate_tokens_from_bytes};
 
 use crate::{
     cache,
@@ -41,6 +42,25 @@ pub(crate) fn hook_rewrite(target: &str, project: Option<String>) -> Result<(), 
         .get("session_id")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
+
+    // Passthrough mode: pass through original, log with zero savings
+    let config = TokenlessConfig::load();
+    if config.is_passthrough_enabled() {
+        println!("{input}");
+        record_compression_stats(
+            OperationType::RewriteCommand,
+            Some(target.to_string()),
+            session_id,
+            None,
+            project.clone(),
+            input.clone(),
+            input,
+            false,
+            Some("Passthrough".into()),
+        );
+        return Ok(());
+    }
+
     let rewritten = rtk_registry::rewrite_command(command, &[], &[]);
     if let Some(ref rw) = rewritten {
         if let Some(obj) = val.as_object() {
@@ -87,6 +107,17 @@ pub(crate) fn hook_compress(
         .get("session_id")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
+
+    // Passthrough mode: pass through original, log with zero savings
+    let config = TokenlessConfig::load();
+    if config.is_passthrough_enabled() {
+        println!("{input}");
+        if !output.is_empty() {
+            append_compress_log_entry(target, output, output, project.as_deref());
+        }
+        return Ok(());
+    }
+
     if output.is_empty() {
         println!("{input}");
         if debug {
@@ -145,6 +176,9 @@ pub(crate) fn hook_compress(
             if debug {
                 write_debug_log(tool_name, &project, output, &compressed_str, "compressed");
             }
+
+            // Append structured compress log (fire-and-forget).
+            append_compress_log_entry(target, output, &compressed_str, project.as_deref());
         }
     } else {
         // Plain text output: strip ANSI and truncate if too long.
@@ -172,6 +206,9 @@ pub(crate) fn hook_compress(
                 if debug {
                     write_debug_log(tool_name, &project, output, &cleaned, "compressed");
                 }
+
+                // Append structured compress log (fire-and-forget).
+                append_compress_log_entry(target, output, &cleaned, project.as_deref());
             }
         } else {
             println!("{input}");
@@ -391,6 +428,45 @@ fn extract_tool_output(val: &serde_json::Value) -> &str {
         }
     }
     ""
+}
+
+/// Append a structured compress log entry after response compression.
+///
+/// Reads compression preference from `TokenlessConfig` and skips if
+/// compress logging is disabled.  This is fire-and-forget: failures
+/// are traced but never block the compression pipeline.
+fn append_compress_log_entry(target: &str, before: &str, after: &str, project: Option<&str>) {
+    let config = TokenlessConfig::load();
+    // Skip logging only when compress is disabled AND passthrough is off.
+    // In passthrough mode we always log (for baseline measurement).
+    if !config.is_compress_enabled() && !config.is_passthrough_enabled() {
+        return;
+    }
+    let project_name = project
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "(unclassified)".to_string());
+    let before_bytes = before.len();
+    let after_bytes = after.len();
+    let saved_tokens = estimate_tokens_from_bytes(before_bytes)
+        .saturating_sub(estimate_tokens_from_bytes(after_bytes));
+    let compression_pct = if before_bytes > 0 {
+        (before_bytes.saturating_sub(after_bytes)) as f64 / before_bytes as f64 * 100.0
+    } else {
+        0.0
+    };
+    let log_entry = CompressLogEntry::builder()
+        .timestamp(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+        .user_name(config.effective_user_name().to_string())
+        .project(project_name)
+        .agent(target.to_string())
+        .hook_type(HookType::Compress)
+        .before_bytes(before_bytes)
+        .after_bytes(after_bytes)
+        .saved_tokens(saved_tokens)
+        .compression_pct(compression_pct)
+        .op_type(OpCategory::ResponseCompression)
+        .build();
+    append_compress_log(&log_entry);
 }
 
 #[cfg(test)]

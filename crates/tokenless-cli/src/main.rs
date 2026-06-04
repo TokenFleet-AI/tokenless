@@ -159,6 +159,16 @@ enum Commands {
         /// Enable debug logging for compress hook (~/.tokenfleet-ai/tokenless/compress-debug.log).
         #[arg(long)]
         debug: bool,
+        /// Enable compress hook installation (default).
+        #[arg(long, conflicts_with = "no_compress")]
+        compress: bool,
+        /// Disable compress hook installation.
+        #[arg(long, conflicts_with = "compress")]
+        no_compress: bool,
+        /// Enable passthrough mode: hooks record logs but do not rewrite/compress.
+        /// Use this to measure baseline token usage for cost comparison.
+        #[arg(long)]
+        passthrough: bool,
     },
     /// Check tool environment readiness.
     EnvCheck {
@@ -437,7 +447,10 @@ fn run() -> Result<(), (String, i32)> {
             global,
             agent,
             debug,
-        } => commands::init_cmd::handle(global, agent, debug),
+            compress,
+            no_compress,
+            passthrough,
+        } => commands::init_cmd::handle(global, agent, debug, compress, no_compress, passthrough),
         Commands::EnvCheck {
             tool,
             all,

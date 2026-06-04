@@ -3,6 +3,8 @@
 //! Supported agents: claude (default), cursor, windsurf, cline, kilocode,
 //! antigravity, augment, hermes, pi, gemini, opencode.
 
+pub mod user_detect;
+
 use std::{
     fs,
     io::Write,
@@ -15,6 +17,14 @@ pub struct InitConfig {
     pub global: bool,
     /// Enable debug logging for compress hook (~/.tokenfleet-ai/tokenless/compress-debug.log).
     pub debug: bool,
+    /// If Some(true), install compress hook.
+    /// If Some(false), skip compress hook.
+    /// If None (legacy), treated as true.
+    pub compress: Option<bool>,
+    /// Whether passthrough mode is enabled.
+    /// When true, hooks pass through original content unchanged but still
+    /// record compress logs for baseline measurement.
+    pub passthrough: bool,
 }
 
 /// Target agent for hook installation.
@@ -362,22 +372,37 @@ fn init_claude(config: &InitConfig) -> Result<(), String> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let project_name = detect_project_name(&cwd, None);
 
-    // Build hooks JSON with project name baked in
+    // Build hooks JSON with project name baked in.
+    // Omit PostToolUse compress hook when compress is explicitly disabled.
     let debug_flag = if config.debug { " --debug" } else { "" };
-    let hooks_json = format!(
-        r#"{{
-  "env": {{
-    "RTK_SKIP_HOOK_CHECK": "1"
-  }},
+    let hooks_json = if config.compress == Some(false) {
+        // Only PreToolUse rewrite hook, no PostToolUse compress hook
+        format!(
+            r#"{{
+  "env": {{ "RTK_SKIP_HOOK_CHECK": "1" }},
   "hooks": {{
     "PreToolUse": [
       {{
         "matcher": "Bash",
         "hooks": [
-          {{
-            "type": "command",
-            "command": "tokenless hook rewrite --target claude --project {project}"
-          }}
+          {{ "type": "command", "command": "tokenless hook rewrite --target claude --project {project}" }}
+        ]
+      }}
+    ]
+  }}
+}}"#,
+            project = project_name,
+        )
+    } else {
+        format!(
+            r#"{{
+  "env": {{ "RTK_SKIP_HOOK_CHECK": "1" }},
+  "hooks": {{
+    "PreToolUse": [
+      {{
+        "matcher": "Bash",
+        "hooks": [
+          {{ "type": "command", "command": "tokenless hook rewrite --target claude --project {project}" }}
         ]
       }}
     ],
@@ -385,23 +410,32 @@ fn init_claude(config: &InitConfig) -> Result<(), String> {
       {{
         "matcher": "^(?!Bash$).*",
         "hooks": [
-          {{
-            "type": "command",
-            "command": "tokenless hook compress --semantic --target claude --project {project}{debug}"
-          }}
+          {{ "type": "command", "command": "tokenless hook compress --semantic --target claude --project {project}{debug}" }}
         ]
       }}
     ]
   }}
 }}"#,
-        project = project_name,
-        debug = debug_flag,
-    );
+            project = project_name,
+            debug = debug_flag,
+        )
+    };
 
     merge_into_settings(&settings_path, &hooks_json)?;
     let scope = if config.global { "global" } else { "project" };
     println!("[tokenless] Installed hooks for Claude Code ({scope})");
     println!("  project: {project_name}");
+    println!(
+        "  compress: {}",
+        if config.compress != Some(false) {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
+    if config.passthrough {
+        println!("  passthrough: enabled (hooks pass-through, logs only)");
+    }
     if config.debug {
         println!("  debug: ~/.tokenfleet-ai/tokenless/compress-debug.log");
     }

@@ -39,6 +39,9 @@ lru = "0.18"
 ratatui = "0.30"
 crossterm = "0.29"
 
+# Builder
+typed-builder = "0.19"
+
 # Business
 rtk-registry = "0.1.0"
 

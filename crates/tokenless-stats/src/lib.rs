@@ -19,6 +19,7 @@
     clippy::single_match_else
 )]
 
+pub mod compress_log;
 pub mod config;
 pub mod query;
 pub mod record;
