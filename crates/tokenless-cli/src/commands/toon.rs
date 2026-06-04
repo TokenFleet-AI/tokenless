@@ -27,12 +27,18 @@ pub(crate) fn compress_toon(
     cache::cache_insert(&input, &encoded);
     println!("{encoded}");
 
+    let user_name = Some(
+        tokenless_stats::TokenlessConfig::load()
+            .effective_user_name()
+            .to_string(),
+    );
     record_compression_stats(
         OperationType::CompressToon,
         agent_id,
         session_id,
         tool_use_id,
         project,
+        user_name,
         input,
         encoded,
         false,                      // basic TOON is always core

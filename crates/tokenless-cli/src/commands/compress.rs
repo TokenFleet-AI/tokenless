@@ -69,12 +69,18 @@ pub(crate) fn compress_schema(
     cache::cache_insert(&input, &output_text);
     println!("{output_text}");
 
+    let user_name = Some(
+        tokenless_stats::TokenlessConfig::load()
+            .effective_user_name()
+            .to_string(),
+    );
     record_compression_stats(
         tokenless_stats::OperationType::CompressSchema,
         agent_id,
         session_id,
         tool_use_id,
         project,
+        user_name,
         input,
         output_text,
         false,                         // core schema compression
@@ -168,12 +174,18 @@ pub(crate) fn compress_response(
     cache::cache_insert(&input, &output_text);
     println!("{output_text}");
 
+    let user_name = Some(
+        tokenless_stats::TokenlessConfig::load()
+            .effective_user_name()
+            .to_string(),
+    );
     record_compression_stats(
         tokenless_stats::OperationType::CompressResponse,
         agent_id,
         session_id,
         tool_use_id,
         project,
+        user_name,
         input,
         output_text,
         used_experimental, // only true when semantic compression was applied
@@ -234,12 +246,18 @@ pub(crate) fn compress_auto(
     cache::cache_insert(&input, &output_text);
     println!("{output_text}");
 
+    let user_name = Some(
+        tokenless_stats::TokenlessConfig::load()
+            .effective_user_name()
+            .to_string(),
+    );
     record_compression_stats(
         tokenless_stats::OperationType::CompressSchema,
         agent_id,
         session_id,
         tool_use_id,
         project,
+        user_name,
         input,
         output_text,
         is_experimental_enabled(), // format router is experimental

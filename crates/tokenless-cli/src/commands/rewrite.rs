@@ -44,12 +44,18 @@ pub(crate) fn rewrite(
                      {saved_pct:.1}%{rtk_status}"
                 );
 
+                let user_name = Some(
+                    tokenless_stats::TokenlessConfig::load()
+                        .effective_user_name()
+                        .to_string(),
+                );
                 record_compression_stats(
                     OperationType::RewriteCommand,
                     agent_id,
                     session_id,
                     tool_use_id,
                     project,
+                    user_name,
                     input,
                     rewritten,
                     false,                      // RTK rewrite is always core
