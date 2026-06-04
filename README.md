@@ -13,7 +13,7 @@
 
 Chinese docs: [README.zh.md](README.zh.md). Design specs and delivery docs live in [specs/index.md](specs/index.md) and [docs/index.md](docs/index.md).
 
-**Quick links:** [Token Savings](#token-savings) · [Quick Start](#quick-start) · [Architecture](#architecture) · [CLI Usage](#cli-usage) · [Build](#build) · [Contributing](#contributing)
+**Quick links:** [Prerequisites](#prerequisites) · [Quick Start](#quick-start) · [Token Savings](#token-savings) · [CLI Usage](#cli-usage) · [Architecture](#architecture) · [Build](#build) · [Contributing](#contributing)
 
 Tokenless combines complementary strategies to minimize LLM token consumption:
 
@@ -42,11 +42,19 @@ Tokenless combines complementary strategies to minimize LLM token consumption:
 | Tool Ready | reduces retry waste | Pre-check env, auto-fix deps, failure attribution |
 | Zero runtime deps | — | Pure Rust, single static binary |
 
+## Prerequisites
+
+- **Rust** toolchain >= 1.89 (Rust 2024 edition) — for `cargo install` or source build
+- **RTK** binary — optional, only needed for command rewriting (`cargo install rtk`). Core compression works without it.
+
 ## Quick Start
 
 ```bash
 # 1. Install
 git clone https://github.com/TokenFleet-AI/tokenless && cd tokenless && make setup
+
+# Ensure ~/.local/bin is on PATH (add to ~/.bashrc / ~/.zshrc for persistence)
+export PATH="$HOME/.local/bin:$PATH"
 
 # 2. One-click agent integration (Claude Code, Cursor, Windsurf, etc.)
 tokenless init
@@ -56,8 +64,10 @@ tokenless init
 tokenless stats summary
 ```
 
+**Install options:** `cargo install tokenless`, download from [GitHub Releases](https://github.com/TokenFleet-AI/tokenless/releases), or `brew install tokenfleet/tap/tokenless`.
+
 > Supports **12 agents**: Claude Code, Cursor, Windsurf, Cline, Kilo Code, Antigravity, Augment, Hermes CLI, Pi, Gemini CLI, OpenCode, GitHub Copilot.
-> `tokenless init` auto-installs hooks. See [user guide](./docs/user-guide.md) for full agent table and manual setup.
+> `tokenless init` auto-installs hooks. See [user guide §4](./docs/user-guide.md#4-agent-integration) for all 12 agents and manual configuration.
 
 ## Architecture
 
@@ -76,9 +86,9 @@ tokenless/
 ├── crates/tokenless-cli/           # CLI binary: `tokenless` command
 │   ├── cache.rs                    # Predictive cache (LRU + blake3) + differential response
 │   ├── mcp.rs                      # MCP JSON-RPC server (7 tools)
-│   └── env_check.rs                # Tool environment readiness (parallel checks)
+│   └── env_check/                   # Tool environment readiness (parallel checks)
 ├── adapters/tokenless/             # FHS adapter bundle
-├── specs/                          # Design specifications (14 docs)
+├── specs/                          # Design specifications (17+ docs)
 └── docs/                           # User-facing documentation
 ```
 
@@ -105,7 +115,7 @@ tokenless init --agent cursor   # Install for Cursor editor
 
 Auto-installs hooks into `.claude/settings.json` (or the equivalent for other agents). Once installed, all shell commands are automatically rewritten and responses compressed — zero manual steps after `init`.
 
-> See [user guide §4](./docs/user-guide.md#四agent-集成) for all 12 agents and manual configuration.
+> See [user guide §4](./docs/user-guide.md#4-agent-integration) for all 12 agents and manual configuration.
 
 ### compress-schema / compress-response
 
@@ -121,7 +131,6 @@ Auto-selects the optimal encoding strategy based on JSON structure:
 
 ```bash
 tokenless compress-auto -f response.json       # Auto: TOON HRV / Enhanced TOON / CJSON
-tokenless compress-auto -f response.json --json # Output with strategy info
 ```
 
 ### compress-toon / decompress-toon
@@ -140,6 +149,8 @@ echo '{"command":"git status","output":"M src/main.rs\n"}' | tokenless hook diff
 ```
 
 ### mcp start (MCP Server)
+
+> Requires `tokenless stats experimental-on` to enable experimental features.
 
 ```bash
 tokenless mcp start    # Start JSON-RPC 2.0 server over stdin/stdout
@@ -171,48 +182,33 @@ tokenless stats show 5               # Record details
 
 ### tui (Interactive Dashboard)
 
+> Requires `tokenless stats experimental-on` to enable experimental features.
+
 ```bash
-tokenless tui                        # Launch TUI dashboard (zh, 5s refresh)
+tokenless tui                        # Launch TUI dashboard (zh, 1s refresh)
 tokenless tui --lang en              # English UI
 tokenless tui --refresh 3            # 3-second refresh
 ```
 
-4-tab terminal dashboard: Dashboard · Records · Agents · Trends. Keyboard-driven with search, export, time-range filtering. See [user guide §3.8](./docs/user-guide.md#38-tui-dashboard) for full keybindings.
+4-tab terminal dashboard: Dashboard · Records · Agents · Trends. Keyboard-driven with search, export, time-range filtering. See [user guide §3.11](./docs/user-guide.md#311-tui-dashboard) for full keybindings.
 
 ## Build
 
 | Target | Description |
 |---|---|
 | `make build` | Build `tokenless` (release mode) |
-| `make test` | Run all tests (257 passing) |
+| `make test` | Run all tests |
 | `make lint` | Run fmt + clippy + cargo-audit |
 | `make fmt` | Format code |
 | `make clean` | Clean build artifacts |
-
-## Install
-
-```bash
-cargo install tokenless              # From crates.io (recommended)
-# or download pre-built binaries from GitHub Releases
-# or: brew install tokenfleet/tap/tokenless
-```
-
-## Prerequisites
-
-- **Rust** toolchain >= 1.85 (Rust 2024 edition) — for `cargo install` or source build
-- **RTK** binary — optional, only needed for command rewriting (`cargo install rtk`). Core compression works without it.
 
 ## Further Reading
 
 | What | Where |
 |---|---|
 | Full usage guide (installation, CLI, plugins, API) | [docs/user-guide.md](./docs/user-guide.md) |
-| Design specs (14 docs) | [specs/](./specs/) |
+| Design specs (17+ docs) — architecture, data flow, hook protocols, security, testing, and more | [specs/](./specs/) |
 | Contribution guidelines | [CONTRIBUTING.md](CONTRIBUTING.md) |
-
-## Design Specs
-
-See [specs/](./specs/) for 14 design documents covering architecture, data flow, hook protocols, security model, error handling, testing strategy, deployment, optimization analysis, and innovation roadmap.
 
 ## Contributing
 
@@ -220,13 +216,26 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow, coding conventi
 
 ## Community
 
+- [GitHub Issues](https://github.com/TokenFleet-AI/tokenless/issues) — Bug reports and feature requests
+- [GitHub Discussions](https://github.com/TokenFleet-AI/tokenless/discussions) — Q&A and ideas
+
+**WeChat Developer Group** (微信开发者群):
+
 <p align="center">
   <img src="assets/wechat-dev-group.png" alt="WeChat Developer Group" width="200">
 </p>
 
-<p align="center"><strong>扫码加入微信开发者群</strong></p>
+<p align="center"><strong>Scan to join / 扫码加入微信开发者群</strong></p>
 
-<p align="center">交流使用心得、反馈问题、参与功能讨论</p>
+<p align="center">Share feedback, report issues, discuss features / 交流使用心得、反馈问题、参与功能讨论</p>
+
+## Troubleshooting
+
+- **`tokenless: command not found`** — Ensure `~/.local/bin/` is on your `PATH` (see Quick Start).
+- **TUI/MCP shows "experimental feature" error** — Run `tokenless stats experimental-on` first.
+- **Hooks not working** — Re-run `tokenless init` and restart your agent.
+- **Stats show no data** — Ensure stats recording is enabled: `tokenless stats enable`.
+- See [user guide](./docs/user-guide.md) for detailed troubleshooting.
 
 ## License
 

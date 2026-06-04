@@ -13,9 +13,9 @@
 
 English docs: [README.md](README.md). 详细设计文档见 [specs/index.md](specs/index.md) 和 [docs/index.md](docs/index.md).
 
-**快速导航:** [Token 节省对比](#token-节省对比) · [快速开始](#快速开始) · [架构](#架构) · [CLI 使用](#cli-使用) · [构建](#构建) · [参与贡献](#参与贡献)
+**快速导航:** [环境要求](#环境要求) · [快速开始](#快速开始) · [Token 节省对比](#token-节省对比) · [CLI 使用](#cli-使用) · [架构](#架构) · [构建](#构建) · [参与贡献](#参与贡献)
 
-Tokenless 通过多种互补策略最大程度降低 LLM 的 Token 消耗：
+Tokenless 通过多种互补策略最大限度地降低 LLM 的 Token 消耗：
 
 - **Schema 压缩** — 压缩 OpenAI Function Calling 工具定义，在 token 进入上下文窗口前减少约 57% 的结构性开销。
 - **Response 压缩** — 移除调试字段、截断字符串、限制数组大小、去除 null/空值来压缩 API/工具响应（节省约 26–78%）。
@@ -25,7 +25,34 @@ Tokenless 通过多种互补策略最大程度降低 LLM 的 Token 消耗：
 - **TOON 上下文压缩** — 将 JSON 响应编码为 TOON（面向 Token 的对象表示法）格式，结构化数据 token 减少 15–40%。
 - **命令重写** — 通过 `rtk-registry` crate 委托给 [RTK](https://github.com/TokenFleet-AI/rtk) 进行命令输出过滤（70+ 命令，节省 60–90%）。
 - **工具就绪检查** — 预检工具执行环境（二进制、配置、权限、网络），自动修复缺失依赖。
-- **MCP Server** — JSON-RPC 2.0 over stdio，暴露 7 个 Tool，兼容任意 MCP Agent。
+- **MCP Server** — JSON-RPC 2.0 over stdio，提供 7 个工具，兼容任意 MCP Agent。
+
+## 环境要求
+
+- **Rust** 工具链 >= 1.89（Rust 2024 版）— `cargo install` 或源码构建所需
+- **RTK** 二进制 — 可选，仅命令重写所需（`cargo install rtk`），核心压缩功能无需 RTK
+
+## 快速开始
+
+```bash
+# 1. 安装
+git clone https://github.com/TokenFleet-AI/tokenless && cd tokenless && make setup
+
+# 确保 ~/.local/bin 在 PATH 中（建议写入 ~/.bashrc 或 ~/.zshrc 持久化）
+export PATH="$HOME/.local/bin:$PATH"
+
+# 2. 一键接入 Agent（支持 Claude Code、Cursor、Windsurf 等）
+tokenless init
+
+# 3. 完成！所有 Shell 命令自动重写，响应自动压缩。
+#    稍后查看节省统计：
+tokenless stats summary
+```
+
+**安装方式:** `cargo install tokenless`、从 [GitHub Releases](https://github.com/TokenFleet-AI/tokenless/releases) 下载预编译二进制、或 `brew install tokenfleet/tap/tokenless`。
+
+> 支持 **12 种 Agent**：Claude Code、Cursor、Windsurf、Cline、Kilo Code、Antigravity、Augment、Hermes CLI、Pi、Gemini CLI、OpenCode、GitHub Copilot。
+> `tokenless init` 自动安装 hooks。详见 [用户指南 §4](./docs/user-guide.md#4-agent-integration)。
 
 ## Token 节省对比
 
@@ -42,41 +69,19 @@ Tokenless 通过多种互补策略最大程度降低 LLM 的 Token 消耗：
 | 工具就绪检查 | 减少重试浪费 | 预检环境、自动修复依赖、失败归因 |
 | 零运行时依赖 | — | 纯 Rust，单个静态二进制 |
 
-## 架构
-
-```
-tokenless/
-├── crates/tokenless-schema/        # 核心库
-│   ├── schema_compressor.rs        # SchemaCompressor（P1/P2/P3 增强）
-│   ├── response_compressor.rs      # ResponseCompressor（6 项修复 + 广度限制）
-│   ├── shape_analyzer.rs           # JSON 结构分析器
-│   ├── format_router.rs            # 智能编码策略选择器
-│   └── encoding/                   # 编码策略
-│       ├── enhanced_toon.rs        # Enhanced TOON（类型缩写 + 约束内联）
-│       ├── toon_hrv.rs             # TOON HRV（均匀数组表格式）
-│       └── cjson_compact.rs        # CJSON 兜底编码
-├── crates/tokenless-stats/         # 基于 SQLite 的压缩指标追踪
-├── crates/tokenless-cli/           # CLI 二进制：`tokenless` 命令
-│   ├── cache.rs                    # 预测缓存（LRU + blake3）+ 差分响应
-│   ├── mcp.rs                      # MCP JSON-RPC Server（7 个 Tool）
-│   └── env_check.rs                # 工具环境就绪检查（并行检测）
-├── adapters/tokenless/             # FHS 适配器包
-├── specs/                          # 设计规格（14 份文档）
-└── docs/                           # 用户文档
-```
-
-**命令重写** 由 [`rtk-registry`](https://github.com/TokenFleet-AI/rtk/tree/master/crates/rtk-registry) crate 在库层面完成（无需调用 RTK 二进制）：
-
-```rust
-use rtk_registry::rewrite_command;
-
-// "git status" → Some("rtk git status")
-let rewritten = rewrite_command("git status", &[], &[]);
-```
-
-RTK 二进制在运行时仍用于输出过滤——registry 只负责命令转换。
-
 ## CLI 使用
+
+### init（Agent 接入）
+
+```bash
+tokenless init                  # 安装 Claude Code hooks（项目级）
+tokenless init --global         # 全局安装（所有项目生效）
+tokenless init --agent cursor   # 为 Cursor 编辑器安装
+```
+
+自动将 hooks 写入 `.claude/settings.json`（或其他 Agent 的等效配置文件）。安装完成后，所有 Shell 命令自动重写、响应自动压缩。
+
+> 详见 [用户指南 §4](./docs/user-guide.md#4-agent-integration) 了解全部 12 种 Agent 及手动配置方式。
 
 ### compress-schema / compress-response
 
@@ -92,7 +97,6 @@ cat tool.json | tokenless compress-schema --batch  # 批量模式
 
 ```bash
 tokenless compress-auto -f response.json       # 自动：TOON HRV / Enhanced TOON / CJSON
-tokenless compress-auto -f response.json --json # 输出含策略信息
 ```
 
 ### compress-toon / decompress-toon
@@ -112,10 +116,18 @@ echo '{"command":"git status","output":"M src/main.rs\n"}' | tokenless hook diff
 
 ### mcp start（MCP Server）
 
+> 需先执行 `tokenless stats experimental-on` 启用实验性功能。
+
 ```bash
 tokenless mcp start    # 启动 JSON-RPC 2.0 server over stdin/stdout
-# 暴露 7 个 Tool：compress_schema, compress_response, rewrite_command,
+# 提供 7 个工具：compress_schema, compress_response, rewrite_command,
 # compress_toon, decompress_toon, env_check, stats_summary
+```
+
+### demo
+
+```bash
+tokenless demo    # 运行 4 个压缩策略演示（内嵌测试数据）
 ```
 
 ### env-check
@@ -134,24 +146,69 @@ tokenless stats list --limit 20      # 最近记录
 tokenless stats show 5               # 记录详情
 ```
 
+### tui（交互式仪表盘）
+
+> 需先执行 `tokenless stats experimental-on` 启用实验性功能。
+
+```bash
+tokenless tui                        # 启动 TUI 仪表盘（中文，1s 刷新）
+tokenless tui --lang en              # 英文界面
+tokenless tui --refresh 3            # 3 秒刷新间隔
+```
+
+4 页终端仪表盘：Dashboard · Records · Agents · Trends。支持键盘操作、搜索、导出、时间范围筛选。详见 [用户指南 §3.11](./docs/user-guide.md#311-tui-dashboard)。
+
+## 架构
+
+```
+tokenless/
+├── crates/tokenless-schema/        # 核心库
+│   ├── schema_compressor.rs        # SchemaCompressor（P1/P2/P3 增强）
+│   ├── response_compressor.rs      # ResponseCompressor（6 项修复 + 广度限制）
+│   ├── shape_analyzer.rs           # JSON 结构分析器
+│   ├── format_router.rs            # 智能编码策略选择器
+│   └── encoding/                   # 编码策略
+│       ├── enhanced_toon.rs        # Enhanced TOON（类型缩写 + 约束内联）
+│       ├── toon_hrv.rs             # TOON HRV（均匀数组表格式）
+│       └── cjson_compact.rs        # CJSON 兜底编码
+├── crates/tokenless-stats/         # 基于 SQLite 的压缩指标追踪
+├── crates/tokenless-cli/           # CLI 二进制：`tokenless` 命令
+│   ├── cache.rs                    # 预测缓存（LRU + blake3）+ 差分响应
+│   ├── mcp.rs                      # MCP JSON-RPC Server（7 个工具）
+│   └── env_check/                   # 工具环境就绪检查（并行检测）
+├── adapters/tokenless/             # FHS 适配器包
+├── specs/                          # 设计规格（17+ 份文档）
+└── docs/                           # 用户文档
+```
+
+**命令重写** 由 [`rtk-registry`](https://github.com/TokenFleet-AI/rtk/tree/master/crates/rtk-registry) crate 在库层面完成（无需调用 RTK 二进制）：
+
+```rust
+use rtk_registry::rewrite_command;
+
+// "git status" → Some("rtk git status")
+let rewritten = rewrite_command("git status", &[], &[]);
+```
+
+RTK 二进制在运行时仍用于输出过滤——registry 只负责命令转换。
+
 ## 构建
 
 | 目标 | 描述 |
 |---|---|
 | `make build` | 构建 `tokenless`（release 模式） |
-| `make test` | 运行所有测试（257 passing） |
+| `make test` | 运行全部测试 |
 | `make lint` | fmt + clippy + cargo-audit |
 | `make fmt` | 格式化代码 |
 | `make clean` | 清理构建产物 |
 
-## 环境要求
+## 进一步阅读
 
-- **Rust** 工具链 >= 1.85（Rust 2024 版）
-- **RTK** 二进制 — 命令重写输出过滤所需
-
-## 设计规格
-
-详见 [specs/](./specs/) 目录下的 14 份设计文档，覆盖架构设计、数据流、Hook 协议、安全模型、错误处理、测试策略、部署架构、优化分析和创新路线图。
+| 内容 | 链接 |
+|---|---|
+| 完整使用指南（安装、CLI、插件、API） | [docs/user-guide.md](./docs/user-guide.md) |
+| 设计规格（17+ 份文档）— 架构、数据流、Hook 协议、安全、测试等 | [specs/](./specs/) |
+| 贡献指南 | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
 ## 参与贡献
 
@@ -159,13 +216,26 @@ tokenless stats show 5               # 记录详情
 
 ## 开发者社区
 
+- [GitHub Issues](https://github.com/TokenFleet-AI/tokenless/issues) — Bug 报告和功能请求
+- [GitHub Discussions](https://github.com/TokenFleet-AI/tokenless/discussions) — 问答和想法交流
+
+**微信开发者群：**
+
 <p align="center">
   <img src="assets/wechat-dev-group.png" alt="微信开发者群" width="200">
 </p>
 
 <p align="center"><strong>扫码加入微信开发者群</strong></p>
 
-<p align="center">使用问题、功能建议、Bug 反馈 — 直接群里聊</p>
+<p align="center">欢迎在群内交流使用心得、反馈问题、参与功能讨论</p>
+
+## 常见问题排查
+
+- **`tokenless: command not found`** — 请确保 `~/.local/bin/` 在 `PATH` 中（见快速开始）。
+- **TUI/MCP 提示"experimental feature"错误** — 请先执行 `tokenless stats experimental-on`。
+- **Hooks 未生效** — 重新执行 `tokenless init` 并重启 Agent。
+- **Stats 无数据** — 请确保统计记录已启用：`tokenless stats enable`。
+- 详见 [用户指南](./docs/user-guide.md) 获取更多排查信息。
 
 ## 许可证
 
