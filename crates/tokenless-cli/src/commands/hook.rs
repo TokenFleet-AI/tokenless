@@ -14,7 +14,11 @@ use crate::{
 };
 
 /// Handle `tokenless hook rewrite` for a specific agent target.
-pub(crate) fn hook_rewrite(target: &str, project: Option<String>) -> Result<(), (String, i32)> {
+pub(crate) fn hook_rewrite(
+    target: &str,
+    project: Option<String>,
+    cli_user_name: Option<String>,
+) -> Result<(), (String, i32)> {
     if target != "claude" {
         return Err((
             format!("Hook rewrite not yet implemented for agent: {target}"),
@@ -45,6 +49,7 @@ pub(crate) fn hook_rewrite(target: &str, project: Option<String>) -> Result<(), 
 
     // Passthrough mode: pass through original, log with zero savings
     let config = TokenlessConfig::load();
+    let user_name = cli_user_name.unwrap_or_else(|| config.effective_user_name().to_string());
     if config.is_passthrough_enabled() {
         println!("{input}");
         record_compression_stats(
@@ -53,7 +58,7 @@ pub(crate) fn hook_rewrite(target: &str, project: Option<String>) -> Result<(), 
             session_id,
             None,
             project.clone(),
-            Some(config.effective_user_name().to_string()),
+            Some(user_name),
             input.clone(),
             input,
             false,
@@ -79,7 +84,7 @@ pub(crate) fn hook_rewrite(target: &str, project: Option<String>) -> Result<(), 
                 session_id,
                 None,
                 project,
-                Some(config.effective_user_name().to_string()),
+                Some(user_name),
                 input,
                 output,
                 false,                      // RTK rewrite is always core
@@ -97,6 +102,7 @@ pub(crate) fn hook_compress(
     semantic: bool,
     target: &str,
     project: Option<String>,
+    cli_user_name: Option<String>,
     debug: bool,
 ) -> Result<(), (String, i32)> {
     let input = read_input(&None).map_err(|e| (e, 2))?;
@@ -112,10 +118,11 @@ pub(crate) fn hook_compress(
 
     // Passthrough mode: pass through original, log with zero savings
     let config = TokenlessConfig::load();
+    let user_name = cli_user_name.unwrap_or_else(|| config.effective_user_name().to_string());
     if config.is_passthrough_enabled() {
         println!("{input}");
         if !output.is_empty() {
-            append_compress_log_entry(target, output, output, project.as_deref());
+            append_compress_log_entry(target, output, output, project.as_deref(), Some(&user_name));
         }
         return Ok(());
     }
@@ -168,7 +175,7 @@ pub(crate) fn hook_compress(
                 session_id,
                 None,
                 project.clone(),
-                Some(config.effective_user_name().to_string()),
+                Some(user_name.clone()),
                 output.to_string(),
                 compressed_str.clone(),
                 use_semantic, // experimental only when semantic is active
@@ -181,7 +188,13 @@ pub(crate) fn hook_compress(
             }
 
             // Append structured compress log (fire-and-forget).
-            append_compress_log_entry(target, output, &compressed_str, project.as_deref());
+            append_compress_log_entry(
+                target,
+                output,
+                &compressed_str,
+                project.as_deref(),
+                Some(&user_name),
+            );
         }
     } else {
         // Plain text output: strip ANSI and truncate if too long.
@@ -201,7 +214,7 @@ pub(crate) fn hook_compress(
                     session_id,
                     None,
                     project.clone(),
-                    Some(config.effective_user_name().to_string()),
+                    Some(user_name.clone()),
                     output.to_string(),
                     cleaned.clone(),
                     false,                   // plain text compression is always core
@@ -212,7 +225,13 @@ pub(crate) fn hook_compress(
                 }
 
                 // Append structured compress log (fire-and-forget).
-                append_compress_log_entry(target, output, &cleaned, project.as_deref());
+                append_compress_log_entry(
+                    target,
+                    output,
+                    &cleaned,
+                    project.as_deref(),
+                    Some(&user_name),
+                );
             }
         } else {
             println!("{input}");
@@ -439,7 +458,13 @@ fn extract_tool_output(val: &serde_json::Value) -> &str {
 /// Reads compression preference from `TokenlessConfig` and skips if
 /// compress logging is disabled.  This is fire-and-forget: failures
 /// are traced but never block the compression pipeline.
-fn append_compress_log_entry(target: &str, before: &str, after: &str, project: Option<&str>) {
+fn append_compress_log_entry(
+    target: &str,
+    before: &str,
+    after: &str,
+    project: Option<&str>,
+    user_name: Option<&str>,
+) {
     let config = TokenlessConfig::load();
     // Skip logging only when compress is disabled AND passthrough is off.
     // In passthrough mode we always log (for baseline measurement).
@@ -449,6 +474,9 @@ fn append_compress_log_entry(target: &str, before: &str, after: &str, project: O
     let project_name = project
         .map(|s| s.to_string())
         .unwrap_or_else(|| "(unclassified)".to_string());
+    let effective_user = user_name
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| config.effective_user_name().to_string());
     let before_bytes = before.len();
     let after_bytes = after.len();
     let saved_tokens = estimate_tokens_from_bytes(before_bytes)
@@ -460,7 +488,7 @@ fn append_compress_log_entry(target: &str, before: &str, after: &str, project: O
     };
     let log_entry = CompressLogEntry::builder()
         .timestamp(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
-        .user_name(config.effective_user_name().to_string())
+        .user_name(effective_user)
         .project(project_name)
         .agent(target.to_string())
         .hook_type(HookType::Compress)

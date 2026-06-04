@@ -41,10 +41,13 @@ pub(crate) fn handle(
     let mut config = TokenlessConfig::load();
 
     // Detect user identity (skip if current_dir fails)
-    if let Ok(cwd) = std::env::current_dir() {
+    let user_name = if let Ok(cwd) = std::env::current_dir() {
         let identity = crate::init::user_detect::detect_user_identity(&cwd);
-        config.set_user_identity(identity.name, identity.email);
-    }
+        config.set_user_identity(identity.name.clone(), identity.email);
+        identity.name
+    } else {
+        None
+    };
 
     // Resolve compress preference
     let resolved_compress = compress_flag.unwrap_or_else(|| config.is_compress_enabled());
@@ -66,6 +69,7 @@ pub(crate) fn handle(
         debug,
         compress: Some(resolved_compress),
         passthrough,
+        user_name,
     };
 
     init::run(agent, &init_config).map_err(|e| (e, 1))

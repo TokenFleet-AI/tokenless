@@ -25,6 +25,8 @@ pub struct InitConfig {
     /// When true, hooks pass through original content unchanged but still
     /// record compress logs for baseline measurement.
     pub passthrough: bool,
+    /// User name for statistics attribution (auto-detected from git config or OS).
+    pub user_name: Option<String>,
 }
 
 /// Target agent for hook installation.
@@ -368,13 +370,23 @@ fn init_claude(config: &InitConfig) -> Result<(), String> {
     let dir = claude_dir(config.global);
     let settings_path = dir.join("settings.json");
 
-    // Detect project name from current directory (project-local install only)
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let project_name = detect_project_name(&cwd, None);
+    // Project flag: only for project-local installs.
+    // Global hooks apply to all projects, so --project is omitted
+    // and the hook auto-detects the project at runtime.
+    let project_flag = if config.global {
+        String::new()
+    } else {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let project_name = detect_project_name(&cwd, None);
+        format!(" --project {project_name}")
+    };
 
-    // Build hooks JSON with project name baked in.
-    // Omit PostToolUse compress hook when compress is explicitly disabled.
     let debug_flag = if config.debug { " --debug" } else { "" };
+    let user_flag = if let Some(ref user) = config.user_name {
+        format!(" --user-name {user}")
+    } else {
+        String::new()
+    };
     let hooks_json = if config.compress == Some(false) {
         // Only PreToolUse rewrite hook, no PostToolUse compress hook
         format!(
@@ -385,13 +397,14 @@ fn init_claude(config: &InitConfig) -> Result<(), String> {
       {{
         "matcher": "Bash",
         "hooks": [
-          {{ "type": "command", "command": "tokenless hook rewrite --target claude --project {project}" }}
+          {{ "type": "command", "command": "tokenless hook rewrite --target claude{project}{user}" }}
         ]
       }}
     ]
   }}
 }}"#,
-            project = project_name,
+            project = project_flag,
+            user = user_flag,
         )
     } else {
         format!(
@@ -402,7 +415,7 @@ fn init_claude(config: &InitConfig) -> Result<(), String> {
       {{
         "matcher": "Bash",
         "hooks": [
-          {{ "type": "command", "command": "tokenless hook rewrite --target claude --project {project}" }}
+          {{ "type": "command", "command": "tokenless hook rewrite --target claude{project}{user}" }}
         ]
       }}
     ],
@@ -410,21 +423,28 @@ fn init_claude(config: &InitConfig) -> Result<(), String> {
       {{
         "matcher": "^(?!Bash$).*",
         "hooks": [
-          {{ "type": "command", "command": "tokenless hook compress --semantic --target claude --project {project}{debug}" }}
+          {{ "type": "command", "command": "tokenless hook compress --semantic --target claude{project}{debug}{user}" }}
         ]
       }}
     ]
   }}
 }}"#,
-            project = project_name,
+            project = project_flag,
             debug = debug_flag,
+            user = user_flag,
         )
     };
 
     merge_into_settings(&settings_path, &hooks_json)?;
     let scope = if config.global { "global" } else { "project" };
     println!("[tokenless] Installed hooks for Claude Code ({scope})");
-    println!("  project: {project_name}");
+    if config.global {
+        println!("  project: auto-detect (global)");
+    } else {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let project_name = detect_project_name(&cwd, None);
+        println!("  project: {project_name}");
+    }
     println!(
         "  compress: {}",
         if config.compress != Some(false) {

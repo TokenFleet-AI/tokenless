@@ -220,6 +220,9 @@ enum HookCommands {
         /// Project name for multi-project statistics.
         #[arg(long)]
         project: Option<String>,
+        /// User name override (default: auto-detected from config).
+        #[arg(long)]
+        user_name: Option<String>,
     },
     /// PostToolUse: compress tool response output.
     Compress {
@@ -232,6 +235,9 @@ enum HookCommands {
         /// Project name for multi-project statistics.
         #[arg(long)]
         project: Option<String>,
+        /// User name override (default: auto-detected from config).
+        #[arg(long)]
+        user_name: Option<String>,
         /// Write original/compressed text to debug log (~/.tokenfleet-ai/tokenless/compress-debug.log).
         #[arg(long)]
         debug: bool,
@@ -432,15 +438,18 @@ fn run() -> Result<(), (String, i32)> {
             tool_use_id,
         ),
         Commands::Hook(hook_cmd) => match hook_cmd {
-            HookCommands::Rewrite { target, project } => {
-                commands::hook::hook_rewrite(&target, project)
-            }
+            HookCommands::Rewrite {
+                target,
+                project,
+                user_name,
+            } => commands::hook::hook_rewrite(&target, project, user_name),
             HookCommands::Compress {
                 semantic,
                 target,
                 project,
+                user_name,
                 debug,
-            } => commands::hook::hook_compress(semantic, &target, project, debug),
+            } => commands::hook::hook_compress(semantic, &target, project, user_name, debug),
             HookCommands::Diff => commands::hook::hook_diff(),
         },
         Commands::Init {
