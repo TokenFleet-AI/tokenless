@@ -46,9 +46,11 @@ jobs:
         run: cargo fmt --check
 
       - name: Typos
+        if: runner.os == 'Linux'
         uses: crate-ci/typos@master
 
       - name: Check agent sync
+        if: runner.os == 'Linux'
         run: make check-agent-sync
 
   audit:
