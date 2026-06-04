@@ -1,7 +1,7 @@
 [![CI](https://github.com/TokenFleet-AI/tokenless/actions/workflows/ci.yml/badge.svg)](https://github.com/TokenFleet-AI/tokenless/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/TokenFleet-AI/tokenless)](https://github.com/TokenFleet-AI/tokenless/releases)
 [![Rust 2024](https://img.shields.io/badge/Rust-2024-orange?logo=rust)](https://www.rust-lang.org/)
-[![License](https://img.shields.io/github/license/TokenFleet-AI/tokenless)](LICENSE.md)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue)](LICENSE.md)
 
 <p align="center">
   <img src="./assets/tokenless.svg" alt="tokenless" width="520">
