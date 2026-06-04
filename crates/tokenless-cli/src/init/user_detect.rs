@@ -18,20 +18,15 @@ const BIDI_CONTROLS: &[char] = &[
 const ZERO_WIDTH_CHARS: &[char] = &['\u{200B}', '\u{200C}', '\u{200D}', '\u{FEFF}', '\u{00AD}'];
 
 /// Source of detected user identity information.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum IdentitySource {
     /// From `git config user.name` or `git config user.email`.
     GitConfig,
     /// From OS environment ($USER, $LOGNAME, whoami).
     OsUser,
     /// Not detected — fallback.
+    #[default]
     Unknown,
-}
-
-impl Default for IdentitySource {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 /// Detected user identity for attribution.
