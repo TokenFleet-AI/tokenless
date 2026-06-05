@@ -1,5 +1,6 @@
 ---
 source: crates/tokenless-schema/tests/golden_snapshots.rs
+assertion_line: 62
 expression: result
 ---
 {

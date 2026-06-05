@@ -1,5 +1,6 @@
 ---
 source: crates/tokenless-schema/tests/golden_snapshots.rs
+assertion_line: 128
 expression: "router_snapshot(&strategy, &output)"
 ---
 {
