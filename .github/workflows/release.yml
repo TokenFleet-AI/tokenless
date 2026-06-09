@@ -21,6 +21,7 @@ on:
 permissions:
   contents: write
   id-token: write
+  attestations: write
 
 env:
   CARGO_TERM_COLOR: always
