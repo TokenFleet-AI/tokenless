@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 readme = "README.md"
-keywords = ["llm", "token", "compression", "semantic", "onnx", "embedding"]
+keywords = ["llm", "token", "compression", "semantic", "embedding"]
 categories = ["compression", "science", "text-processing"]
 
 [dependencies]
