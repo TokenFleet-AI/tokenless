@@ -1,110 +1,110 @@
 ---
 source: crates/tokenless-schema/tests/golden_snapshots.rs
-assertion_line: 91
 expression: result
 ---
 {
+  "total": 100,
   "items": [
     {
-      "description": "Description for item 1 with some additional context",
       "id": 1,
       "name": "Item Alpha",
+      "description": "Description for item 1 with some additional context",
       "price": 9.99
     },
     {
-      "description": "Description for item 2 with some additional context",
       "id": 2,
       "name": "Item Beta",
+      "description": "Description for item 2 with some additional context",
       "price": 14.99,
       "tags": [
         "sale"
       ]
     },
     {
-      "description": "Description for item 3 with some additional context",
       "id": 3,
       "name": "Item Gamma",
+      "description": "Description for item 3 with some additional context",
       "price": 19.99
     },
     {
-      "description": "Description for item 4 with some additional context",
       "id": 4,
       "name": "Item Delta",
+      "description": "Description for item 4 with some additional context",
       "price": 24.99
     },
     {
-      "description": "Description for item 5 with some additional context",
       "id": 5,
       "name": "Item Epsilon",
+      "description": "Description for item 5 with some additional context",
       "price": 29.99
     },
     {
-      "description": "Description for item 6 with some additional context",
       "id": 6,
       "name": "Item Zeta",
+      "description": "Description for item 6 with some additional context",
       "price": 34.99,
       "tags": [
         "new"
       ]
     },
     {
-      "description": "Description for item 7 with some additional context",
       "id": 7,
       "name": "Item Eta",
+      "description": "Description for item 7 with some additional context",
       "price": 39.99
     },
     {
-      "description": "Description for item 8 with some additional context",
       "id": 8,
       "name": "Item Theta",
+      "description": "Description for item 8 with some additional context",
       "price": 44.99
     },
     {
-      "description": "Description for item 9 with some additional context",
       "id": 9,
       "name": "Item Iota",
+      "description": "Description for item 9 with some additional context",
       "price": 49.99
     },
     {
-      "description": "Description for item 10 with some additional context",
       "id": 10,
       "name": "Item Kappa",
+      "description": "Description for item 10 with some additional context",
       "price": 54.99
     },
     {
-      "description": "Description for item 11 with some additional context",
       "id": 11,
       "name": "Item Lambda",
+      "description": "Description for item 11 with some additional context",
       "price": 59.99
     },
     {
-      "description": "Description for item 12 with some additional context",
       "id": 12,
       "name": "Item Mu",
+      "description": "Description for item 12 with some additional context",
       "price": 64.99
     },
     {
-      "description": "Description for item 13 with some additional context",
       "id": 13,
       "name": "Item Nu",
+      "description": "Description for item 13 with some additional context",
       "price": 69.99
     },
     {
-      "description": "Description for item 14 with some additional context",
       "id": 14,
       "name": "Item Xi",
+      "description": "Description for item 14 with some additional context",
       "price": 74.99
     },
     {
-      "description": "Description for item 15 with some additional context",
       "id": 15,
       "name": "Item Omicron",
+      "description": "Description for item 15 with some additional context",
       "price": 79.99
     },
     {
-      "description": "Description for item 16 with some additional context",
       "id": 16,
       "name": "Item Pi",
+      "description": "Description for item 16 with some additional context",
       "price": 84.99,
       "tags": [
         "clearance"
@@ -112,6 +112,5 @@ expression: result
     },
     "<... up to 6 more items truncated>"
   ],
-  "next_cursor": "cursor_abcdef123456",
-  "total": 100
+  "next_cursor": "cursor_abcdef123456"
 }
