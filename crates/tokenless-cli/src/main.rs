@@ -153,7 +153,7 @@ enum Commands {
         /// Install hooks globally (for all projects).
         #[arg(long)]
         global: bool,
-        /// Agent name (claude, cursor, windsurf, cline, copilot, gemini, etc.).
+        /// Agent name (claude, cursor, windsurf, cline, copilot, gemini, codex, etc.).
         #[arg(short, long, default_value = "claude")]
         agent: String,
         /// Enable debug logging for compress hook (~/.tokenfleet-ai/tokenless/compress-debug.log).

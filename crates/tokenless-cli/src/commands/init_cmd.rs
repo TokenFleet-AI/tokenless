@@ -25,6 +25,7 @@ pub(crate) fn handle(
         "gemini" => init::Agent::Gemini,
         "opencode" => init::Agent::Opencode,
         "copilot" => init::Agent::Copilot,
+        "codex" => init::Agent::Codex,
         _ => init::Agent::Claude,
     };
 
