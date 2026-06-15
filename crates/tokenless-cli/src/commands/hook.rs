@@ -326,7 +326,8 @@ fn compress_plain_text(text: &str) -> String {
 
     // Truncate if still too long.
     if cleaned.len() > MAX_CHARS {
-        let truncated = &cleaned[..MAX_CHARS];
+        let byte_idx = floor_char_boundary(&cleaned, MAX_CHARS);
+        let truncated = &cleaned[..byte_idx];
         format!(
             "{truncated}\n…[truncated: {} → {} chars, {} lines omitted]",
             text.len(),
@@ -339,6 +340,14 @@ fn compress_plain_text(text: &str) -> String {
     } else {
         cleaned.to_string()
     }
+}
+
+fn floor_char_boundary(text: &str, mut idx: usize) -> usize {
+    idx = idx.min(text.len());
+    while !text.is_char_boundary(idx) {
+        idx -= 1;
+    }
+    idx
 }
 
 /// Remove basic ANSI escape sequences (CSI sequences) from text.
@@ -681,6 +690,15 @@ mod tests {
         let result = compress_plain_text(&long);
         assert!(result.len() < 9000, "should be truncated");
         assert!(result.contains("truncated"), "should have truncation note");
+    }
+
+    #[test]
+    fn test_compress_plain_text_truncates_at_utf8_boundary() {
+        let long = format!("{}💥tail", "x".repeat(8191));
+        let result = compress_plain_text(&long);
+        assert!(result.contains("truncated"), "should have truncation note");
+        assert!(result.starts_with(&"x".repeat(8191)));
+        assert!(!result.contains('💥'), "should not include a partial emoji");
     }
 
     #[test]
