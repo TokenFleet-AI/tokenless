@@ -324,9 +324,10 @@ fn compress_plain_text(text: &str) -> String {
     // Strip ANSI escape sequences (color codes, cursor movement, etc.).
     let cleaned = strip_ansi(text);
 
-    // Truncate if still too long.
+    // Truncate if still too long (char-boundary-safe).
     if cleaned.len() > MAX_CHARS {
-        let truncated = &cleaned[..MAX_CHARS];
+        let byte_idx = cleaned.floor_char_boundary(MAX_CHARS);
+        let truncated = &cleaned[..byte_idx];
         format!(
             "{truncated}\n…[truncated: {} → {} chars, {} lines omitted]",
             text.len(),
