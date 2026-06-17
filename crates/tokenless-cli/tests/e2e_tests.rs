@@ -32,6 +32,10 @@ fn sanitize_output(output: &str) -> String {
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_default();
 
+    // Normalize cargo-llvm-cov's separate target directory so coverage runs
+    // produce the same snapshot output as plain `cargo test`.
+    let output = output.replace("target/llvm-cov-target/", "target/");
+
     let output = output
         .replace(std::env::consts::EXE_SUFFIX, "")
         .replace("/tmp/tokenless-e2e-home", "$HOME")

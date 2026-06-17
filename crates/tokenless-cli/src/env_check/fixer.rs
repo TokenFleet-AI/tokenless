@@ -3,7 +3,10 @@
 //! Provides the auto-fix script runner and formatting helpers for
 //! displaying tool-ready check results.
 
-use std::{fmt::Write, os::unix::fs::MetadataExt, process::Command};
+use std::{fmt::Write, process::Command};
+
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 
 use serde_json::Value;
 
@@ -182,15 +185,22 @@ pub(crate) fn auto_fix(missing_deps: &[DepEntry]) -> Result<String, String> {
         let script_path = std::path::Path::new(&fix_script);
         let metadata = std::fs::metadata(script_path)
             .map_err(|e| format!("Failed to stat fix script '{fix_script}': {e}"))?;
-        if metadata.uid() != nix::unistd::Uid::effective().as_raw() {
-            return Err(format!(
-                "Secure-default rejected fix script not owned by current user: {fix_script}"
-            ));
+        #[cfg(unix)]
+        {
+            if metadata.uid() != nix::unistd::Uid::effective().as_raw() {
+                return Err(format!(
+                    "Secure-default rejected fix script not owned by current user: {fix_script}"
+                ));
+            }
+            if metadata.mode() & 0o022 != 0 {
+                return Err(format!(
+                    "Secure-default rejected fix script with group/world write bits: {fix_script}"
+                ));
+            }
         }
-        if metadata.mode() & 0o022 != 0 {
-            return Err(format!(
-                "Secure-default rejected fix script with group/world write bits: {fix_script}"
-            ));
+        #[cfg(not(unix))]
+        {
+            let _ = metadata; // stat succeeded; ownership/mode checks are Unix-only
         }
     }
 
