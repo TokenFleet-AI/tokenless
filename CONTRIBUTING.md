@@ -10,7 +10,7 @@ This project follows a standard open-source code of conduct. Be respectful, cons
 
 ### Prerequisites
 
-- Rust toolchain >= 1.85 (see `rust-toolchain.toml`)
+- Rust toolchain >= 1.89 (see `rust-toolchain.toml`)
 - `cargo-audit` and `cargo-deny` for security checks
 
 ### Setup

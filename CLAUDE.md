@@ -22,7 +22,7 @@ This repository is a reusable Rust 2024 workspace template. These rules are mand
 - Keep changes minimal, cohesive, and aligned with SOLID, DRY, and KISS.
 - Check for existing user changes before editing; never overwrite unrelated work.
 - Prefer existing Makefile targets. For new automation, add a `Makefile` target instead of ad-hoc shell scripts.
-- **Install path**: `make install` installs to `~/.local/bin/`. For **development mode**, use `./scripts/dev-install.sh` which installs to `~/.cargo/bin/`. Do not suggest `make install` when the user is developing locally — use `./scripts/dev-install.sh` instead.
+- **Install path**: `make install` installs to `~/.local/bin/`. For **development mode**, use `./scripts/dev-install.sh` which installs to `~/.tokenfleet-ai/bin/`. Do not suggest `make install` when the user is developing locally — use `./scripts/dev-install.sh` instead.
 - For dependency, Helm chart, or external-resource changes, check current upstream usage and security posture first. Put deep research under `docs/research/` after checking existing research.
 - For specs, inspect `specs/`, place new files there, name them `{feature-name}-{type}.md`, and update `specs/index.md`.
 - For docs, inspect `docs/`, place new files there, and update `docs/index.md`. If documentation was not explicitly requested but is useful, still place it under `docs/`.
@@ -175,3 +175,49 @@ All code should pass `cargo clippy --all-targets --all-features -- -D warnings -
 - Use `.try_into()` for lossy conversions and `.into()` or `as` only for provably lossless ones.
 - Return the inner type when a function always returns `Some` or `Ok`.
 - Prefer one-pass `.filter_map(f)` over `.filter().map()` or `.map().flatten()`.
+
+## Agent Role → Model Mapping (Auto-Apply)
+
+When spawning agents via `Agent()` or `Task()`, ALWAYS apply this mapping.
+The proxy translates Claude model names to domestic models automatically.
+
+### Model Tiers
+
+| Tier | Claude Model | Domestic Model | Use For |
+|------|-------------|----------------|---------|
+| **Reasoning** | `opus` | deepseek-v4-flash | architect, security-architect, system-architect |
+| **Primary** | `sonnet` | deepseek-v4-pro | coder, tester, reviewer |
+| **Fast** | `haiku` | gpt-5.4 | researcher, scanner, formatter, documenter |
+
+### Role Assignment
+
+```
+architect          → model: "opus"    (深度推理,系统设计)
+security-architect → model: "opus"    (威胁建模,安全审计)
+system-architect   → model: "opus"    (架构设计)
+
+coder              → model: "sonnet"  (代码生成主力)
+tester             → model: "sonnet"  (测试用例生成)
+reviewer           → model: "sonnet"  (代码审查)
+
+researcher         → model: "haiku"   (快速搜索/扫描)
+formatter          → model: "haiku"   (格式化/统计)
+documenter         → model: "haiku"   (文档生成)
+```
+
+### Spawn Template
+
+```javascript
+// Opus tier — deepseek-v4-flash
+Agent({ model: "opus",  subagent_type: "system-architect", name: "architect", run_in_background: true })
+Agent({ model: "opus",  subagent_type: "security-auditor", name: "security",   run_in_background: true })
+
+// Sonnet tier — deepseek-v4-pro
+Agent({ model: "sonnet", subagent_type: "coder",           name: "coder",     run_in_background: true })
+Agent({ model: "sonnet", subagent_type: "tester",          name: "tester",    run_in_background: true })
+Agent({ model: "sonnet", subagent_type: "reviewer",        name: "reviewer",  run_in_background: true })
+
+// Haiku tier — gpt-5.4
+Agent({ model: "haiku",  subagent_type: "researcher",      name: "researcher", run_in_background: true })
+Agent({ model: "haiku",  subagent_type: "Explore",         name: "scanner",   run_in_background: true })
+```

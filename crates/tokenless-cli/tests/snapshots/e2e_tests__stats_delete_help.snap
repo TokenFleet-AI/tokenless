@@ -1,0 +1,16 @@
+---
+source: crates/tokenless-cli/tests/e2e_tests.rs
+assertion_line: 108
+expression: output
+---
+Delete specific records from stats
+
+Usage: tokenless stats delete [OPTIONS]
+
+Options:
+      --id <ID>          Delete a single record by ID
+      --secure-default   Enable stricter secure defaults for validation, logging, and helper execution
+      --agent <AGENT>    Delete all records for a specific agent
+      --before <BEFORE>  Delete all records before a date (ISO 8601, e.g. "2026-05-01")
+      --yes              Skip confirmation prompt
+  -h, --help             Print help

@@ -1,9 +1,8 @@
 ---
 source: crates/tokenless-schema/tests/golden_snapshots.rs
-assertion_line: 152
 expression: "router_snapshot(&strategy, &output)"
 ---
 {
-  "output": "{\"count\":3,\"status\":\"ok\"}",
-  "strategy": "passthrough"
+  "strategy": "passthrough",
+  "output": "{\"status\":\"ok\",\"count\":3}"
 }

@@ -8,6 +8,7 @@ use std::{
 };
 
 use rtk_registry::{Classification, RtkInstallStatus, is_rtk_installed};
+use secrecy::{ExposeSecret, SecretBox};
 use serde::Serialize;
 use tokenless_schema::{CompressionProfile, ResponseCompressor, SchemaCompressor};
 use tokenless_semantic::SemanticCompressor;
@@ -59,30 +60,72 @@ pub(crate) fn is_experimental_enabled() -> bool {
     TokenlessConfig::load().is_experimental_enabled()
 }
 
+#[must_use]
+pub(crate) fn is_secure_default_enabled() -> bool {
+    TokenlessConfig::load().is_secure_default_enabled()
+}
+
 // ── File & DB utilities ──────────────────────────────────────────────────────
 
-/// Read input from a file or stdin.
+/// Maximum input size accepted by `read_input` (10 MB).
+///
+/// Protects against OOM when a hook receives an unexpectedly large payload
+/// (e.g. a multi-GB log file piped through stdin or read from disk).
+const MAX_INPUT_BYTES: u64 = 10 * 1024 * 1024;
+
+/// Maximum input size accepted when secure-default mode is enabled (2 MB).
+const MAX_SECURE_INPUT_BYTES: u64 = 2 * 1024 * 1024;
+
+/// Maximum file size for secure-default report appends.
+const MAX_SECURE_REPORT_BYTES: u64 = 1024 * 1024;
+
+#[must_use]
+pub(crate) fn input_limit_bytes() -> u64 {
+    if TokenlessConfig::load().is_secure_default_enabled() {
+        MAX_SECURE_INPUT_BYTES
+    } else {
+        MAX_INPUT_BYTES
+    }
+}
+
+/// Read input from a file or stdin, with a size limit.
+///
+/// # Errors
+///
+/// Returns an error if the file exceeds [`MAX_INPUT_BYTES`], stdin exceeds
+/// the limit, or any I/O failure occurs.
+#[allow(
+    clippy::ref_option,
+    reason = "called from clap-generated structs where field is Option<String>; borrowing avoids clones"
+)]
 pub(crate) fn read_input(file: &Option<String>) -> Result<String, String> {
-    match file {
-        Some(path) => {
-            fs::read_to_string(path).map_err(|e| format!("Failed to read file '{path}': {e}"))
+    let limit = input_limit_bytes();
+    if let Some(path) = file {
+        let meta = fs::metadata(path).map_err(|e| format!("Failed to stat '{path}': {e}"))?;
+        if meta.len() > limit {
+            return Err(format!(
+                "Input file too large: {} bytes (limit: {limit})",
+                meta.len()
+            ));
         }
-        None => {
-            let mut buf = String::new();
-            io::stdin()
-                .read_to_string(&mut buf)
-                .map_err(|e| format!("Failed to read stdin: {e}"))?;
-            Ok(buf)
-        }
+        fs::read_to_string(path).map_err(|e| format!("Failed to read file '{path}': {e}"))
+    } else {
+        let mut buf = String::new();
+        io::stdin()
+            .take(limit)
+            .read_to_string(&mut buf)
+            .map_err(|e| format!("Failed to read stdin: {e}"))?;
+        Ok(buf)
     }
 }
 
 /// Get the user's home directory path.
 #[must_use]
 pub(crate) fn get_home_dir() -> String {
-    dirs::home_dir()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| std::env::var("HOME").unwrap_or_else(|_| ".".to_string()))
+    dirs::home_dir().map_or_else(
+        || std::env::var("HOME").unwrap_or_else(|_| ".".to_string()),
+        |p| p.display().to_string(),
+    )
 }
 
 /// Get the tokenless workspace directory (`~/.tokenfleet-ai/tokenless`).
@@ -101,9 +144,23 @@ pub(crate) fn get_tokenless_dir() -> std::path::PathBuf {
 }
 
 /// Get the stats database path from env or default.
+///
+/// When `TOKENLESS_STATS_DB` is set, canonicalizes and validates that the
+/// path is within the user's home directory to prevent symlink traversal.
 pub(crate) fn get_db_path() -> String {
-    std::env::var("TOKENLESS_STATS_DB")
-        .unwrap_or_else(|_| get_tokenless_dir().join("stats.db").display().to_string())
+    if let Ok(env_path) = std::env::var("TOKENLESS_STATS_DB")
+        && let Ok(canonical) = std::path::Path::new(&env_path).canonicalize()
+    {
+        let home = std::path::PathBuf::from(get_home_dir());
+        if canonical.starts_with(&home) || canonical.starts_with("/tmp") {
+            return canonical.display().to_string();
+        }
+        tracing::warn!(
+            path = %env_path,
+            "TOKENLESS_STATS_DB outside home/tmp, falling back to default"
+        );
+    }
+    get_tokenless_dir().join("stats.db").display().to_string()
 }
 
 /// Get the reports directory for sending before-stats to agent-proxy.
@@ -133,15 +190,13 @@ pub(crate) fn open_recorder() -> Result<StatsRecorder, (String, i32)> {
     StatsRecorder::new(get_db_path()).map_err(|e| (format!("Failed to open database: {e}"), 1))
 }
 
-// ── Stats helpers ────────────────────────────────────────────────────────────
-
 /// Record compression stats — fail-silent so compression output is never blocked.
 ///
 /// `experimental` should be `true` only when the operation used experimental
 /// features (format router, semantic compression, diff, etc.).
 /// `method` identifies the specific compression strategy used (e.g. `"ToonHrv"`,
 /// `"HighFidelity"`, `"RtkStandard"`).
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
 pub(crate) fn record_compression_stats(
     op: OperationType,
     agent_id: Option<String>,
@@ -158,30 +213,43 @@ pub(crate) fn record_compression_stats(
         return;
     }
 
+    let before_secret = SecretBox::from(before_text.into_boxed_str());
+    let after_secret = SecretBox::from(after_text.into_boxed_str());
+    let before_view = before_secret.expose_secret();
+    let after_view = after_secret.expose_secret();
+
     let (before_bytes, after_bytes, before_tokens, after_tokens) = if op
         == OperationType::RewriteCommand
     {
-        let n = before_text.len();
+        let n = before_view.len();
         let bt = estimate_tokens_from_bytes(n);
-        // Use RTK's own classification to estimate savings rate and
-        // average output tokens per command category.
-        let (rate, avg_out) = estimate_rtk_savings(&before_text);
-        // Use RTK's per-category avg output tokens if available (more
-        // accurate than flat percentage), otherwise fall back to rate.
+        let (rate, avg_out) = estimate_rtk_savings(before_view);
+        #[allow(
+            clippy::cast_precision_loss,
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "token estimates are display-only; values are small (bytes of CLI text)"
+        )]
         let at = if avg_out > 0 && avg_out < bt {
             avg_out
         } else {
             (bt as f64 * (1.0 - rate)).ceil() as usize
         };
+        #[allow(
+            clippy::cast_precision_loss,
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "byte-length estimates are display-only; values are small"
+        )]
         let ab = (n as f64 * (1.0 - rate)).ceil() as usize;
         (n, ab, bt, at)
     } else {
-        let bb = before_text.len();
-        let ab = after_text.len();
+        let bb = before_view.len();
+        let ab = after_view.len();
         let bt = estimate_tokens_from_bytes(bb);
         let at = estimate_tokens_from_bytes(ab);
         if at >= bt {
-            eprintln!("[tokenless] record_compression_stats SKIP: at={at} >= bt={bt} op={op:?}");
+            tracing::debug!(after_tokens = at, before_tokens = bt, operation = ?op, "skipping non-saving stats record");
             return;
         }
         (bb, ab, bt, at)
@@ -200,8 +268,8 @@ pub(crate) fn record_compression_stats(
         after_bytes,
         after_tokens,
     )
-    .with_before_text(before_text)
-    .with_after_text(after_text)
+    .with_before_text(before_view.to_string())
+    .with_after_text(after_view.to_string())
     .with_experimental_mode(experimental);
     if let Some(sid) = session_id.clone() {
         record = record.with_session_id(sid);
@@ -212,7 +280,7 @@ pub(crate) fn record_compression_stats(
     if let Some(p) = project.clone() {
         record = record.with_project(p);
     }
-    record = record.with_source_pid(pid as i64);
+    record = record.with_source_pid(i64::from(pid));
 
     if let Ok(recorder) = open_recorder() {
         if let Err(e) = recorder.record(&record) {
@@ -222,7 +290,6 @@ pub(crate) fn record_compression_stats(
         tracing::warn!("failed to open stats recorder");
     }
 
-    // ── Fire-and-forget: append report for agent-proxy ─────────────
     if let Some(sid) = session_id {
         let _ = append_report_to_file(ProxyReport {
             session_id: sid,
@@ -253,7 +320,7 @@ fn estimate_rtk_savings(before_text: &str) -> (f64, usize) {
         .and_then(|v| {
             v.pointer("/tool_input/command")
                 .and_then(|c| c.as_str())
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
         })
         .unwrap_or_default();
 
@@ -279,6 +346,11 @@ fn estimate_rtk_savings(before_text: &str) -> (f64, usize) {
 }
 
 /// Print a token savings report to stderr.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
 pub(crate) fn eprint_report(
     before_chars: usize,
     before_tokens: usize,
@@ -297,6 +369,9 @@ pub(crate) fn eprint_report(
         after_tokens,
         saved_pct,
         "compression report"
+    );
+    eprintln!(
+        "[tokenless] chars: {before_chars} -> {after_chars}, tokens: {before_tokens} -> {after_tokens}, saved: {saved_pct:.1}%"
     );
 }
 
@@ -329,6 +404,7 @@ struct ProxyReport {
 ///
 /// This is fire-and-forget: failures are traced and written to an error
 /// log file but never block compression output.
+#[allow(clippy::needless_pass_by_value)]
 fn append_report_to_file(report: ProxyReport) -> Result<(), ()> {
     use std::io::Write;
 
@@ -341,8 +417,14 @@ fn append_report_to_file(report: ProxyReport) -> Result<(), ()> {
 
     let file_path = get_reports_dir().join(format!("{safe_sid}.jsonl"));
 
+    if is_secure_default_enabled()
+        && fs::metadata(&file_path).is_ok_and(|meta| meta.len() >= MAX_SECURE_REPORT_BYTES)
+    {
+        tracing::warn!(path = %file_path.display(), "report file reached secure-default size cap");
+        return Err(());
+    }
+
     let line = serde_json::to_string(&report).map_err(|e| {
-        eprintln!("[tokenless] report serialize failed: {e}");
         tracing::warn!(error = %e, session_id = %safe_sid, "report serialize failed");
     })?;
 
@@ -351,19 +433,10 @@ fn append_report_to_file(report: ProxyReport) -> Result<(), ()> {
         .append(true)
         .open(&file_path)
         .map_err(|e| {
-            eprintln!(
-                "[tokenless] report file open failed: {e} path={}",
-                file_path.display()
-            );
             tracing::warn!(error = %e, path = %file_path.display(), "report file open failed");
         })?;
 
-    eprintln!(
-        "[tokenless] report written: op={:?} saved={} session={}",
-        report.op_type, report.saved_tokens, safe_sid
-    );
     writeln!(f, "{line}").map_err(|e| {
-        eprintln!("[tokenless] report write failed: {e}");
         tracing::warn!(error = %e, session_id = %safe_sid, "report write failed");
     })
 }

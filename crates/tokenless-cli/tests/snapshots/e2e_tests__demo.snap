@@ -1,0 +1,33 @@
+---
+source: crates/tokenless-cli/tests/e2e_tests.rs
+assertion_line: 69
+expression: output
+---
+╔══════════════════════════════════════════╗
+║     Tokenless Compression Demo           ║
+╚══════════════════════════════════════════╝
+
+1. Schema Compression
+─────────────────────
+   chars: 467 → 404  tokens: ~117 → ~101  saved: 13.7%
+
+2. Response Compression
+───────────────────────
+   drops: debug, trace, logs, null, empty[]
+   chars: 222 → 78  tokens: ~56 → ~20  saved: 64.3%
+
+3. TOON Encoding
+─────────────────
+   JSON → TOON
+   chars: 109 → 94  tokens: ~28 → ~24  saved: 14.3%
+
+4. Command Rewriting
+─────────────────────
+   git status → rtk git status
+   kubectl get pods → rtk kubectl get pods
+   cargo test → rtk cargo test
+   docker ps → rtk docker ps
+
+──────────────────────────
+Demo complete. To enable automatic optimization:
+  tokenless init

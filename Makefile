@@ -2,7 +2,7 @@ BIN_DIR ?= $(HOME)/.local/bin
 ADAPTER_DIR ?= $(HOME)/.local/share/anolisa/adapters/tokenless
 
 build:
-	@cargo build --release
+	@cargo build --release --features tokenless-semantic/onnx
 
 test:
 	@cargo test

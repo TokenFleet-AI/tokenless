@@ -27,7 +27,7 @@ pub(crate) use spec::{
 };
 
 /// Run the env-check command.
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::fn_params_excessive_bools)]
 pub fn run(
     tool: Option<&str>,
     all: bool,
@@ -56,8 +56,7 @@ pub fn run(
             specs
                 .iter()
                 .find(|(_, spec)| spec.aliases.iter().any(|a| a == t))
-                .map(|(k, _)| k.clone())
-                .unwrap_or_else(|| t.to_string())
+                .map_or_else(|| t.to_string(), |(k, _)| k.clone())
         };
         if !specs.contains_key(&resolved) {
             if json {
@@ -179,6 +178,7 @@ pub fn run(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use serde_json::json;
 

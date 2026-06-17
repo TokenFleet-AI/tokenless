@@ -61,11 +61,47 @@ pub fn select_strategy(shape: &JsonShape) -> Strategy {
 /// Returns the selected strategy and the compressed output string.
 /// When experimental mode is disabled via [`crate::set_experimental_mode`],
 /// falls back to core response compression instead of using enhanced encoders.
+///
+/// Prefer [`compress_auto_with`] for explicit, testable control — this
+/// function reads the global [`crate::is_experimental_mode`] flag.
 #[must_use]
 pub fn compress_auto(value: &Value, input_str: &str) -> (Strategy, String) {
+    let options =
+        crate::CompressionOptions::default().with_experimental_mode(crate::is_experimental_mode());
+    compress_auto_with(value, input_str, &options)
+}
+
+/// Analyze, select strategy, and encode with explicit [`crate::CompressionOptions`].
+///
+/// This is the core entry point. Unlike [`compress_auto`], it accepts an
+/// explicit options struct so callers can control experimental features
+/// without touching global state — ideal for testing.
+///
+/// # Examples
+///
+/// ```
+/// use serde_json::json;
+/// use tokenless_schema::{CompressionOptions, compress_auto_with};
+///
+/// let value = json!({"name": "test"});
+/// let input_str = serde_json::to_string(&value).unwrap();
+///
+/// // Use default options (experimental mode on):
+/// let (strategy, output) = compress_auto_with(&value, &input_str, &CompressionOptions::default());
+///
+/// // Explicitly disable experimental features:
+/// let opts = CompressionOptions::new().with_experimental_mode(false);
+/// let (strategy, output) = compress_auto_with(&value, &input_str, &opts);
+/// ```
+#[must_use]
+pub fn compress_auto_with(
+    value: &Value,
+    input_str: &str,
+    options: &crate::CompressionOptions,
+) -> (Strategy, String) {
     // When experimental mode is off, skip the format router entirely
     // and fall back to core response compression.
-    if !crate::is_experimental_mode() {
+    if !options.experimental_mode {
         let compressor = crate::ResponseCompressor::new();
         let compressed = compressor.compress(value);
         let output = serde_json::to_string(&compressed).unwrap_or_default();
@@ -233,5 +269,115 @@ mod tests {
         assert_eq!(strategy_name(&Strategy::EnhancedToon), "enhanced-toon");
         assert_eq!(strategy_name(&Strategy::CjsonCompact), "cjson-compact");
         assert_eq!(strategy_name(&Strategy::CompressorOnly), "passthrough");
+    }
+
+    // ── compress_auto_with ────────────────────────────────────────────
+
+    #[test]
+    #[allow(
+        clippy::unwrap_used,
+        reason = "test: unwrap on known-valid serialization"
+    )]
+    fn test_compress_auto_with_experimental_disabled_falls_back() {
+        let value = json!({
+            "items": [
+                {"name": "admin", "role": "superuser"},
+                {"name": "user", "role": "member"},
+                {"name": "guest", "role": "viewer"},
+                {"name": "editor", "role": "writer"},
+                {"name": "moderator", "role": "manager"}
+            ]
+        });
+        let input_str = serde_json::to_string(&value).unwrap();
+        let options = crate::CompressionOptions::new().with_experimental_mode(false);
+        let (strategy, output) = compress_auto_with(&value, &input_str, &options);
+        assert_eq!(
+            strategy,
+            Strategy::CompressorOnly,
+            "experimental=false should always use CompressorOnly"
+        );
+        assert!(!output.is_empty());
+    }
+
+    #[test]
+    #[allow(
+        clippy::unwrap_used,
+        reason = "test: unwrap on known-valid serialization"
+    )]
+    fn test_compress_auto_with_experimental_enabled_uses_router() {
+        // Top-level uniform array with >= 5 items and > 200 chars routes to ToonHrv.
+        let value = json!([
+            {"name": "admin", "role": "superuser", "permissions": "full_access"},
+            {"name": "user", "role": "member", "permissions": "restricted_access"},
+            {"name": "guest", "role": "viewer", "permissions": "read_only_access"},
+            {"name": "editor", "role": "writer", "permissions": "content_management"},
+            {"name": "moderator", "role": "manager", "permissions": "moderation_access"}
+        ]);
+        let input_str = serde_json::to_string(&value).unwrap();
+        assert!(
+            input_str.len() >= 200,
+            "test fixture must exceed 200 chars to trigger routing; got {}",
+            input_str.len()
+        );
+        let options = crate::CompressionOptions::default();
+        let (strategy, output) = compress_auto_with(&value, &input_str, &options);
+        // With experimental mode on, top-level uniform array of 5 items → ToonHrv
+        assert_eq!(
+            strategy,
+            Strategy::ToonHrv,
+            "experimental=true should route uniform arrays to ToonHrv"
+        );
+        assert!(!output.is_empty());
+    }
+
+    #[test]
+    #[allow(
+        clippy::unwrap_used,
+        reason = "test: unwrap on known-valid serialization"
+    )]
+    fn test_compress_auto_and_compress_auto_with_are_consistent() {
+        // When the global flag matches the explicit option, both functions
+        // should produce identical output.
+        crate::set_experimental_mode(true);
+        let value = json!({
+            "items": [
+                {"a": 1, "b": 2},
+                {"a": 3, "b": 4},
+                {"a": 5, "b": 6},
+                {"a": 7, "b": 8},
+                {"a": 9, "b": 10}
+            ]
+        });
+        let input_str = serde_json::to_string(&value).unwrap();
+        let (s1, o1) = compress_auto(&value, &input_str);
+        let opts = crate::CompressionOptions::default();
+        let (s2, o2) = compress_auto_with(&value, &input_str, &opts);
+        assert_eq!(s1, s2);
+        assert_eq!(o1, o2);
+    }
+
+    #[test]
+    #[allow(
+        clippy::unwrap_used,
+        reason = "test: unwrap on known-valid serialization"
+    )]
+    fn test_compress_auto_with_respects_disabled_despite_global() {
+        // Even if the global flag is true, compress_auto_with should
+        // respect the explicit CompressionOptions.
+        crate::set_experimental_mode(true);
+        let value = json!({
+            "items": [
+                {"name": "a"}, {"name": "b"}, {"name": "c"},
+                {"name": "d"}, {"name": "e"}
+            ]
+        });
+        let input_str = serde_json::to_string(&value).unwrap();
+        let options = crate::CompressionOptions::new().with_experimental_mode(false);
+        let (strategy, _output) = compress_auto_with(&value, &input_str, &options);
+        assert_eq!(
+            strategy,
+            Strategy::CompressorOnly,
+            "explicit options should take precedence over global state"
+        );
     }
 }

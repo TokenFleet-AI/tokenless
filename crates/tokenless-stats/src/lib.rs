@@ -9,6 +9,8 @@
     clippy::cast_possible_wrap,
     clippy::cast_precision_loss,
     clippy::collapsible_if,
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
     clippy::doc_markdown,
     clippy::format_push_string,
     clippy::items_after_statements,
@@ -29,12 +31,13 @@ pub mod tokenizer;
 #[doc(inline)]
 pub use config::TokenlessConfig;
 #[doc(inline)]
-pub use query::{
-    format_diff, format_list, format_rewrites, format_show, format_summary, parse_time_range,
-};
+pub use query::parse_time_range;
 #[doc(inline)]
 pub use record::{OperationType, StatsRecord};
 #[doc(inline)]
-pub use recorder::{StatsError, StatsRecorder, StatsResult, StatsSummary};
+pub use recorder::{
+    DbInfo, RedactedText, RedactionOutcome, StatsError, StatsRecorder, StatsResult, StatsSummary,
+    sanitize_stats_text,
+};
 #[doc(inline)]
 pub use tokenizer::{estimate_tokens, estimate_tokens_cjk_aware, estimate_tokens_from_bytes};

@@ -5,15 +5,17 @@ use tokenless_stats::TokenlessConfig;
 use crate::init;
 
 /// Handle `tokenless init`.
+#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
 pub(crate) fn handle(
     global: bool,
-    agent: String,
+    agent: &str,
     debug: bool,
     compress: bool,
     no_compress: bool,
     passthrough: bool,
+    secure_default: bool,
 ) -> Result<(), (String, i32)> {
-    let agent = match agent.as_str() {
+    let agent = match agent {
         "cursor" => init::Agent::Cursor,
         "windsurf" => init::Agent::Windsurf,
         "cline" => init::Agent::Cline,
@@ -25,6 +27,7 @@ pub(crate) fn handle(
         "gemini" => init::Agent::Gemini,
         "opencode" => init::Agent::Opencode,
         "copilot" => init::Agent::Copilot,
+        "codex" => init::Agent::Codex,
         _ => init::Agent::Claude,
     };
 
@@ -55,6 +58,7 @@ pub(crate) fn handle(
 
     // Persist passthrough mode
     config.passthrough_mode = passthrough;
+    config.secure_default = secure_default;
 
     // Record init timestamp
     config.last_init_at = Some(chrono::Utc::now().to_rfc3339());

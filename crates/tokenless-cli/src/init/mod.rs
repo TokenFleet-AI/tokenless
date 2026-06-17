@@ -1,7 +1,7 @@
 //! `tokenless init` — Install tokenless hooks for AI coding agents.
 //!
 //! Supported agents: claude (default), cursor, windsurf, cline, kilocode,
-//! antigravity, augment, hermes, pi, gemini, opencode.
+//! antigravity, augment, hermes, pi, gemini, opencode, copilot, codex.
 
 pub mod user_detect;
 
@@ -52,10 +52,12 @@ pub enum Agent {
     Pi,
     /// Gemini CLI.
     Gemini,
-    /// OpenCode VS Code extension.
+    /// `OpenCode` VS Code extension.
     Opencode,
     /// GitHub Copilot (VS Code + CLI).
     Copilot,
+    /// `OpenAI` `Codex` CLI (`AGENTS.md` + `RTK.md` rules, no hooks).
+    Codex,
 }
 
 #[cfg(test)]
@@ -196,6 +198,7 @@ pub fn run(agent: Agent, config: &InitConfig) -> Result<(), String> {
         Agent::Gemini => init_gemini(config),
         Agent::Opencode => init_opencode(config),
         Agent::Copilot => init_copilot(config),
+        Agent::Codex => init_codex(config),
     }
 }
 
@@ -239,22 +242,21 @@ fn detect_project_name(cwd: &Path, cli_override: Option<&str>) -> String {
         .args(["remote", "get-url", "origin"])
         .current_dir(cwd)
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if let Some(name) = extract_repo_name(&url) {
-                return name;
-            }
+        let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if let Some(name) = extract_repo_name(&url) {
+            return name;
         }
     }
 
     // 3. Cargo.toml [package].name
-    if let Some(name) = read_manifest_field(cwd.join("Cargo.toml"), "package.name") {
+    if let Some(name) = read_manifest_field(&cwd.join("Cargo.toml"), "package.name") {
         return name;
     }
 
     // 4. package.json "name"
-    if let Some(name) = read_manifest_field(cwd.join("package.json"), "name") {
+    if let Some(name) = read_manifest_field(&cwd.join("package.json"), "name") {
         return name;
     }
 
@@ -280,20 +282,20 @@ fn extract_repo_name(url: &str) -> Option<String> {
 }
 
 /// Read a field from a JSON or TOML manifest file using simple line-based parsing.
-fn read_manifest_field(path: std::path::PathBuf, field_path: &str) -> Option<String> {
-    let content = std::fs::read_to_string(&path).ok()?;
+fn read_manifest_field(path: &Path, field_path: &str) -> Option<String> {
+    let content = std::fs::read_to_string(path).ok()?;
 
     match field_path {
         "package.name" => {
             // Simple line-based parse for Cargo.toml: name = "value"
             for line in content.lines() {
                 let trimmed = line.trim();
-                if trimmed.starts_with("name") {
-                    if let Some(val) = trimmed.split('=').nth(1) {
-                        let val = val.trim().trim_matches('"').trim_matches('\'');
-                        if !val.is_empty() {
-                            return Some(val.to_string());
-                        }
+                if trimmed.starts_with("name")
+                    && let Some(val) = trimmed.split('=').nth(1)
+                {
+                    let val = val.trim().trim_matches('"').trim_matches('\'');
+                    if !val.is_empty() {
+                        return Some(val.to_string());
                     }
                 }
             }
@@ -303,16 +305,16 @@ fn read_manifest_field(path: std::path::PathBuf, field_path: &str) -> Option<Str
             // Simple parse for package.json: "name": "value"
             for line in content.lines() {
                 let trimmed = line.trim();
-                if trimmed.starts_with("\"name\"") || trimmed.starts_with("\"name ") {
-                    if let Some(val) = trimmed.split(':').nth(1) {
-                        let val = val
-                            .trim()
-                            .trim_matches('"')
-                            .trim_matches('\'')
-                            .trim_end_matches(',');
-                        if !val.is_empty() {
-                            return Some(val.to_string());
-                        }
+                if (trimmed.starts_with("\"name\"") || trimmed.starts_with("\"name "))
+                    && let Some(val) = trimmed.split(':').nth(1)
+                {
+                    let val = val
+                        .trim()
+                        .trim_matches('"')
+                        .trim_matches('\'')
+                        .trim_end_matches(',');
+                    if !val.is_empty() {
+                        return Some(val.to_string());
                     }
                 }
             }
@@ -397,14 +399,12 @@ fn init_claude(config: &InitConfig) -> Result<(), String> {
       {{
         "matcher": "Bash",
         "hooks": [
-          {{ "type": "command", "command": "tokenless hook rewrite --target claude{project}{user}" }}
+          {{ "type": "command", "command": "tokenless hook rewrite --target claude{project_flag}{user_flag}" }}
         ]
       }}
     ]
   }}
 }}"#,
-            project = project_flag,
-            user = user_flag,
         )
     } else {
         format!(
@@ -415,7 +415,7 @@ fn init_claude(config: &InitConfig) -> Result<(), String> {
       {{
         "matcher": "Bash",
         "hooks": [
-          {{ "type": "command", "command": "tokenless hook rewrite --target claude{project}{user}" }}
+          {{ "type": "command", "command": "tokenless hook rewrite --target claude{project_flag}{user_flag}" }}
         ]
       }}
     ],
@@ -423,15 +423,12 @@ fn init_claude(config: &InitConfig) -> Result<(), String> {
       {{
         "matcher": "^(?!Bash$).*",
         "hooks": [
-          {{ "type": "command", "command": "tokenless hook compress --semantic --target claude{project}{debug}{user}" }}
+          {{ "type": "command", "command": "tokenless hook compress --semantic --target claude{project_flag}{debug_flag}{user_flag}" }}
         ]
       }}
     ]
   }}
 }}"#,
-            project = project_flag,
-            debug = debug_flag,
-            user = user_flag,
         )
     };
 
@@ -447,10 +444,10 @@ fn init_claude(config: &InitConfig) -> Result<(), String> {
     }
     println!(
         "  compress: {}",
-        if config.compress != Some(false) {
-            "enabled"
-        } else {
+        if config.compress == Some(false) {
             "disabled"
+        } else {
+            "enabled"
         }
     );
     if config.passthrough {
@@ -688,7 +685,151 @@ fn init_opencode(config: &InitConfig) -> Result<(), String> {
     Ok(())
 }
 
+// ── Codex CLI ───────────────────────────────────────────────
+//
+// Codex has no hook protocol. Integration is via AGENTS.md + RTK.md
+// rules files (same pattern as RTK project hooks/codex/).
+
+/// RTK awareness content for Codex CLI.
+const CODEX_RULES: &str = r"# RTK - Rust Token Killer (Codex CLI)
+
+**Usage**: Token-optimized CLI proxy for shell commands.
+
+## Rule
+
+Always prefix shell commands with `rtk`.
+
+Examples:
+
+```bash
+rtk git status
+rtk cargo test
+rtk npm run build
+rtk pytest -q
+```
+
+## Meta Commands
+
+```bash
+rtk gain            # Token savings analytics
+rtk gain --history  # Recent command savings history
+rtk proxy <cmd>     # Run raw command without filtering
+```
+
+## Verification
+
+```bash
+rtk --version
+rtk gain
+which rtk
+```
+";
+
+const RTK_MD: &str = "RTK.md";
+const AGENTS_MD: &str = "AGENTS.md";
+const RTK_MD_REF: &str = "@RTK.md";
+
+/// Resolve the Codex config directory.
+///
+/// Priority: `$CODEX_HOME` → `~/.codex/`.
+fn resolve_codex_dir() -> PathBuf {
+    resolve_codex_dir_from(
+        std::env::var_os("CODEX_HOME").map(PathBuf::from),
+        dirs::home_dir(),
+    )
+}
+
+/// Resolve Codex dir from explicit env + home fallback (testable).
+fn resolve_codex_dir_from(codex_home: Option<PathBuf>, home_dir: Option<PathBuf>) -> PathBuf {
+    if let Some(path) = codex_home.filter(|p| !p.as_os_str().is_empty()) {
+        return path;
+    }
+    home_dir.map_or_else(|| PathBuf::from(".codex"), |home| home.join(".codex"))
+}
+
+/// Generate the `@RTK.md` reference string.
+///
+/// In global mode, Codex resolves `@` references relative to CWD, not
+/// relative to AGENTS.md location. Use an absolute path for safety.
+fn codex_rtk_md_ref(codex_dir: &Path) -> String {
+    format!("@{}", codex_dir.join(RTK_MD).display())
+}
+
+/// Add an `@RTK.md` reference to AGENTS.md, preserving existing content.
+///
+/// Returns `Ok(true)` if the reference was added, `Ok(false)` if it
+/// already existed.
+fn add_ref_to_agents_md(agents_md: &Path, rtk_ref: &str) -> Result<bool, String> {
+    let content = if agents_md.exists() {
+        std::fs::read_to_string(agents_md)
+            .map_err(|e| format!("Failed to read {}: {e}", path_display(agents_md)))?
+    } else {
+        String::new()
+    };
+
+    // Idempotent: skip if reference already present
+    if content.contains(rtk_ref) || content.contains(RTK_MD_REF) {
+        return Ok(false);
+    }
+
+    let new_content = if content.is_empty() {
+        format!("{rtk_ref}\n")
+    } else {
+        format!("{}\n\n{rtk_ref}\n", content.trim())
+    };
+
+    write_file(agents_md, &new_content)?;
+    Ok(true)
+}
+
+fn init_codex(config: &InitConfig) -> Result<(), String> {
+    let (agents_md_path, rtk_md_path, codex_dir) = if config.global {
+        let dir = resolve_codex_dir();
+        (dir.join(AGENTS_MD), dir.join(RTK_MD), dir)
+    } else {
+        (
+            PathBuf::from(AGENTS_MD),
+            PathBuf::from(RTK_MD),
+            PathBuf::new(),
+        )
+    };
+
+    // Global mode: create parent dir, use absolute @ reference
+    if config.global
+        && let Some(parent) = agents_md_path.parent()
+    {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create {}: {e}", path_display(parent)))?;
+    }
+
+    let rtk_ref = if config.global {
+        codex_rtk_md_ref(&codex_dir)
+    } else {
+        RTK_MD_REF.to_string()
+    };
+
+    write_file(&rtk_md_path, CODEX_RULES)?;
+    let added = add_ref_to_agents_md(&agents_md_path, &rtk_ref)?;
+
+    let scope = if config.global { "global" } else { "project" };
+    println!("[tokenless] Installed rules for Codex CLI ({scope})");
+    println!("  RTK.md:    {}", path_display(&rtk_md_path));
+    if added {
+        println!("  AGENTS.md: {rtk_ref} reference added");
+    } else {
+        println!("  AGENTS.md: {rtk_ref} reference already present");
+    }
+    if config.global {
+        println!(
+            "\n  Codex global instructions path: {}",
+            path_display(&agents_md_path)
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -765,5 +906,178 @@ mod tests {
             extract_repo_name("https://github.com/user/repo"),
             Some("repo".to_string())
         );
+    }
+
+    // ── Codex tests (TDD RED → GREEN) ──────────────────────────
+
+    /// Helper: run init for Codex against a temp dir.
+    fn init_codex_at(dir: &Path, global: bool) -> Result<(), String> {
+        let agents_md = dir.join(AGENTS_MD);
+        let rtk_md = dir.join(RTK_MD);
+        if global {
+            fs::create_dir_all(dir).map_err(|e| format!("create dir: {e}"))?;
+        }
+        write_file(&rtk_md, CODEX_RULES)?;
+        let rtk_ref = if global {
+            codex_rtk_md_ref(dir)
+        } else {
+            RTK_MD_REF.to_string()
+        };
+        add_ref_to_agents_md(&agents_md, &rtk_ref)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_should_parse_agent_codex() {
+        let agent_str = "codex";
+        let agent = match agent_str {
+            "cursor" => Agent::Cursor,
+            "codex" => Agent::Codex,
+            _ => Agent::Claude,
+        };
+        assert_eq!(agent, Agent::Codex);
+    }
+
+    #[test]
+    fn test_should_init_codex_project_local_writes_rtk_md() {
+        let dir = std::env::temp_dir().join("tl-codex-test-project");
+        let _ = std::fs::remove_dir_all(&dir);
+        let rtk_md = dir.join(RTK_MD);
+
+        init_codex_at(&dir, false).unwrap();
+
+        assert!(rtk_md.exists(), "RTK.md should exist");
+        let content = std::fs::read_to_string(&rtk_md).unwrap();
+        assert!(content.contains("RTK - Rust Token Killer"));
+        assert!(content.contains("rtk git status"));
+        assert!(content.contains("Codex CLI"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_should_init_codex_patches_agents_md() {
+        let dir = std::env::temp_dir().join("tl-codex-test-agents");
+        let _ = std::fs::remove_dir_all(&dir);
+        let agents_md = dir.join(AGENTS_MD);
+
+        init_codex_at(&dir, false).unwrap();
+
+        assert!(agents_md.exists(), "AGENTS.md should exist");
+        let content = std::fs::read_to_string(&agents_md).unwrap();
+        assert!(
+            content.contains("@RTK.md"),
+            "should contain @RTK.md reference"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_should_init_codex_global_writes_to_codex_home() {
+        let dir = std::env::temp_dir().join("tl-codex-test-global");
+        let _ = std::fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        init_codex_at(&dir, true).unwrap();
+
+        assert!(dir.join(RTK_MD).exists(), "global RTK.md should exist");
+        assert!(
+            dir.join(AGENTS_MD).exists(),
+            "global AGENTS.md should exist"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_should_init_codex_global_uses_absolute_reference() {
+        let dir = std::env::temp_dir().join("tl-codex-test-abs-ref");
+        let _ = std::fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        init_codex_at(&dir, true).unwrap();
+
+        let content = std::fs::read_to_string(dir.join(AGENTS_MD)).unwrap();
+        let expected_ref = codex_rtk_md_ref(&dir);
+        assert!(
+            content.contains(&expected_ref),
+            "global AGENTS.md should contain absolute @ reference: {expected_ref}"
+        );
+        assert!(
+            expected_ref != RTK_MD_REF,
+            "global reference must be absolute path, not relative"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_should_init_codex_idempotent() {
+        let dir = std::env::temp_dir().join("tl-codex-test-idempotent");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // First run
+        init_codex_at(&dir, false).unwrap();
+        let agents_before = std::fs::read_to_string(dir.join(AGENTS_MD)).unwrap();
+
+        // Second run
+        init_codex_at(&dir, false).unwrap();
+        let agents_after = std::fs::read_to_string(dir.join(AGENTS_MD)).unwrap();
+
+        assert_eq!(
+            agents_before.matches("@RTK.md").count(),
+            agents_after.matches("@RTK.md").count(),
+            "AGENTS.md ref count should be idempotent"
+        );
+        assert_eq!(
+            agents_before, agents_after,
+            "AGENTS.md unchanged on second run"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_should_resolve_codex_dir_from_env() {
+        let custom = PathBuf::from("/tmp/custom-codex-home");
+        let result = resolve_codex_dir_from(Some(custom.clone()), None);
+        assert_eq!(result, custom);
+    }
+
+    #[test]
+    fn test_should_resolve_codex_dir_fallback_to_dot_codex() {
+        let home = PathBuf::from("/Users/testuser");
+        let result = resolve_codex_dir_from(None, Some(home.clone()));
+        assert_eq!(result, home.join(".codex"));
+        let result_empty = resolve_codex_dir_from(Some(PathBuf::new()), Some(home.clone()));
+        assert_eq!(result_empty, home.join(".codex"));
+    }
+
+    #[test]
+    fn test_should_init_codex_preserves_existing_agents_md() {
+        let dir = std::env::temp_dir().join("tl-codex-test-preserve");
+        let _ = std::fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(AGENTS_MD),
+            "# My Project\n\nSome custom instructions.\n",
+        )
+        .unwrap();
+
+        init_codex_at(&dir, false).unwrap();
+
+        let content = std::fs::read_to_string(dir.join(AGENTS_MD)).unwrap();
+        assert!(
+            content.contains("My Project"),
+            "should preserve existing content"
+        );
+        assert!(
+            content.contains("custom instructions"),
+            "should preserve custom text"
+        );
+        assert!(content.contains("@RTK.md"), "should add RTK reference");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -115,7 +115,7 @@ tokenless-schema ← tokenless-cli → tokenless-stats
 cargo install tokenless
 ```
 
-需要 Rust >= 1.85。安装到 `~/.cargo/bin/`。
+需要 Rust >= 1.89。安装到 `~/.cargo/bin/`。
 
 ### 预编译二进制
 
@@ -156,7 +156,7 @@ make setup
 
 ### 前提条件
 
-- Rust >= 1.85
+- Rust >= 1.89
 - 命令重写需要安装 [RTK](https://github.com/TokenFleet-AI/rtk)：`cargo install rtk`（可选——核心压缩无需 RTK）
 
 ---

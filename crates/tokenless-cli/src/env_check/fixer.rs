@@ -3,13 +3,19 @@
 //! Provides the auto-fix script runner and formatting helpers for
 //! displaying tool-ready check results.
 
-use std::process::Command;
+use std::{fmt::Write, process::Command};
+
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 
 use serde_json::Value;
 
-use crate::env_check::{
-    checker::{DepStatus, ReadyStatus, ToolReadyResult},
-    spec::DepEntry,
+use crate::{
+    env_check::{
+        checker::{DepStatus, ReadyStatus, ToolReadyResult},
+        spec::DepEntry,
+    },
+    shared::is_secure_default_enabled,
 };
 
 pub(crate) fn format_status(status: &ReadyStatus) -> &'static str {
@@ -33,38 +39,43 @@ pub(crate) fn generate_checklist(results: &[ToolReadyResult]) -> String {
     let mut output =
         String::from("Tool Environment Ready Checklist\n=================================\n\n");
     for result in results {
-        output.push_str(&format!(
-            "{} [{}]\n",
+        let _ = writeln!(
+            output,
+            "{} [{}]",
             result.tool_name,
             format_status(&result.status)
-        ));
+        );
         for (dep, status) in &result.required_results {
-            output.push_str(&format!(
-                "  required:   {:12} {}\n",
+            let _ = writeln!(
+                output,
+                "  required:   {:12} {}",
                 dep.binary,
                 format_dep_status_label(status)
-            ));
+            );
         }
         for (dep, status) in &result.recommended_results {
-            output.push_str(&format!(
-                "  recommended:{:12} {}\n",
+            let _ = writeln!(
+                output,
+                "  recommended:{:12} {}",
                 dep.binary,
                 format_dep_status_label(status)
-            ));
+            );
         }
         for (cfg, ok) in &result.config_results {
-            output.push_str(&format!(
-                "  config:     {:12} {}\n",
+            let _ = writeln!(
+                output,
+                "  config:     {:12} {}",
                 cfg,
                 if *ok { "INSTALLED" } else { "MISSING" }
-            ));
+            );
         }
         for (perm, ok) in &result.permission_results {
-            output.push_str(&format!(
-                "  permission: {:12} {}\n",
+            let _ = writeln!(
+                output,
+                "  permission: {:12} {}",
                 perm,
                 if *ok { "GRANTED" } else { "DENIED" }
-            ));
+            );
         }
         output.push('\n');
     }
@@ -81,11 +92,12 @@ pub(crate) fn generate_checklist(results: &[ToolReadyResult]) -> String {
         .iter()
         .filter(|r| r.status == ReadyStatus::NotReady)
         .count();
-    output.push_str(&format!(
+    let _ = writeln!(
+        output,
         "Summary: {ready_count} ready, {partial_count} partial, {not_ready_count} not ready \
-         (total: {})\n",
+         (total: {})",
         results.len()
-    ));
+    );
     output
 }
 
@@ -132,7 +144,20 @@ pub(crate) fn auto_fix(missing_deps: &[DepEntry]) -> Result<String, String> {
     let home = crate::shared::get_home_dir();
     let cwd = std::env::current_dir().ok();
     let fix_script_candidates = [
-        std::env::var("TOKENLESS_ENV_FIX_SCRIPT").ok(),
+        std::env::var("TOKENLESS_ENV_FIX_SCRIPT")
+            .ok()
+            .and_then(|p| {
+                std::path::Path::new(&p).canonicalize().ok().and_then(|canon| {
+                    let h = std::path::Path::new(&home);
+                    if canon.starts_with(h) || canon.starts_with("/tmp") || canon.starts_with("/usr") {
+                        Some(canon.display().to_string())
+                    } else {
+                        tracing::warn!(path = %p, "TOKENLESS_ENV_FIX_SCRIPT outside allowed dirs");
+                        None
+                    }
+                })
+            })
+            .or_else(|| std::env::var("TOKENLESS_ENV_FIX_SCRIPT").ok()),
         cwd.as_ref().map(|d| {
             d.join("adapters/tokenless/common/tokenless-env-fix.sh")
                 .to_string_lossy()
@@ -155,6 +180,29 @@ pub(crate) fn auto_fix(missing_deps: &[DepEntry]) -> Result<String, String> {
         })
         .cloned()
         .unwrap_or_else(|| format!("{home}/.tokenfleet-ai/tokenless/tokenless-env-fix.sh"));
+
+    if is_secure_default_enabled() {
+        let script_path = std::path::Path::new(&fix_script);
+        let metadata = std::fs::metadata(script_path)
+            .map_err(|e| format!("Failed to stat fix script '{fix_script}': {e}"))?;
+        #[cfg(unix)]
+        {
+            if metadata.uid() != nix::unistd::Uid::effective().as_raw() {
+                return Err(format!(
+                    "Secure-default rejected fix script not owned by current user: {fix_script}"
+                ));
+            }
+            if metadata.mode() & 0o022 != 0 {
+                return Err(format!(
+                    "Secure-default rejected fix script with group/world write bits: {fix_script}"
+                ));
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = metadata; // stat succeeded; ownership/mode checks are Unix-only
+        }
+    }
 
     let deps_json: Vec<Value> = missing_deps
         .iter()

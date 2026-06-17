@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -32,12 +33,12 @@ jobs:
           components: rustfmt, clippy
 
       - name: Build
-        run: cargo build --release --workspace
+        run: cargo build --release --workspace --features tokenless-semantic/onnx
 
       - name: Test
         env:
           INSTA_UPDATE: always
-        run: cargo test --workspace
+        run: cargo test --workspace --features tokenless-semantic/onnx
 
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic
@@ -52,6 +53,42 @@ jobs:
       - name: Check agent sync
         if: runner.os == 'Linux'
         run: make check-agent-sync
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Generate coverage report
+        run: cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info --summary-only
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: lcov.info
+
+      - name: Enforce non-decreasing PR diff coverage
+        if: github.event_name == 'pull_request'
+        uses: VeryGoodOpenSource/very_good_coverage@v3
+        with:
+          path: lcov.info
+          min_coverage: 0
+          diff_base: ${{ github.event.pull_request.base.sha }}
+          diff_head: ${{ github.event.pull_request.head.sha }}
+          update_comment: true
+          fail_below_threshold: true
 
   audit:
     name: Security Audit

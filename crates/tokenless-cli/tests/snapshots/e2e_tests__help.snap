@@ -1,0 +1,31 @@
+---
+source: crates/tokenless-cli/tests/e2e_tests.rs
+assertion_line: 133
+expression: output
+---
+LLM token optimization via schema and response compression
+
+Usage: tokenless [OPTIONS] <COMMAND>
+
+Commands:
+  compress-schema    Compress `OpenAI` `Function Calling` tool schemas
+  compress-response  Compress a JSON API response (drop debug fields, truncate strings)
+  compress-auto      Auto-detect the best compression strategy and apply it
+  compress-toon      Encode JSON as TOON format
+  decompress-toon    Decode TOON format back to JSON
+  stats              View and manage compression statistics
+  rewrite            Rewrite a shell command to its RTK equivalent (dry-run)
+  hook               Agent hook protocol handlers (stdin JSON → stdout JSON)
+  init               Install tokenless hooks for supported AI coding agents
+  env-check          Check tool environment readiness
+  mcp                Start MCP JSON-RPC 2.0 server on stdin/stdout
+  demo               Show a demo of all compression strategies
+  doctor             Run environment diagnostic (binary, PATH, hooks, stats)
+  status             Show lightweight hook/stats status for quick daily check
+  tui                Launch the interactive TUI dashboard
+  help               Print this message or the help of the given subcommand(s)
+
+Options:
+      --secure-default  Enable stricter secure defaults for validation, logging, and helper execution
+  -h, --help            Print help
+  -V, --version         Print version

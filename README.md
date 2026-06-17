@@ -66,8 +66,8 @@ tokenless stats summary
 
 **Install options:** `cargo install tokenless`, download from [GitHub Releases](https://github.com/TokenFleet-AI/tokenless/releases), or `brew install tokenfleet/tap/tokenless`.
 
-> Supports **12 agents**: Claude Code, Cursor, Windsurf, Cline, Kilo Code, Antigravity, Augment, Hermes CLI, Pi, Gemini CLI, OpenCode, GitHub Copilot.
-> `tokenless init` auto-installs hooks. See [user guide §4](./docs/user-guide.md#4-agent-integration) for all 12 agents and manual configuration.
+> Supports **13 agents**: Claude Code, Cursor, Windsurf, Cline, Kilo Code, Antigravity, Augment, Hermes CLI, Pi, Gemini CLI, OpenCode, GitHub Copilot, OpenAI Codex.
+> `tokenless init` auto-installs hooks. See [user guide §4](./docs/user-guide.md#4-agent-integration) for all 13 agents and manual configuration.
 
 ## Architecture
 
@@ -88,7 +88,7 @@ tokenless/
 │   ├── mcp.rs                      # MCP JSON-RPC server (7 tools)
 │   └── env_check/                   # Tool environment readiness (parallel checks)
 ├── adapters/tokenless/             # FHS adapter bundle
-├── specs/                          # Design specifications (17+ docs)
+├── specs/                          # Design specifications (22 docs)
 └── docs/                           # User-facing documentation
 ```
 
@@ -187,6 +187,17 @@ tokenless env-check --tool Shell --fix   # Auto-fix missing deps
 tokenless stats summary              # Aggregated metrics
 tokenless stats list --limit 20      # Recent records
 tokenless stats show 5               # Record details
+tokenless stats delete --agent claude # Delete by agent
+tokenless stats vacuum               # Reclaim disk space
+tokenless stats export -o out.json   # Export to JSON
+tokenless stats diff --since 7d      # Savings over time
+```
+
+### doctor / status
+
+```bash
+tokenless doctor                     # Full environment diagnostic
+tokenless status                     # Lightweight daily savings check
 ```
 
 ### tui (Interactive Dashboard)

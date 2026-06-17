@@ -13,8 +13,9 @@ use crate::{
 };
 
 /// Handle `tokenless compress-schema`.
+#[allow(clippy::ref_option)]
 pub(crate) fn compress_schema(
-    file: Option<String>,
+    file: &Option<String>,
     batch: bool,
     report: bool,
     project: Option<String>,
@@ -22,7 +23,7 @@ pub(crate) fn compress_schema(
     session_id: Option<String>,
     tool_use_id: Option<String>,
 ) -> Result<(), (String, i32)> {
-    let input = read_input(&file).map_err(|e| (e, 2))?;
+    let input = read_input(file).map_err(|e| (e, 2))?;
     if let Some(cached) = cache::cache_get(&input) {
         println!("{cached}");
         return Ok(());
@@ -89,19 +90,18 @@ pub(crate) fn compress_schema(
     Ok(())
 }
 
-/// Handle `tokenless compress-response`.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::ref_option)]
 pub(crate) fn compress_response(
-    file: Option<String>,
+    file: &Option<String>,
     report: bool,
     semantic: bool,
-    context: Option<String>,
+    context: &Option<String>,
     project: Option<String>,
     agent_id: Option<String>,
     session_id: Option<String>,
     tool_use_id: Option<String>,
 ) -> Result<(), (String, i32)> {
-    let input = read_input(&file).map_err(|e| (e, 2))?;
+    let input = read_input(file).map_err(|e| (e, 2))?;
     if let Some(cached) = cache::cache_get(&input) {
         println!("{cached}");
         return Ok(());
@@ -111,7 +111,7 @@ pub(crate) fn compress_response(
 
     // Apply semantic-aware field filtering when context is provided.
     #[allow(unused_variables)]
-    let (value, semantic_dropped, used_experimental) = if let Some(ref ctx) = context {
+    let (value, semantic_dropped, used_experimental) = if let Some(ctx) = context {
         if semantic && !is_experimental_enabled() {
             eprintln!(
                 "Warning: --semantic requires experimental mode. \
@@ -205,15 +205,16 @@ pub(crate) fn compress_response(
 ///
 /// Delegates to [`tokenless_schema::compress_auto`], which internally
 /// respects the experimental mode flag set at startup.
+#[allow(clippy::ref_option)]
 pub(crate) fn compress_auto(
-    file: Option<String>,
+    file: &Option<String>,
     report: bool,
     project: Option<String>,
     agent_id: Option<String>,
     session_id: Option<String>,
     tool_use_id: Option<String>,
 ) -> Result<(), (String, i32)> {
-    let input = read_input(&file).map_err(|e| (e, 2))?;
+    let input = read_input(file).map_err(|e| (e, 2))?;
     if let Some(cached) = cache::cache_get(&input) {
         println!("{cached}");
         return Ok(());

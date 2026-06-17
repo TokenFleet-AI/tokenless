@@ -4,16 +4,9 @@
 //! under [`shared`].  The `main()` entry point parses CLI args and dispatches
 //! to the appropriate handler.
 #![allow(
+    // Sync std::fs is intentional — this is a synchronous CLI, not an async server.
     clippy::disallowed_methods,
     clippy::disallowed_types,
-    clippy::collapsible_if,
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::unreadable_literal,
-    clippy::unnecessary_map_or,
-    clippy::useless_format,
-    clippy::pedantic,
-    reason = "pre-existing CLI code conventions; pedantic enforced at crate level"
 )]
 
 mod cache;
@@ -34,13 +27,17 @@ use clap::{Parser, Subcommand};
     about = "LLM token optimization via schema and response compression"
 )]
 struct Cli {
+    /// Enable stricter secure defaults for validation, logging, and helper execution.
+    #[arg(long, global = true)]
+    secure_default: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Compress OpenAI Function Calling tool schemas.
+    /// Compress `OpenAI` `Function Calling` tool schemas.
     CompressSchema {
         #[arg(short, long)]
         file: Option<String>,
@@ -50,6 +47,9 @@ enum Commands {
         /// Print token savings report to stderr.
         #[arg(long)]
         report: bool,
+        /// Explain compression decisions.
+        #[arg(long)]
+        explain: bool,
         /// Project name for multi-project statistics.
         #[arg(long)]
         project: Option<String>,
@@ -153,7 +153,7 @@ enum Commands {
         /// Install hooks globally (for all projects).
         #[arg(long)]
         global: bool,
-        /// Agent name (claude, cursor, windsurf, cline, copilot, gemini, etc.).
+        /// Agent name (claude, cursor, windsurf, cline, copilot, gemini, codex, etc.).
         #[arg(short, long, default_value = "claude")]
         agent: String,
         /// Enable debug logging for compress hook (~/.tokenfleet-ai/tokenless/compress-debug.log).
@@ -193,6 +193,10 @@ enum Commands {
     Mcp(McpAction),
     /// Show a demo of all compression strategies.
     Demo,
+    /// Run environment diagnostic (binary, PATH, hooks, stats).
+    Doctor,
+    /// Show lightweight hook/stats status for quick daily check.
+    Status,
     /// Launch the interactive TUI dashboard.
     Tui {
         /// Refresh interval in seconds (default: 1).
@@ -212,7 +216,7 @@ enum McpAction {
 
 #[derive(Subcommand)]
 enum HookCommands {
-    /// PreToolUse: rewrite shell commands via RTK.
+    /// `PreToolUse`: rewrite shell commands via RTK.
     Rewrite {
         /// Agent target (e.g., "claude").
         #[arg(short, long, default_value = "claude")]
@@ -224,7 +228,7 @@ enum HookCommands {
         #[arg(long)]
         user_name: Option<String>,
     },
-    /// PostToolUse: compress tool response output.
+    /// `PostToolUse`: compress tool response output.
     Compress {
         /// Enable semantic-aware field filtering (Level 2 ONNX or Level 1 rules).
         #[arg(long)]
@@ -242,16 +246,19 @@ enum HookCommands {
         #[arg(long)]
         debug: bool,
     },
-    /// PostToolUse: differential response (unified diff).
+    /// `PostToolUse`: differential response (unified diff).
     Diff,
 }
 
 #[derive(Debug, Subcommand)]
 enum RewriteTarget {
-    /// Claude Code PreToolUse hook.
+    /// `Claude` Code `PreToolUse` hook.
     Claude,
+    /// `Cursor` IDE.
     Cursor,
+    /// `Gemini` CLI.
     Gemini,
+    /// `Copilot` CLI.
     Copilot,
 }
 
@@ -313,10 +320,47 @@ enum StatsCommands {
         #[arg(long)]
         until: Option<String>,
     },
+    /// Delete specific records from stats.
+    Delete {
+        /// Delete a single record by ID.
+        #[arg(long)]
+        id: Option<i64>,
+        /// Delete all records for a specific agent.
+        #[arg(long)]
+        agent: Option<String>,
+        /// Delete all records before a date (ISO 8601, e.g. "2026-05-01").
+        #[arg(long)]
+        before: Option<String>,
+        /// Skip confirmation prompt.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Reclaim disk space after deleting large amounts of records.
+    Vacuum,
+    /// Export all stats records to a JSON file.
+    Export {
+        /// Output file path (required).
+        #[arg(short, long)]
+        output: String,
+    },
+    /// Generate a shareable weekly/monthly report.
+    Share {
+        #[arg(long)]
+        since: Option<String>,
+        #[arg(long)]
+        project: Option<String>,
+        /// Output format: "terminal" (default) or "markdown".
+        #[arg(long, default_value = "terminal")]
+        format: String,
+    },
 }
 
 // ── Dispatch ─────────────────────────────────────────────────────────────────
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "CLI dispatch: each match arm maps to a subcommand handler"
+)]
 fn run() -> Result<(), (String, i32)> {
     // Init tracing: stderr + log file
     use tracing_subscriber::layer::SubscriberExt;
@@ -358,19 +402,31 @@ fn run() -> Result<(), (String, i32)> {
     let config = tokenless_stats::TokenlessConfig::load();
     tokenless_schema::set_experimental_mode(config.is_experimental_enabled());
 
+    let mut config = config;
+    if std::env::var("TOKENLESS_SECURE_DEFAULT")
+        .is_ok_and(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+    {
+        config.secure_default = true;
+    }
+
     let cli = Cli::parse();
+
+    if cli.secure_default {
+        config.secure_default = true;
+    }
 
     match cli.command {
         Commands::CompressSchema {
             file,
             batch,
             report,
+            explain: _,
             project,
             agent_id,
             session_id,
             tool_use_id,
         } => commands::compress::compress_schema(
-            file,
+            &file,
             batch,
             report,
             project,
@@ -388,10 +444,10 @@ fn run() -> Result<(), (String, i32)> {
             session_id,
             tool_use_id,
         } => commands::compress::compress_response(
-            file,
+            &file,
             report,
             semantic,
-            context,
+            &context,
             project,
             agent_id,
             session_id,
@@ -405,7 +461,7 @@ fn run() -> Result<(), (String, i32)> {
             session_id,
             tool_use_id,
         } => commands::compress::compress_auto(
-            file,
+            &file,
             report,
             project,
             agent_id,
@@ -418,8 +474,8 @@ fn run() -> Result<(), (String, i32)> {
             agent_id,
             session_id,
             tool_use_id,
-        } => commands::toon::compress_toon(file, project, agent_id, session_id, tool_use_id),
-        Commands::DecompressToon { file } => commands::toon::decompress_toon(file),
+        } => commands::toon::compress_toon(&file, project, agent_id, session_id, tool_use_id),
+        Commands::DecompressToon { file } => commands::toon::decompress_toon(&file),
         Commands::Rewrite {
             command,
             exclude,
@@ -430,8 +486,8 @@ fn run() -> Result<(), (String, i32)> {
             tool_use_id,
         } => commands::rewrite::rewrite(
             command,
-            exclude,
-            transparent_prefix,
+            &exclude,
+            &transparent_prefix,
             project,
             agent_id,
             session_id,
@@ -459,14 +515,27 @@ fn run() -> Result<(), (String, i32)> {
             compress,
             no_compress,
             passthrough,
-        } => commands::init_cmd::handle(global, agent, debug, compress, no_compress, passthrough),
+        } => {
+            if cli.secure_default {
+                config.secure_default = true;
+            }
+            commands::init_cmd::handle(
+                global,
+                &agent,
+                debug,
+                compress,
+                no_compress,
+                passthrough,
+                cli.secure_default,
+            )
+        }
         Commands::EnvCheck {
             tool,
             all,
             fix,
             checklist,
             json,
-        } => commands::env_check_cmd::handle(tool, all, fix, checklist, json),
+        } => commands::env_check_cmd::handle(tool.as_deref(), all, fix, checklist, json),
         Commands::Mcp(McpAction::Start) => {
             if !shared::is_experimental_enabled() {
                 return Err((
@@ -482,6 +551,8 @@ fn run() -> Result<(), (String, i32)> {
             println!("{}", commands::demo::generate());
             Ok(())
         }
+        Commands::Doctor => commands::doctor::doctor(),
+        Commands::Status => commands::doctor::status(),
         Commands::Tui { refresh, lang } => {
             if !shared::is_experimental_enabled() {
                 return Err((
@@ -490,26 +561,26 @@ fn run() -> Result<(), (String, i32)> {
                     1,
                 ));
             }
-            commands::tui::handle(refresh, lang)
+            commands::tui::handle(refresh, &lang)
         }
         Commands::Stats(stats_cmd) => match stats_cmd {
             StatsCommands::Summary {
                 limit,
                 project,
                 namespace,
-            } => commands::stats::stats_summary(limit, project, namespace),
+            } => commands::stats::stats_summary(limit, project.as_deref(), namespace.as_deref()),
             StatsCommands::List {
                 limit,
                 project,
                 namespace,
-            } => commands::stats::stats_list(limit, project, namespace),
+            } => commands::stats::stats_list(limit, project.as_deref(), namespace.as_deref()),
             StatsCommands::Show { id } => commands::stats::stats_show(id),
             StatsCommands::Clear { yes } => commands::stats::stats_clear(yes),
             StatsCommands::Rewrites {
                 limit,
                 offset,
                 project,
-            } => commands::stats::stats_rewrites(limit, offset, project),
+            } => commands::stats::stats_rewrites(limit, offset, project.as_deref()),
             StatsCommands::Status => commands::stats::stats_status(),
             StatsCommands::Enable => commands::stats::stats_enable(),
             StatsCommands::Disable => commands::stats::stats_disable(),
@@ -520,7 +591,22 @@ fn run() -> Result<(), (String, i32)> {
                 until,
                 project,
                 namespace: _,
-            } => commands::stats::stats_diff(since, until, project),
+            } => {
+                commands::stats::stats_diff(since.as_deref(), until.as_deref(), project.as_deref())
+            }
+            StatsCommands::Delete {
+                id,
+                agent,
+                before,
+                yes,
+            } => commands::stats::stats_delete(id, agent.as_deref(), before.as_deref(), yes),
+            StatsCommands::Vacuum => commands::stats::stats_vacuum(),
+            StatsCommands::Export { output } => commands::stats::stats_export(&output),
+            StatsCommands::Share {
+                since,
+                project,
+                format,
+            } => commands::stats::stats_share(since.as_deref(), project.as_deref(), Some(format)),
         },
     }
 }

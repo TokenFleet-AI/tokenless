@@ -106,7 +106,7 @@ tokenless-schema ← tokenless-cli → tokenless-stats
 cargo install tokenless
 ```
 
-Requires Rust >= 1.85. Installs the `tokenless` binary to `~/.cargo/bin/`.
+Requires Rust >= 1.89. Installs the `tokenless` binary to `~/.cargo/bin/`.
 
 ### Pre-built Binaries
 
@@ -153,7 +153,7 @@ This is equivalent to `make install` but places the binary in `~/.cargo/bin/` fo
 
 ### Prerequisites
 
-- Rust >= 1.85 (build from source / cargo install)
+- Rust >= 1.89 (build from source / cargo install)
 - Command rewriting requires [RTK](https://github.com/TokenFleet-AI/rtk): `cargo install rtk` (optional — core compression works without it)
 
 ---

@@ -17,6 +17,11 @@ ruvector.db
 .codegraph/
 .idea
 
+# Agent runtime state (Codex, agents, etc.)
+.agents/
+.codex/
+AGENTS.md
+
 # Environment & Secrets
 .env
 .env.*
@@ -38,3 +43,6 @@ credentials/
 .aws/
 .gcloud/
 tokenless-export_*.json
+
+# Coverage / test artifacts
+lcov.info

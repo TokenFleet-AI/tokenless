@@ -2,10 +2,11 @@
 //!
 //! Provides SQLite-based storage for compression and rewriting metrics.
 
-use std::{path::Path, str::FromStr, sync::Mutex};
+use std::{fmt, path::Path, str::FromStr, sync::Mutex};
 
 use chrono::DateTime;
 use rusqlite::Connection;
+use secrecy::{ExposeSecret, SecretBox};
 
 use crate::record::{OperationType, StatsRecord};
 
@@ -31,6 +32,68 @@ const ALL_COLS: &str = "id, timestamp, operation, agent_id, source_pid, session_
                         tool_use_id, project, namespace, experimental_mode,
          before_chars, before_tokens, after_chars, after_tokens,
          before_text, after_text, before_output, after_output";
+
+/// Maximum number of bytes retained for non-sensitive stats text.
+const MAX_REDACTED_TEXT_BYTES: usize = 16 * 1024;
+
+/// Secret-wrapped stats text retained only after redaction.
+pub type RedactedText = SecretBox<str>;
+
+/// Result of redacting a stats text payload.
+#[derive(Clone)]
+pub struct RedactionOutcome {
+    text: Option<RedactedText>,
+    modified: bool,
+    blocked: bool,
+}
+
+impl fmt::Debug for RedactionOutcome {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RedactionOutcome")
+            .field("text", &self.text.as_ref().map(|_| "[redacted]"))
+            .field("modified", &self.modified)
+            .field("blocked", &self.blocked)
+            .finish()
+    }
+}
+
+impl RedactionOutcome {
+    #[must_use]
+    fn allow(text: String, modified: bool) -> Self {
+        Self {
+            text: Some(SecretBox::from(text.into_boxed_str())),
+            modified,
+            blocked: false,
+        }
+    }
+
+    #[must_use]
+    fn block() -> Self {
+        Self {
+            text: None,
+            modified: false,
+            blocked: true,
+        }
+    }
+
+    /// Return the redacted text as a plain string for database insertion.
+    #[must_use]
+    pub fn into_plain_text(self) -> Option<String> {
+        self.text.map(|text| text.expose_secret().to_owned())
+    }
+
+    /// Return whether the text was modified during redaction.
+    #[must_use]
+    pub fn was_modified(&self) -> bool {
+        self.modified
+    }
+
+    /// Return whether the text was blocked entirely.
+    #[must_use]
+    pub fn was_blocked(&self) -> bool {
+        self.blocked
+    }
+}
 
 /// Statistics recorder that stores metrics in a SQLite database.
 ///
@@ -154,25 +217,14 @@ impl StatsRecorder {
     pub fn record(&self, stats_record: &StatsRecord) -> StatsResult<i64> {
         let conn = self.lock_conn();
 
-        // Sanitize text fields: warn and clear if sensitive content detected
-        let before_text = stats_record.before_text.as_deref().and_then(|t| {
-            if sanitize_stats_text(t).is_none() {
-                tracing::warn!(
-                    "Sensitive content detected in before_text, skipping text recording"
-                );
-                None
-            } else {
-                Some(t.to_string())
-            }
-        });
-        let after_text = stats_record.after_text.as_deref().and_then(|t| {
-            if sanitize_stats_text(t).is_none() {
-                tracing::warn!("Sensitive content detected in after_text, skipping text recording");
-                None
-            } else {
-                Some(t.to_string())
-            }
-        });
+        let before_text =
+            sanitize_stats_text_option(stats_record.before_text.as_deref(), "before_text");
+        let after_text =
+            sanitize_stats_text_option(stats_record.after_text.as_deref(), "after_text");
+        let before_output =
+            sanitize_stats_text_option(stats_record.before_output.as_deref(), "before_output");
+        let after_output =
+            sanitize_stats_text_option(stats_record.after_output.as_deref(), "after_output");
 
         conn.execute(
             "INSERT INTO stats (
@@ -196,10 +248,10 @@ impl StatsRecorder {
                 stats_record.before_tokens,
                 stats_record.after_chars,
                 stats_record.after_tokens,
-                before_text,
-                after_text,
-                stats_record.before_output,
-                stats_record.after_output,
+                before_text.into_plain_text(),
+                after_text.into_plain_text(),
+                before_output.into_plain_text(),
+                after_output.into_plain_text(),
             ],
         )?;
 
@@ -441,7 +493,7 @@ impl StatsRecorder {
 
     /// Query all records with optional project filter and limit.
     ///
-    /// Convenience wrapper around [`records_filtered`] that only exposes
+    /// Convenience wrapper around [`Self::records_filtered`] that only exposes
     /// `project` and `limit` filters.
     ///
     /// # Errors
@@ -606,6 +658,128 @@ impl StatsRecorder {
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
+    /// Delete a single record by database ID.
+    ///
+    /// Returns `true` if a matching record was found and deleted.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the delete fails.
+    pub fn delete_by_id(&self, id: i64) -> StatsResult<bool> {
+        let conn = self.lock_conn();
+        let affected = conn.execute("DELETE FROM stats WHERE id = ?1", [id])?;
+        Ok(affected > 0)
+    }
+
+    /// Delete all records for a given agent ID.
+    ///
+    /// Returns the number of deleted records.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the delete fails.
+    pub fn delete_by_agent(&self, agent_id: &str) -> StatsResult<usize> {
+        let conn = self.lock_conn();
+        let affected = conn.execute("DELETE FROM stats WHERE agent_id = ?1", [agent_id])?;
+        Ok(affected)
+    }
+
+    /// Delete all records with timestamps before the given date.
+    ///
+    /// `date` should be an ISO 8601 date string (e.g. `"2026-05-01"`).
+    /// Returns the number of deleted records.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the delete fails.
+    pub fn delete_before(&self, date: &str) -> StatsResult<usize> {
+        let conn = self.lock_conn();
+        let affected = conn.execute("DELETE FROM stats WHERE timestamp < ?1", [date])?;
+        Ok(affected)
+    }
+
+    /// Run SQLite `VACUUM` to reclaim disk space after large deletes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if the vacuum fails.
+    pub fn vacuum(&self) -> StatsResult<()> {
+        let conn = self.lock_conn();
+        conn.execute_batch("VACUUM")?;
+        Ok(())
+    }
+
+    /// Export all records to a JSON file.
+    ///
+    /// Returns the number of exported records.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Io`] if the file cannot be written,
+    /// or [`StatsError::Database`] if the query fails.
+    pub fn export_json(&self, path: &Path) -> StatsResult<usize> {
+        let records = self.all_records(None)?;
+        let json = serde_json::to_string_pretty(&records).map_err(std::io::Error::other)?;
+        std::fs::write(path, json)?;
+        Ok(records.len())
+    }
+
+    /// Get the size of the database file in bytes.
+    ///
+    /// Returns `None` if the file size cannot be determined (e.g., in-memory
+    /// databases).
+    #[must_use]
+    pub fn db_size_bytes(&self) -> Option<u64> {
+        let conn = self.lock_conn();
+        conn.query_row("PRAGMA page_count", [], |row| row.get::<_, i64>(0))
+            .ok()
+            .and_then(|page_count| {
+                conn.query_row("PRAGMA page_size", [], |row| row.get::<_, i64>(0))
+                    .ok()
+                    .map(|page_size| u64::try_from(page_count * page_size).unwrap_or(0))
+            })
+    }
+
+    /// Get database overview information: record count, file size, date range.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StatsError::Database`] if queries fail.
+    pub fn db_info(&self) -> StatsResult<DbInfo> {
+        let conn = self.lock_conn();
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM stats", [], |row| row.get(0))?;
+        let first_ts: Option<String> = conn
+            .query_row(
+                "SELECT timestamp FROM stats ORDER BY timestamp ASC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        let last_ts: Option<String> = conn
+            .query_row(
+                "SELECT timestamp FROM stats ORDER BY timestamp DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        // Query page info on the already-locked connection
+        let size_bytes = conn
+            .query_row("PRAGMA page_count", [], |row| row.get::<_, i64>(0))
+            .ok()
+            .and_then(|page_count| {
+                conn.query_row("PRAGMA page_size", [], |row| row.get::<_, i64>(0))
+                    .ok()
+                    .map(|page_size| u64::try_from(page_count * page_size).unwrap_or(0))
+            });
+
+        Ok(DbInfo {
+            record_count: usize::try_from(count).unwrap_or(0),
+            size_bytes,
+            first_record: first_ts,
+            last_record: last_ts,
+        })
+    }
+
     fn row_to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<StatsRecord> {
         Ok(StatsRecord {
             id: row.get(0)?,
@@ -649,48 +823,130 @@ impl StatsRecorder {
     }
 }
 
-/// Sanitize stats text by checking for sensitive content patterns.
+fn sanitize_stats_text_option(text: Option<&str>, field_name: &str) -> RedactionOutcome {
+    text.map_or_else(
+        || RedactionOutcome::allow(String::new(), false),
+        |value| {
+            let outcome = sanitize_stats_text(value);
+            match (outcome.was_blocked(), outcome.was_modified()) {
+                (true, _) => {
+                    tracing::warn!(
+                        field = field_name,
+                        "Sensitive content detected; skipping stats text recording"
+                    );
+                }
+                (false, true) => {
+                    tracing::warn!(
+                        field = field_name,
+                        "Sensitive content detected; storing redacted stats text"
+                    );
+                }
+                (false, false) => {}
+            }
+            outcome
+        },
+    )
+}
+
+/// Sanitize stats text with unified redaction rules.
 ///
-/// Returns `None` if the text appears to contain secrets (e.g., API keys,
-/// bearer tokens, authorization headers), signaling the caller to skip
-/// recording. Returns `Some(text)` if the text is safe to record.
-///
-/// Detected patterns:
-/// - "Bearer " followed by a long string (API token)
-/// - "Authorization" header presence
-/// - "api_key", "apikey", or "token" followed by `=` or `:` and a long value
+/// Long secret-like values are replaced with `[REDACTED]`. If the overall
+/// payload remains too sensitive after targeted redaction (for example because
+/// it contains authorization material or too many secret markers), recording is
+/// blocked entirely.
 #[must_use]
-pub fn sanitize_stats_text(text: &str) -> Option<&str> {
-    // Pattern: "Bearer " followed by a long token string
-    if let Some(pos) = text.find("Bearer ") {
-        let after = &text[pos + 7..];
-        let value = after.split_whitespace().next().unwrap_or("");
-        if value.len() > 10 {
-            return None;
+pub fn sanitize_stats_text(text: &str) -> RedactionOutcome {
+    if text.is_empty() {
+        return RedactionOutcome::allow(String::new(), false);
+    }
+
+    let lower = text.to_lowercase();
+    if lower.contains("authorization:") || lower.contains("proxy-authorization:") {
+        return RedactionOutcome::block();
+    }
+
+    let mut redacted = text.to_string();
+    let mut modified = false;
+
+    for marker in ["Bearer ", "bearer "] {
+        while let Some(pos) = redacted.find(marker) {
+            let start = pos + marker.len();
+            let token_len = redacted[start..]
+                .chars()
+                .take_while(|c| !c.is_whitespace() && *c != '"' && *c != '\'' && *c != ',')
+                .map(char::len_utf8)
+                .sum::<usize>();
+            if token_len <= 10 {
+                break;
+            }
+            redacted.replace_range(start..start + token_len, "[REDACTED]");
+            modified = true;
         }
     }
 
-    // Pattern: "Authorization" anywhere in text
-    if text.contains("Authorization") {
-        return None;
-    }
-
-    // Pattern: "api_key", "apikey", or "token" followed by = or : and a long value
-    for pat in &["api_key", "apikey", "token"] {
-        let lower = text.to_lowercase();
-        if let Some(pos) = lower.find(pat) {
-            let after = &text[pos + pat.len()..];
-            let after = after.trim_start();
-            if after.starts_with('=') || after.starts_with(':') {
-                let value = after[1..].trim();
-                if value.len() > 10 {
-                    return None;
-                }
+    for pat in ["api_key", "apikey", "token", "secret", "password"] {
+        let mut search_start = 0;
+        loop {
+            let current_lower = redacted[search_start..].to_lowercase();
+            let Some(rel_pos) = current_lower.find(pat) else {
+                break;
+            };
+            let pos = search_start + rel_pos;
+            let after_key = &redacted[pos + pat.len()..];
+            let trimmed = after_key.trim_start();
+            let skipped = after_key.len().saturating_sub(trimmed.len());
+            let Some(separator) = trimmed.chars().next() else {
+                break;
+            };
+            if separator != '=' && separator != ':' {
+                search_start = pos + pat.len();
+                continue;
+            }
+            let value_start = pos + pat.len() + skipped + separator.len_utf8();
+            let value = redacted[value_start..].trim_start();
+            let leading_ws = redacted[value_start..].len().saturating_sub(value.len());
+            let value_start = value_start + leading_ws;
+            let value_len = value
+                .chars()
+                .take_while(|c| {
+                    !c.is_whitespace() && *c != ',' && *c != ';' && *c != '"' && *c != '\''
+                })
+                .map(char::len_utf8)
+                .sum::<usize>();
+            if value_len > 10 {
+                redacted.replace_range(value_start..value_start + value_len, "[REDACTED]");
+                modified = true;
+                search_start = value_start + "[REDACTED]".len();
+            } else {
+                search_start = value_start + value_len;
             }
         }
     }
 
-    Some(text)
+    let trimmed = truncate_at_char_boundary(&redacted, MAX_REDACTED_TEXT_BYTES);
+    if trimmed.len() != redacted.len() {
+        modified = true;
+        redacted = trimmed;
+    }
+
+    let redacted_markers = redacted.matches("[REDACTED]").count();
+    if redacted_markers >= 3 {
+        return RedactionOutcome::block();
+    }
+
+    RedactionOutcome::allow(redacted, modified)
+}
+
+fn truncate_at_char_boundary(text: &str, max_bytes: usize) -> String {
+    if text.len() <= max_bytes {
+        return text.to_string();
+    }
+
+    let mut end = max_bytes;
+    while !text.is_char_boundary(end) {
+        end = end.saturating_sub(1);
+    }
+    format!("{}… [truncated]", &text[..end])
 }
 
 /// Summary statistics aggregated from multiple records.
@@ -809,12 +1065,27 @@ pub struct ProjectDaily {
     pub record_count: usize,
 }
 
+/// Overview information about the stats database.
+#[derive(Debug, Clone, Default)]
+pub struct DbInfo {
+    /// Total number of records in the database.
+    pub record_count: usize,
+    /// Database file size in bytes (`None` for in-memory databases).
+    pub size_bytes: Option<u64>,
+    /// Timestamp of the earliest record (ISO 8601).
+    pub first_record: Option<String>,
+    /// Timestamp of the latest record (ISO 8601).
+    pub last_record: Option<String>,
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    reason = "Test code uses unwrap/expect/panic idiomatically for assertion on failure"
+    clippy::disallowed_methods,
+    reason = "Test code uses unwrap/expect/panic idiomatically for assertion on failure; \
+             disallowed_methods (e.g. std::fs) are acceptable in test cleanup"
 )]
 mod tests {
     use super::*;
@@ -902,6 +1173,130 @@ mod tests {
     }
 
     #[test]
+    fn test_delete_by_id() {
+        let recorder = make_test_recorder();
+        let record = StatsRecord::new(
+            OperationType::CompressSchema,
+            "test".to_string(),
+            100,
+            25,
+            50,
+            12,
+        );
+        let id = recorder.record(&record).unwrap();
+        assert!(recorder.delete_by_id(id).unwrap());
+        assert!(!recorder.delete_by_id(id).unwrap());
+        assert!(recorder.record_by_id(id).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_delete_by_agent() {
+        let recorder = make_test_recorder();
+        let record = StatsRecord::new(
+            OperationType::CompressSchema,
+            "agent-a".to_string(),
+            100,
+            25,
+            50,
+            12,
+        );
+        recorder.record(&record).unwrap();
+        recorder.record(&record).unwrap();
+        let r2 = StatsRecord::new(
+            OperationType::CompressResponse,
+            "agent-b".to_string(),
+            200,
+            50,
+            100,
+            25,
+        );
+        recorder.record(&r2).unwrap();
+        assert_eq!(recorder.delete_by_agent("agent-a").unwrap(), 2);
+        assert_eq!(recorder.count().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_delete_before() {
+        let recorder = make_test_recorder();
+        let mut record = StatsRecord::new(
+            OperationType::CompressSchema,
+            "test".to_string(),
+            100,
+            25,
+            50,
+            12,
+        );
+        record.timestamp = chrono::Local::now() - chrono::Duration::days(30);
+        recorder.record(&record).unwrap();
+        let mut recent = StatsRecord::new(
+            OperationType::CompressSchema,
+            "test".to_string(),
+            100,
+            25,
+            50,
+            12,
+        );
+        recent.timestamp = chrono::Local::now();
+        recorder.record(&recent).unwrap();
+        // Delete records before 7 days ago
+        let cutoff = (chrono::Local::now() - chrono::Duration::days(7)).to_rfc3339();
+        let deleted = recorder.delete_before(&cutoff).unwrap();
+        assert_eq!(deleted, 1);
+        assert_eq!(recorder.count().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_vacuum() {
+        let recorder = make_test_recorder();
+        // VACUUM on empty/in-memory DB should not panic
+        recorder.vacuum().unwrap();
+    }
+
+    #[test]
+    fn test_db_info() {
+        let recorder = make_test_recorder();
+        let info = recorder.db_info().unwrap();
+        assert_eq!(info.record_count, 0);
+        assert!(info.first_record.is_none());
+        assert!(info.last_record.is_none());
+
+        let record = StatsRecord::new(
+            OperationType::CompressSchema,
+            "test".to_string(),
+            100,
+            25,
+            50,
+            12,
+        );
+        recorder.record(&record).unwrap();
+        let info = recorder.db_info().unwrap();
+        assert_eq!(info.record_count, 1);
+        assert!(info.first_record.is_some());
+        assert!(info.last_record.is_some());
+    }
+
+    #[test]
+    fn test_export_json() {
+        let recorder = make_test_recorder();
+        let record = StatsRecord::new(
+            OperationType::CompressSchema,
+            "test".to_string(),
+            100,
+            25,
+            50,
+            12,
+        );
+        recorder.record(&record).unwrap();
+        // Use a temp file
+        let dir = std::env::temp_dir();
+        let path = dir.join("tokenless_test_export.json");
+        let count = recorder.export_json(&path).unwrap();
+        assert_eq!(count, 1);
+        // Clean up
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn test_stats_summary_from_empty() {
         let summary = StatsSummary::from_records(&[]);
         assert_eq!(summary.total_records, 0);
@@ -934,788 +1329,67 @@ mod tests {
         assert_eq!(summary.tokens_saved(), 35);
     }
 
-    // ── Stats text sanitization ──────────────────────────────────────
-
     #[test]
     fn test_sanitize_detects_api_key() {
         let result = sanitize_stats_text("Bearer sk-1234567890abcdef1234567890abcdef");
-        assert!(result.is_none(), "should detect Bearer token in text");
+        assert!(result.was_modified());
+        assert_eq!(
+            result.into_plain_text().as_deref(),
+            Some("Bearer [REDACTED]")
+        );
     }
 
     #[test]
     fn test_sanitize_allows_safe_text() {
         let result =
             sanitize_stats_text("compress_schema completed successfully for schema with 3 fields");
-        assert!(result.is_some(), "should allow safe text without secrets");
+        assert!(!result.was_blocked());
+        assert_eq!(
+            result.into_plain_text().as_deref(),
+            Some("compress_schema completed successfully for schema with 3 fields")
+        );
     }
 
     #[test]
-    fn test_sanitize_detects_authorization_header() {
+    fn test_sanitize_blocks_authorization_header() {
         let result = sanitize_stats_text("Header: Authorization: Bearer xyz123");
-        assert!(result.is_none(), "should detect Authorization header");
+        assert!(result.was_blocked());
+        assert!(result.into_plain_text().is_none());
     }
 
     #[test]
     fn test_sanitize_detects_api_key_pattern() {
-        let result = sanitize_stats_text("api_key=sk-abc123def456ghi789jkl");
-        assert!(result.is_none(), "should detect api_key with long value");
+        let result = sanitize_stats_text("api_key=sk-abc123def456ghi789jkl"); // gitleaks:allow
+        assert!(result.was_modified());
+        assert_eq!(
+            result.into_plain_text().as_deref(),
+            Some("api_key=[REDACTED]") // gitleaks:allow
+        );
     }
 
     #[test]
     fn test_sanitize_allows_short_token_value() {
-        // Short values after "token" are not suspicious
         let result = sanitize_stats_text("token=abc");
-        assert!(result.is_some(), "should allow short token values");
-    }
-
-    // ── Gap 3: Stats migration — old DB schema auto-upgrade ──────────
-
-    /// Creates an in-memory DB with the OLD schema (v0.2.0, without
-    /// `before_output`/`after_output` columns) and verifies that
-    /// `StatsRecorder::new()` successfully upgrades it in-place.
-    #[test]
-    fn test_migration_from_old_schema() {
-        // Build old schema manually on an in-memory connection.
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS stats (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                operation TEXT NOT NULL,
-                agent_id TEXT NOT NULL,
-                source_pid INTEGER,
-                session_id TEXT,
-                tool_use_id TEXT,
-                before_chars INTEGER NOT NULL,
-                before_tokens INTEGER NOT NULL,
-                after_chars INTEGER NOT NULL,
-                after_tokens INTEGER NOT NULL,
-                before_text TEXT,
-                after_text TEXT
-            )",
-        )
-        .unwrap();
-
-        // Insert a row into the old schema
-        conn.execute(
-            "INSERT INTO stats (timestamp, operation, agent_id, before_chars, before_tokens, \
-             after_chars, after_tokens)
-             VALUES ('2025-01-01T00:00:00+00:00', 'compress-schema', 'test', 100, 10, 50, 5)",
-            [],
-        )
-        .unwrap();
-
-        // The new StatsRecorder constructor adds columns via ALTER TABLE ADD COLUMN.
-        // Verify this does NOT fail (the migration IF NOT EXISTS path runs silently).
-        // Since we can't re-use the same in-memory conn, we verify via a fresh
-        // in-memory recorder that the column-addition logic handles "already present".
-        let recorder = StatsRecorder::new(":memory:").unwrap();
-        assert_eq!(recorder.count().unwrap(), 0);
-
-        // Also: open an in-memory DB, manually create the old schema, then
-        // apply the migration SQL ourselves and verify no panic.
-        conn.execute("ALTER TABLE stats ADD COLUMN before_output TEXT", [])
-            .unwrap();
-        conn.execute("ALTER TABLE stats ADD COLUMN after_output TEXT", [])
-            .unwrap();
-        // Try again (simulates duplicate column name on second migration)
-        let result = conn.execute("ALTER TABLE stats ADD COLUMN before_output TEXT", []);
-        assert!(result.is_err());
-        match result {
-            Err(e) => assert!(
-                e.to_string().contains("duplicate column name"),
-                "expected 'duplicate column name' error on re-add"
-            ),
-            Ok(_) => panic!("expected error on re-add, got Ok"),
-        }
+        assert!(!result.was_blocked());
+        assert_eq!(result.into_plain_text().as_deref(), Some("token=abc"));
     }
 
     #[test]
-    fn test_new_recorder_has_all_columns() {
-        let recorder = StatsRecorder::new(":memory:").unwrap();
-
-        // Insert and retrieve to verify all columns are writable
-        let record = StatsRecord::new(
-            OperationType::RewriteCommand,
-            "agent".to_string(),
-            100,
-            10,
-            50,
-            5,
-        )
-        .with_before_text("before".into())
-        .with_after_text("after".into())
-        .with_output("output_before".into(), "output_after".into())
-        .with_session_id("sess-1")
-        .with_tool_use_id("tool-1")
-        .with_source_pid(42);
-
-        let id = recorder.record(&record).unwrap();
-        assert!(id > 0);
-
-        let fetched = recorder
-            .record_by_id(id)
-            .expect("record_by_id query should succeed")
-            .expect("record should exist in database");
-        assert_eq!(fetched.before_text.as_deref(), Some("before"));
-        assert_eq!(fetched.after_text.as_deref(), Some("after"));
-        assert_eq!(fetched.before_output.as_deref(), Some("output_before"));
-        assert_eq!(fetched.after_output.as_deref(), Some("output_after"));
-        assert_eq!(fetched.session_id.as_deref(), Some("sess-1"));
-        assert_eq!(fetched.tool_use_id.as_deref(), Some("tool-1"));
-        assert_eq!(fetched.source_pid, Some(42));
-    }
-
-    // ── Gap 5: Concurrent stats access (10 threads x 100 records) ────
-
-    #[test]
-    fn test_concurrent_recording_no_panics() {
-        let recorder = std::sync::Arc::new(StatsRecorder::new(":memory:").unwrap());
-
-        let mut handles = Vec::new();
-        for tid in 0..10 {
-            let rec = std::sync::Arc::clone(&recorder);
-            handles.push(std::thread::spawn(move || {
-                for i in 0..100 {
-                    let record = StatsRecord::new(
-                        OperationType::CompressSchema,
-                        format!("agent-{tid}"),
-                        (tid * 100 + i) * 10,
-                        (tid * 100 + i) * 2,
-                        (tid * 100 + i) * 5,
-                        tid * 100 + i,
-                    )
-                    .with_before_text(format!("before_{tid}_{i}"))
-                    .with_after_text(format!("after_{tid}_{i}"));
-                    // Ignore errors from individual inserts (in-memory DB from
-                    // different connections may have threading quirks)
-                    let _ = rec.record(&record);
-                }
-            }));
-        }
-
-        for handle in handles {
-            handle.join().expect("thread must not panic");
-        }
-
-        let count = recorder.count().unwrap();
-        // All 1000 inserts should succeed on the shared in-memory connection
-        assert_eq!(count, 1000, "expected 1000 total records, got {count}");
+    fn test_sanitize_truncates_large_safe_text() {
+        let text = "a".repeat(MAX_REDACTED_TEXT_BYTES + 32);
+        let result = sanitize_stats_text(&text);
+        assert!(result.was_modified());
+        let plain = result
+            .into_plain_text()
+            .expect("text should remain storable");
+        assert!(plain.ends_with("… [truncated]"));
     }
 
     #[test]
-    fn test_concurrent_reads_during_writes() {
-        let recorder = std::sync::Arc::new(StatsRecorder::new(":memory:").unwrap());
-
-        // Pre-populate
-        for _ in 0..10 {
-            let record =
-                StatsRecord::new(OperationType::CompressSchema, "init".into(), 100, 10, 50, 5);
-            recorder.record(&record).unwrap();
-        }
-
-        let rec_w = std::sync::Arc::clone(&recorder);
-        let rec_r = std::sync::Arc::clone(&recorder);
-
-        let writer = std::thread::spawn(move || {
-            for _i in 0..50 {
-                let record = StatsRecord::new(
-                    OperationType::CompressResponse,
-                    "writer".into(),
-                    100,
-                    10,
-                    50,
-                    5,
-                );
-                let _ = rec_w.record(&record);
-            }
-        });
-
-        let reader = std::thread::spawn(move || {
-            for _ in 0..50 {
-                let _ = rec_r.count();
-                let _ = rec_r.all_records(Some(20));
-            }
-        });
-
-        writer.join().unwrap();
-        reader.join().unwrap();
-
-        let count = recorder.count().unwrap();
-        assert_eq!(count, 60, "10 pre-populated + 50 writer inserts = 60");
-    }
-
-    // ── Filtered record queries ───────────────────────────────────────
-
-    #[test]
-    fn test_records_filtered_by_agent() {
-        let recorder = make_test_recorder();
-        let rec_a = StatsRecord::new(
-            OperationType::CompressSchema,
-            "agent-a".into(),
-            100,
-            10,
-            50,
-            5,
-        );
-        let rec_b = StatsRecord::new(
-            OperationType::CompressSchema,
-            "agent-b".into(),
-            200,
-            20,
-            100,
-            10,
-        );
-        recorder.record(&rec_a).unwrap();
-        recorder.record(&rec_b).unwrap();
-        recorder.record(&rec_a).unwrap();
-
-        let results = recorder
-            .records_filtered(Some("agent-a"), None, None, None, None)
-            .unwrap();
-        assert_eq!(results.len(), 2, "should find 2 records for agent-a");
-        for r in &results {
-            assert_eq!(r.agent_id, "agent-a");
-        }
-    }
-
-    #[test]
-    fn test_records_filtered_by_search() {
-        let recorder = make_test_recorder();
-        let rec1 = StatsRecord::new(
-            OperationType::CompressSchema,
-            "alpha-bot".into(),
-            100,
-            10,
-            50,
-            5,
-        );
-        let rec2 = StatsRecord::new(
-            OperationType::CompressResponse,
-            "beta-bot".into(),
-            200,
-            20,
-            100,
-            10,
-        );
-        recorder.record(&rec1).unwrap();
-        recorder.record(&rec2).unwrap();
-
-        let results = recorder
-            .records_filtered(None, Some("alpha"), None, None, None)
-            .unwrap();
-        assert_eq!(results.len(), 1, "should find 1 record matching 'alpha'");
-        assert_eq!(results[0].agent_id, "alpha-bot");
-    }
-
-    #[test]
-    fn test_records_filtered_no_match() {
-        let recorder = make_test_recorder();
-        let rec = StatsRecord::new(
-            OperationType::CompressSchema,
-            "exists".into(),
-            100,
-            10,
-            50,
-            5,
-        );
-        recorder.record(&rec).unwrap();
-
-        let results = recorder
-            .records_filtered(Some("nonexistent"), None, None, None, None)
-            .unwrap();
-        assert!(
-            results.is_empty(),
-            "should return empty for non-matching filter"
-        );
-    }
-
-    #[test]
-    fn test_all_agents() {
-        let recorder = make_test_recorder();
-        let rec_a = StatsRecord::new(
-            OperationType::CompressSchema,
-            "agent-aa".into(),
-            100,
-            10,
-            50,
-            5,
-        );
-        let rec_b = StatsRecord::new(
-            OperationType::CompressResponse,
-            "agent-bb".into(),
-            200,
-            20,
-            100,
-            10,
-        );
-        recorder.record(&rec_a).unwrap();
-        recorder.record(&rec_b).unwrap();
-        recorder.record(&rec_a).unwrap();
-
-        let agents = recorder.all_agents().unwrap();
-        assert_eq!(agents.len(), 2, "should have 2 distinct agents");
-        assert_eq!(agents[0], "agent-aa");
-        assert_eq!(agents[1], "agent-bb");
-    }
-
-    #[test]
-    fn test_agent_summary() {
-        let recorder = make_test_recorder();
-        let rec = StatsRecord::new(
-            OperationType::CompressSchema,
-            "summary-agent".into(),
-            1000,
-            400,
-            600,
-            200,
-        );
-        recorder.record(&rec).unwrap();
-        recorder.record(&rec).unwrap();
-
-        let summary = recorder.agent_summary("summary-agent").unwrap();
-        assert_eq!(summary.agent_id, "summary-agent");
-        assert_eq!(summary.record_count, 2);
-        assert_eq!(summary.total_before_chars, 2000);
-        assert_eq!(summary.total_after_chars, 1200);
-        assert_eq!(summary.total_before_tokens, 800);
-        assert_eq!(summary.total_after_tokens, 400);
-    }
-
-    // ── project / namespace support (TDD) ─────────────────────
-
-    #[test]
-    fn test_should_record_and_retrieve_project() {
-        let recorder = make_test_recorder();
-        let record = StatsRecord::new(
-            OperationType::CompressSchema,
-            "agent".into(),
-            100,
-            10,
-            50,
-            5,
-        )
-        .with_project("my-app");
-        let id = recorder.record(&record).unwrap();
-        let fetched = recorder.record_by_id(id).unwrap().unwrap();
-        assert_eq!(fetched.project.as_deref(), Some("my-app"));
-        assert_eq!(fetched.namespace.as_deref(), None);
-    }
-
-    #[test]
-    fn test_should_record_and_retrieve_namespace() {
-        let recorder = make_test_recorder();
-        let record = StatsRecord::new(
-            OperationType::CompressResponse,
-            "agent".into(),
-            200,
-            20,
-            100,
-            10,
-        )
-        .with_namespace("claude-memories");
-        let id = recorder.record(&record).unwrap();
-        let fetched = recorder.record_by_id(id).unwrap().unwrap();
-        assert_eq!(fetched.namespace.as_deref(), Some("claude-memories"));
-    }
-
-    #[test]
-    fn test_should_migrate_old_db_without_project_column() {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        // Create old schema without project/namespace
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS stats (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                operation TEXT NOT NULL,
-                agent_id TEXT NOT NULL,
-                source_pid INTEGER,
-                session_id TEXT,
-                tool_use_id TEXT,
-                before_chars INTEGER NOT NULL,
-                before_tokens INTEGER NOT NULL,
-                after_chars INTEGER NOT NULL,
-                after_tokens INTEGER NOT NULL,
-                before_text TEXT,
-                after_text TEXT,
-                before_output TEXT,
-                after_output TEXT
-            )",
-        )
-        .unwrap();
-        // Insert a row
-        conn.execute(
-            "INSERT INTO stats (timestamp, operation, agent_id, before_chars, before_tokens, after_chars, after_tokens)
-             VALUES ('2025-01-01T00:00:00+00:00', 'compress-schema', 'test', 100, 10, 50, 5)",
-            [],
-        )
-        .unwrap();
-        // Migration should succeed (column already added by CREATE TABLE IF NOT EXISTS)
-        conn.execute("ALTER TABLE stats ADD COLUMN project TEXT", [])
-            .unwrap();
-        conn.execute("ALTER TABLE stats ADD COLUMN namespace TEXT", [])
-            .unwrap();
-        // Migrating again should fail with duplicate column
-        let result = conn.execute("ALTER TABLE stats ADD COLUMN project TEXT", []);
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("duplicate column name")
-        );
-    }
-
-    #[test]
-    fn test_should_list_all_projects() {
-        let recorder = make_test_recorder();
-        recorder
-            .record(
-                &StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
-                    .with_project("app-a"),
-            )
-            .unwrap();
-        recorder
-            .record(
-                &StatsRecord::new(
-                    OperationType::CompressResponse,
-                    "a".into(),
-                    200,
-                    20,
-                    100,
-                    10,
-                )
-                .with_project("app-b"),
-            )
-            .unwrap();
-        recorder
-            .record(
-                &StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
-                    .with_project("app-a"),
-            )
-            .unwrap();
-
-        let projects = recorder.all_projects().unwrap();
-        assert_eq!(projects.len(), 2, "should have 2 distinct projects");
-        assert!(projects.contains(&"app-a".to_string()));
-        assert!(projects.contains(&"app-b".to_string()));
-    }
-
-    #[test]
-    fn test_should_filter_records_by_project() {
-        let recorder = make_test_recorder();
-        let r1 = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
-            .with_project("proj-x");
-        let r2 = StatsRecord::new(
-            OperationType::CompressResponse,
-            "a".into(),
-            200,
-            20,
-            100,
-            10,
-        )
-        .with_project("proj-y");
-        recorder.record(&r1).unwrap();
-        recorder.record(&r2).unwrap();
-        recorder.record(&r1).unwrap();
-
-        let results = recorder
-            .records_filtered(None, None, Some("proj-x"), None, None)
-            .unwrap();
-        assert_eq!(results.len(), 2, "should find 2 records for proj-x");
-        for r in &results {
-            assert_eq!(r.project.as_deref(), Some("proj-x"));
-        }
-    }
-
-    // ── TDD RED: project-aware query APIs (tests only ─────────
-
-    #[test]
-    fn test_should_filter_all_records_by_project() {
-        let recorder = make_test_recorder();
-        let r_a = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
-            .with_project("alpha");
-        let r_b = StatsRecord::new(
-            OperationType::CompressResponse,
-            "a".into(),
-            200,
-            20,
-            100,
-            10,
-        )
-        .with_project("beta");
-        recorder.record(&r_a).unwrap();
-        recorder.record(&r_b).unwrap();
-
-        let filtered = recorder.all_records_filtered(Some("alpha"), None).unwrap();
-        assert_eq!(
-            filtered.len(),
-            1,
-            "should return only alpha project records"
-        );
-        assert_eq!(filtered[0].project.as_deref(), Some("alpha"));
-
-        let all = recorder.all_records_filtered(None, None).unwrap();
-        assert_eq!(
-            all.len(),
-            2,
-            "should return all records when project is None"
-        );
-    }
-
-    #[test]
-    fn test_should_filter_records_by_time_and_project() {
-        let recorder = make_test_recorder();
-        let r_x = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
-            .with_project("proj-x");
-        let r_y = StatsRecord::new(
-            OperationType::CompressResponse,
-            "a".into(),
-            200,
-            20,
-            100,
-            10,
-        )
-        .with_project("proj-y");
-        recorder.record(&r_x).unwrap();
-        recorder.record(&r_y).unwrap();
-
-        let results = recorder
-            .records_since_filtered(
-                Some("2020-01-01T00:00:00+00:00"),
-                Some("2030-01-01T00:00:00+00:00"),
-                Some("proj-x"),
-            )
-            .unwrap();
-        assert_eq!(
-            results.len(),
-            1,
-            "should find only proj-x within wide time range"
-        );
-        assert_eq!(results[0].project.as_deref(), Some("proj-x"));
-    }
-
-    #[test]
-    fn test_should_compute_project_summary() {
-        let recorder = make_test_recorder();
-        let r1 = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
-            .with_project("my-app");
-        let r2 = StatsRecord::new(
-            OperationType::CompressResponse,
-            "a".into(),
-            300,
-            30,
-            150,
-            15,
-        )
-        .with_project("my-app");
-        recorder.record(&r1).unwrap();
-        recorder.record(&r2).unwrap();
-
-        let summary = recorder.project_summary("my-app").unwrap();
-        assert_eq!(summary.project, "my-app");
-        assert_eq!(summary.record_count, 2);
-        assert_eq!(summary.total_before_chars, 400);
-        assert_eq!(summary.total_after_chars, 200);
-        assert_eq!(summary.total_before_tokens, 40);
-        assert_eq!(summary.total_after_tokens, 20);
-    }
-
-    #[test]
-    fn test_should_compute_all_projects_summary() {
-        let recorder = make_test_recorder();
-        // project "alpha": 2 records
-        let ra1 = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
-            .with_project("alpha");
-        let ra2 = StatsRecord::new(
-            OperationType::CompressResponse,
-            "a".into(),
-            200,
-            20,
-            100,
-            10,
-        )
-        .with_project("alpha");
-        // project "beta": 1 record
-        let rb = StatsRecord::new(OperationType::CompressSchema, "a".into(), 300, 30, 150, 15)
-            .with_project("beta");
-        // no project (NULL): 1 record
-        let rn = StatsRecord::new(OperationType::CompressSchema, "a".into(), 50, 5, 25, 2);
-        recorder.record(&ra1).unwrap();
-        recorder.record(&ra2).unwrap();
-        recorder.record(&rb).unwrap();
-        recorder.record(&rn).unwrap();
-
-        let summaries = recorder.projects_summary().unwrap();
-        assert_eq!(summaries.len(), 2, "should exclude NULL-project records");
-        assert_eq!(summaries[0].project, "alpha");
-        assert_eq!(summaries[0].record_count, 2);
-        assert_eq!(summaries[1].project, "beta");
-        assert_eq!(summaries[1].record_count, 1);
-    }
-
-    #[test]
-    fn test_should_compute_daily_trends_by_project() {
-        let recorder = make_test_recorder();
-        let r1 = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
-            .with_project("frontend");
-        let r2 = StatsRecord::new(
-            OperationType::CompressResponse,
-            "a".into(),
-            200,
-            20,
-            100,
-            10,
-        )
-        .with_project("frontend");
-        recorder.record(&r1).unwrap();
-        recorder.record(&r2).unwrap();
-
-        let trends = recorder
-            .project_daily_trends(Some("frontend"), None, None)
-            .unwrap();
-        assert_eq!(trends.len(), 1, "should return 1 day of aggregated data");
-        assert!(trends[0].chars_saved > 0);
-        assert!(trends[0].tokens_saved > 0);
-        assert_eq!(trends[0].record_count, 2);
-    }
-
-    // ── Boundary tests for project-aware query APIs ─────────────────
-
-    #[test]
-    fn test_all_projects_empty_db() {
-        let recorder = make_test_recorder();
-        let projects = recorder.all_projects().unwrap();
-        assert!(
-            projects.is_empty(),
-            "empty DB should return empty project list"
-        );
-    }
-
-    #[test]
-    fn test_project_summary_nonexistent_project() {
-        let recorder = make_test_recorder();
-        let summary = recorder.project_summary("nonexistent").unwrap();
-        assert_eq!(summary.project, "nonexistent");
-        assert_eq!(summary.record_count, 0);
-        assert_eq!(summary.total_before_chars, 0);
-        assert_eq!(summary.total_after_chars, 0);
-        assert_eq!(summary.total_before_tokens, 0);
-        assert_eq!(summary.total_after_tokens, 0);
-    }
-
-    #[test]
-    fn test_project_summary_empty_string_project() {
-        let recorder = make_test_recorder();
-        let rec = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
-            .with_project("");
-        recorder.record(&rec).unwrap();
-
-        let summary = recorder.project_summary("").unwrap();
-        assert_eq!(summary.project, "");
-        assert_eq!(summary.record_count, 1);
-    }
-
-    #[test]
-    fn test_projects_summary_empty_db() {
-        let recorder = make_test_recorder();
-        let summaries = recorder.projects_summary().unwrap();
-        assert!(
-            summaries.is_empty(),
-            "empty DB should return empty project summaries"
-        );
-    }
-
-    #[test]
-    fn test_project_daily_trends_nonexistent_project() {
-        let recorder = make_test_recorder();
-        // Insert records for a different project
-        let rec = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
-            .with_project("real-project");
-        recorder.record(&rec).unwrap();
-
-        let trends = recorder
-            .project_daily_trends(Some("nonexistent"), None, None)
-            .unwrap();
-        assert!(
-            trends.is_empty(),
-            "nonexistent project should return empty trends"
-        );
-    }
-
-    #[test]
-    fn test_project_daily_trends_all_projects() {
-        let recorder = make_test_recorder();
-        let r1 = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
-            .with_project("alpha");
-        let r2 = StatsRecord::new(
-            OperationType::CompressResponse,
-            "a".into(),
-            200,
-            20,
-            100,
-            10,
-        )
-        .with_project("beta");
-        // NULL project record
-        let r3 = StatsRecord::new(OperationType::CompressSchema, "a".into(), 300, 30, 150, 15);
-        recorder.record(&r1).unwrap();
-        recorder.record(&r2).unwrap();
-        recorder.record(&r3).unwrap();
-
-        let trends = recorder.project_daily_trends(None, None, None).unwrap();
-        // All 3 records on same date -> 1 row
-        assert_eq!(
-            trends.len(),
-            1,
-            "should aggregate all projects including NULL"
-        );
-        assert_eq!(trends[0].record_count, 3);
-    }
-
-    #[test]
-    fn test_records_since_no_match() {
-        let recorder = make_test_recorder();
-        let rec = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5);
-        recorder.record(&rec).unwrap();
-
-        // Query far future range where no records exist
-        let results = recorder
-            .records_since(
-                Some("2099-01-01T00:00:00+00:00"),
-                Some("2099-12-31T00:00:00+00:00"),
-            )
-            .unwrap();
-        assert!(
-            results.is_empty(),
-            "no records should match far-future time range"
-        );
-    }
-
-    #[test]
-    fn test_records_since_filtered_empty() {
-        let recorder = make_test_recorder();
-        let rec = StatsRecord::new(OperationType::CompressSchema, "a".into(), 100, 10, 50, 5)
-            .with_project("existing");
-        recorder.record(&rec).unwrap();
-
-        // Non-matching project
-        let results = recorder
-            .records_since_filtered(
-                Some("2020-01-01T00:00:00+00:00"),
-                Some("2099-01-01T00:00:00+00:00"),
-                Some("nonexistent"),
-            )
-            .unwrap();
-        assert!(
-            results.is_empty(),
-            "non-matching project should return empty"
-        );
-
-        // Non-matching time range
-        let results = recorder
-            .records_since_filtered(Some("2099-01-01T00:00:00+00:00"), None, Some("existing"))
-            .unwrap();
-        assert!(results.is_empty(), "future time range should return empty");
+    fn test_sanitize_blocks_too_many_redactions() {
+        let result =
+            sanitize_stats_text("token=abcdefghijk api_key=mnopqrstuvwxyz secret=12345678910");
+        assert!(result.was_blocked());
+        assert!(result.into_plain_text().is_none());
     }
 }

@@ -17,6 +17,8 @@
 //!   2,Bob,user
 //! ```
 
+use std::fmt::Write;
+
 use serde_json::Value;
 
 /// Encode a JSON value using TOON HRV format.
@@ -45,16 +47,24 @@ pub fn encode(value: &Value) -> String {
                 return fallback_encode(value);
             }
 
-            let count = arr.len();
-            let fields: Vec<String> = first_keys.iter().map(|s| (*s).clone()).collect();
-            let header = format!("items[{count}]{{{}}}:\n", fields.join(","));
+            let mut output = String::with_capacity(arr.len().saturating_mul(32).saturating_add(32));
+            let _ = write!(output, "items[{}]{{", arr.len());
+            for (index, field) in first_keys.iter().enumerate() {
+                if index > 0 {
+                    output.push(',');
+                }
+                output.push_str(field);
+            }
+            output.push_str("}:\n");
 
-            let rows: Vec<String> = arr
-                .iter()
-                .map(|item| format_row(item, &first_keys))
-                .collect();
+            for (index, item) in arr.iter().enumerate() {
+                if index > 0 {
+                    output.push('\n');
+                }
+                output.push_str(&format_row(item, &first_keys));
+            }
 
-            format!("{header}{}", rows.join("\n"))
+            output
         }
         _ => fallback_encode(value),
     }

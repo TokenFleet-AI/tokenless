@@ -51,7 +51,7 @@ pub fn sanitize_identity(raw: &str) -> Option<String> {
         return None;
     }
     // Reject C0 control characters (all, including tab)
-    if trimmed.chars().any(|c| c.is_control()) {
+    if trimmed.chars().any(char::is_control) {
         return None;
     }
     // Reject bidirectional control characters

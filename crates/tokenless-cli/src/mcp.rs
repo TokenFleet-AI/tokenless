@@ -1,17 +1,9 @@
 //! MCP (Model Context Protocol) JSON-RPC 2.0 server over stdin/stdout.
 //!
-//! Provides 7 tools: compress_schema, compress_response, rewrite_command,
-//! compress_toon, decompress_toon, env_check, stats_summary.
+//! Provides 7 tools: `compress_schema`, `compress_response`, `rewrite_command`,
+//! `compress_toon`, `decompress_toon`, `env_check`, `stats_summary`.
 //!
 //! Protocol: <https://spec.modelcontextprotocol.io/specification/2024-11-05/>
-
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::similar_names,
-    clippy::too_many_lines,
-    clippy::cast_possible_truncation
-)]
 
 use std::{
     collections::HashMap,
@@ -23,6 +15,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokenless_schema::{ResponseCompressor, SchemaCompressor};
 use tokenless_stats::{StatsRecorder, StatsSummary, TokenlessConfig, estimate_tokens_from_bytes};
+
+const SECURE_DEFAULT_MAX_SCHEMA_DESC: u64 = 1024;
+const SECURE_DEFAULT_MAX_PARAM_DESC: u64 = 512;
+const SECURE_DEFAULT_MAX_ENUM_ITEMS: u64 = 256;
+const SECURE_DEFAULT_MAX_STRING_TRUNCATE: u64 = 4096;
+const SECURE_DEFAULT_MAX_ARRAY_TRUNCATE: u64 = 256;
+const SECURE_DEFAULT_MAX_STATS_LIMIT: u64 = 1000;
 
 /// A single JSON-RPC 2.0 request from the MCP client.
 #[derive(Debug, Deserialize)]
@@ -94,10 +93,10 @@ fn open_recorder() -> Result<StatsRecorder, String> {
 
 /// Check whether a command is available on `$PATH`.
 fn check_cmd(cmd: &str) -> bool {
-    std::process::Command::new("sh")
-        .args(["-c", &format!("command -v {cmd}")])
+    std::process::Command::new("which")
+        .arg(cmd)
         .output()
-        .map_or(false, |o| o.status.success())
+        .is_ok_and(|o| o.status.success())
 }
 
 // ── Main loop ──────────────────────────────────────────────────────────
@@ -193,19 +192,18 @@ fn handle_message(req: &McpRequest, agent_id: &mut String) -> McpResponse {
 // ── initialize ─────────────────────────────────────────────────────────
 
 fn handle_initialize(req: &McpRequest, agent_id: &mut String) -> McpResponse {
-    if let Some(params) = &req.params {
-        if let Some(name) = params
+    if let Some(params) = &req.params
+        && let Some(name) = params
             .get("clientInfo")
             .and_then(|c| c.get("name"))
             .and_then(|v| v.as_str())
-        {
-            *agent_id = match name {
-                "claude-desktop" | "claude" | "claude-code" => name.to_string(),
-                "cursor" => "cursor".to_string(),
-                "continue" => "continue".to_string(),
-                other => format!("mcp-{other}"),
-            };
-        }
+    {
+        *agent_id = match name {
+            "claude-desktop" | "claude" | "claude-code" => name.to_string(),
+            "cursor" => "cursor".to_string(),
+            "continue" => "continue".to_string(),
+            other => format!("mcp-{other}"),
+        };
     }
 
     McpResponse {
@@ -328,7 +326,13 @@ fn handle_tools_call(req: &McpRequest, agent_id: &str) -> McpResponse {
     };
 
     let tool_name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
-    let args = params.get("arguments").cloned().unwrap_or(Value::Null);
+    let mut args = params.get("arguments").cloned().unwrap_or(Value::Null);
+
+    if TokenlessConfig::load().is_secure_default_enabled()
+        && let Err(error) = validate_secure_default_args(tool_name, &mut args)
+    {
+        return error_response(req.id.clone(), -32602, &error);
+    }
 
     match execute_tool(tool_name, &args, agent_id) {
         Ok(result) => McpResponse {
@@ -358,8 +362,51 @@ fn execute_tool(tool_name: &str, args: &Value, agent_id: &str) -> Result<Value, 
     }
 }
 
+fn validate_secure_default_args(tool_name: &str, args: &mut Value) -> Result<(), String> {
+    match tool_name {
+        "compress_schema" => {
+            clamp_u64_arg(args, "func_desc_max_len", SECURE_DEFAULT_MAX_SCHEMA_DESC)?;
+            clamp_u64_arg(args, "param_desc_max_len", SECURE_DEFAULT_MAX_PARAM_DESC)?;
+            clamp_u64_arg(args, "max_enum_items", SECURE_DEFAULT_MAX_ENUM_ITEMS)?;
+        }
+        "compress_response" => {
+            clamp_u64_arg(
+                args,
+                "truncate_strings_at",
+                SECURE_DEFAULT_MAX_STRING_TRUNCATE,
+            )?;
+            clamp_u64_arg(
+                args,
+                "truncate_arrays_at",
+                SECURE_DEFAULT_MAX_ARRAY_TRUNCATE,
+            )?;
+        }
+        "stats_summary" => {
+            clamp_u64_arg(args, "limit", SECURE_DEFAULT_MAX_STATS_LIMIT)?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn clamp_u64_arg(args: &mut Value, key: &str, max_value: u64) -> Result<(), String> {
+    let Some(value) = args.get_mut(key) else {
+        return Ok(());
+    };
+    let Some(current) = value.as_u64() else {
+        return Err(format!(
+            "Invalid '{key}' parameter: expected non-negative integer"
+        ));
+    };
+    if current > max_value {
+        *value = Value::Number(max_value.into());
+    }
+    Ok(())
+}
+
 // ── Tool: compress_schema ──────────────────────────────────────────────
 
+#[allow(clippy::cast_possible_truncation)]
 fn exec_compress_schema(args: &Value) -> Result<Value, String> {
     let schema = args
         .get("schema")
@@ -368,13 +415,13 @@ fn exec_compress_schema(args: &Value) -> Result<Value, String> {
     let before = serde_json::to_string(schema).unwrap_or_default();
 
     let mut compressor = SchemaCompressor::new();
-    if let Some(n) = args.get("func_desc_max_len").and_then(|v| v.as_u64()) {
+    if let Some(n) = args.get("func_desc_max_len").and_then(Value::as_u64) {
         compressor = compressor.with_func_desc_max_len(n as usize);
     }
-    if let Some(n) = args.get("param_desc_max_len").and_then(|v| v.as_u64()) {
+    if let Some(n) = args.get("param_desc_max_len").and_then(Value::as_u64) {
         compressor = compressor.with_param_desc_max_len(n as usize);
     }
-    if let Some(n) = args.get("max_enum_items").and_then(|v| v.as_u64()) {
+    if let Some(n) = args.get("max_enum_items").and_then(Value::as_u64) {
         compressor = compressor.with_max_enum_items(n as usize);
     }
 
@@ -394,6 +441,7 @@ fn exec_compress_schema(args: &Value) -> Result<Value, String> {
 
 // ── Tool: compress_response ────────────────────────────────────────────
 
+#[allow(clippy::cast_possible_truncation)]
 fn exec_compress_response(args: &Value) -> Result<Value, String> {
     let response = args
         .get("response")
@@ -402,13 +450,13 @@ fn exec_compress_response(args: &Value) -> Result<Value, String> {
     let before = serde_json::to_string(response).unwrap_or_default();
 
     let mut compressor = ResponseCompressor::new();
-    if let Some(n) = args.get("truncate_strings_at").and_then(|v| v.as_u64()) {
+    if let Some(n) = args.get("truncate_strings_at").and_then(Value::as_u64) {
         compressor = compressor.with_truncate_strings_at(n as usize);
     }
-    if let Some(n) = args.get("truncate_arrays_at").and_then(|v| v.as_u64()) {
+    if let Some(n) = args.get("truncate_arrays_at").and_then(Value::as_u64) {
         compressor = compressor.with_truncate_arrays_at(n as usize);
     }
-    if let Some(drop) = args.get("drop_nulls").and_then(|v| v.as_bool()) {
+    if let Some(drop) = args.get("drop_nulls").and_then(Value::as_bool) {
         compressor = compressor.with_drop_nulls(drop);
     }
 
@@ -433,6 +481,16 @@ fn exec_rewrite_command(args: &Value, agent_id: &str) -> Result<Value, String> {
         .get("command")
         .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing 'command' parameter".to_string())?;
+
+    if rtk_registry::contains_unattestable_construct(command) {
+        return Ok(serde_json::json!({
+            "rewritten": command,
+            "savings_pct": 0.0_f64,
+            "agent_id": agent_id,
+            "skipped": true,
+            "skipped_reason": "unattestable_construct",
+        }));
+    }
 
     let rewritten = rewrite_command(command, &[], &[]);
 
@@ -568,10 +626,9 @@ fn exec_env_check(args: &Value) -> Value {
 // ── Tool: stats_summary ────────────────────────────────────────────────
 
 fn exec_stats_summary(args: &Value) -> Result<Value, String> {
-    let limit = args
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .map(|n| n as usize);
+    let limit = args.get("limit").and_then(Value::as_u64);
+    #[allow(clippy::cast_possible_truncation)]
+    let limit = limit.map(|n| n as usize);
     let project = args.get("project").and_then(|v| v.as_str());
     let namespace = args.get("namespace").and_then(|v| v.as_str());
 
@@ -615,6 +672,7 @@ fn exec_stats_summary(args: &Value) -> Result<Value, String> {
 // ── Tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -855,6 +913,38 @@ mod tests {
         let args = serde_json::json!({});
         let result = exec_rewrite_command(&args, "test");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_exec_rewrite_command_skips_backtick_substitution() {
+        let args = serde_json::json!({
+            "command": "git log --pretty=`whoami`"
+        });
+        let result = exec_rewrite_command(&args, "test-agent").unwrap();
+        assert_eq!(result["skipped"], true);
+        assert_eq!(result["skipped_reason"], "unattestable_construct");
+        assert_eq!(result["rewritten"], "git log --pretty=`whoami`");
+        assert_eq!(result["savings_pct"], 0.0);
+    }
+
+    #[test]
+    fn test_exec_rewrite_command_skips_dollar_paren_substitution() {
+        let args = serde_json::json!({
+            "command": "git status $(rm -rf /)"
+        });
+        let result = exec_rewrite_command(&args, "test-agent").unwrap();
+        assert_eq!(result["skipped"], true);
+        assert_eq!(result["skipped_reason"], "unattestable_construct");
+    }
+
+    #[test]
+    fn test_exec_rewrite_command_allows_simple_variable_expansion() {
+        let args = serde_json::json!({
+            "command": "echo $HOME"
+        });
+        let result = exec_rewrite_command(&args, "test-agent").unwrap();
+        // echo is not rewritable, but the command should not be flagged as unsafe
+        assert!(result.get("skipped").is_none() || result["skipped"] == false);
     }
 
     #[test]

@@ -102,16 +102,11 @@ assert!(config.is_stats_enabled());
 assert!(config.is_experimental_enabled());
 ```
 
-### Query Formatters
+### Query Utilities
 
 | Function | Description |
 |----------|-------------|
-| `format_summary(records)` | Human-readable summary string |
-| `format_list(records)` | Tabular list output |
-| `format_show(record)` | Single record detail |
-| `format_diff(record)` | Before/after diff |
-| `format_rewrites(records)` | Rewrite history output |
-| `parse_time_range(input)` | Parse "1h"/"30m"/"7d" into SQL |
+| `parse_time_range(input)` | Parse supported date shortcuts into RFC 3339 |
 
 ### Token Estimation
 

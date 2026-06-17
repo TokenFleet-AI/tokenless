@@ -8,7 +8,7 @@
 //! The cache is also disabled when experimental mode is off.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     fmt::Write as FmtWrite,
     sync::{LazyLock, Mutex},
     time::Instant,
@@ -16,13 +16,19 @@ use std::{
 
 use tokenless_stats::TokenlessConfig;
 
-/// An LRU cache keyed by blake3 hash (first 8 bytes as u64).
+/// An O(1) LRU cache keyed by blake3 hash (first 8 bytes as u64).
 ///
-/// Uses a simple Vec-based LRU: most-recently-used entries are at the front.
-/// When the cache is full, the least-recently-used entry (at the back) is evicted.
+/// Uses `HashMap` for O(1) lookup + `VecDeque` for recency ordering.
+/// When a hit occurs, the key is moved to the front of the deque (O(1) for
+/// single-element push/pop from ends, O(n) only when removing from middle
+/// which is acceptable given typical cache sizes < 1024).
 pub struct PredictCache {
-    entries: Vec<(u64, String)>,
+    store: HashMap<u64, String>,
+    order: VecDeque<u64>,
     max_entries: usize,
+    /// Cumulative hit/miss counters for diagnostics.
+    pub hits: u64,
+    pub misses: u64,
 }
 
 impl PredictCache {
@@ -31,15 +37,16 @@ impl PredictCache {
     #[must_use]
     pub fn new(max_entries: usize) -> Self {
         Self {
-            entries: Vec::with_capacity(max_entries.min(1)),
+            store: HashMap::with_capacity(max_entries.min(1)),
+            order: VecDeque::with_capacity(max_entries.min(1)),
             max_entries,
+            hits: 0,
+            misses: 0,
         }
     }
 
     /// Hash the input with a version prefix to prevent stale cache entries
-    /// across compressor upgrades. The version is embedded via `CARGO_PKG_VERSION`
-    /// so that a recompilation after a version bump automatically invalidates
-    /// all previously cached keys.
+    /// across compressor upgrades.
     fn hash_key(input: &str) -> u64 {
         let versioned = format!("v{}:{}", env!("CARGO_PKG_VERSION"), input);
         let hash = blake3::hash(versioned.as_bytes());
@@ -47,17 +54,23 @@ impl PredictCache {
     }
 
     /// Look up a cached result. Returns `Some(String)` on hit, `None` on miss.
-    /// On hit, promotes the entry to MRU position.
+    /// On hit, promotes the entry to MRU position and increments `hits`.
+    /// On miss, increments `misses`.
     pub fn get(&mut self, input: &str) -> Option<String> {
         if self.max_entries == 0 {
             return None;
         }
         let key = Self::hash_key(input);
-        if let Some(pos) = self.entries.iter().position(|(k, _)| *k == key) {
-            let entry = self.entries.remove(pos);
-            self.entries.insert(0, entry);
-            Some(self.entries[0].1.clone())
+        if let Some(value) = self.store.get(&key) {
+            // Promote to MRU: remove from current position, push to front
+            if let Some(pos) = self.order.iter().position(|k| *k == key) {
+                self.order.remove(pos);
+            }
+            self.order.push_front(key);
+            self.hits += 1;
+            Some(value.clone())
         } else {
+            self.misses += 1;
             None
         }
     }
@@ -69,22 +82,19 @@ impl PredictCache {
         }
         let key = Self::hash_key(input);
         // Remove existing entry for same key if any
-        if let Some(pos) = self.entries.iter().position(|(k, _)| *k == key) {
-            self.entries.remove(pos);
+        if self.store.contains_key(&key)
+            && let Some(pos) = self.order.iter().position(|k| *k == key)
+        {
+            self.order.remove(pos);
         }
-        self.entries.insert(0, (key, output.to_string()));
+        self.store.insert(key, output.to_string());
+        self.order.push_front(key);
         // Evict LRU if over capacity
-        while self.entries.len() > self.max_entries {
-            self.entries.pop();
+        while self.order.len() > self.max_entries {
+            if let Some(evicted) = self.order.pop_back() {
+                self.store.remove(&evicted);
+            }
         }
-    }
-
-    /// Return the number of entries currently cached.
-    #[cfg(test)]
-    #[must_use]
-    #[allow(dead_code)]
-    pub fn len(&self) -> usize {
-        self.entries.len()
     }
 }
 
@@ -163,7 +173,13 @@ fn compute_diff_inner(command_key: &str, new_output: &str, threshold: f64) -> Op
         let diff = unified_diff(old_output, new_output);
         // Unchanged outputs always emit the marker (no threshold check needed).
         // Otherwise, only use diff if it is meaningfully smaller than full output.
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        // cast_precision_loss is acceptable: usize > 2^53 (~9 PB) is unreachable
+        // for CLI output length in practice.
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_precision_loss,
+            clippy::cast_sign_loss
+        )]
         let threshold_len = (new_output.len() as f64 * threshold) as usize;
         if diff == "(unchanged)" || diff.len() < threshold_len {
             Some(diff)
@@ -278,6 +294,7 @@ pub fn clear_diff_cache() {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 

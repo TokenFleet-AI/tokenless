@@ -3,7 +3,7 @@ members = ["crates/*", "apps/*"]
 resolver = "3"
 
 [workspace.package]
-version = "1.0.0"
+version = "1.1.0"
 authors = ["TokenFleet-AI"]
 edition = "2024"
 rust-version = "1.89.0"
@@ -30,10 +30,10 @@ toml = "0.8"
 toon-format = { version = "0.5", default-features = false }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+secrecy = "0.10"
 
 # CLI
 blake3 = "1"
-lru = "0.18"
 
 # TUI
 ratatui = "0.30"
@@ -43,7 +43,7 @@ crossterm = "0.29"
 typed-builder = "0.19"
 
 # Business
-rtk-registry = "0.1.0"
+rtk-registry = "0.1.1"
 
 insta = { version = "1", features = ["json"] }
 

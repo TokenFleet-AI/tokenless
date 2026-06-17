@@ -1,3 +1,19 @@
+//! `OpenAI Function Calling` schema compression.
+//!
+//! [`SchemaCompressor`] truncates function and parameter descriptions, drops
+//! optional fields (`title`, `examples`), strips markdown formatting, and
+//! limits enum items. All operations are depth-limited and respect character
+//! boundaries for UTF-8 safety.
+//!
+//! # Builder pattern
+//!
+//! ```ignore
+//! let compressor = SchemaCompressor::new()
+//!     .with_compress_all(true)
+//!     .with_func_desc_max_len(256);
+//! let result = compressor.compress(&schema_json);
+//! ```
+
 #![allow(clippy::expect_used, reason = "static regex with known-valid literals")]
 
 use std::sync::LazyLock;
@@ -167,11 +183,8 @@ impl SchemaCompressor {
     /// logic.  Deduplication is deferred — golden tests must be in place first.
     #[must_use]
     pub fn compress(&self, tool: &Value) -> Value {
-        let original_text = serde_json::to_string(tool).unwrap_or_else(|e| {
-            tracing::warn!("SchemaCompressor: serde serialization failed: {e}");
-            String::new()
-        });
         let mut result = tool.clone();
+        let mut changed = false;
 
         // P3: Pre-compress $defs/definitions entries so $ref targets
         // are already compressed when referenced during traversal.
@@ -188,7 +201,7 @@ impl SchemaCompressor {
             if let Some(defs) = result.pointer_mut(defs_path) {
                 if let Some(defs_obj) = defs.as_object_mut() {
                     for (_key, def_schema) in defs_obj.iter_mut() {
-                        self.compress_json_schema(def_schema, 1);
+                        self.compress_json_schema(def_schema, 1, &mut changed);
                     }
                 }
             }
@@ -196,11 +209,15 @@ impl SchemaCompressor {
 
         if let Some(function) = result.get_mut("function") {
             if let Some(desc) = function.get("description").and_then(|d| d.as_str()) {
-                function["description"] = Value::String(self.truncate_description(
+                let truncated = self.truncate_description(
                     desc,
                     self.func_desc_max_len,
                     self.func_desc_max_tokens,
-                ));
+                );
+                if truncated != desc {
+                    function["description"] = Value::String(truncated);
+                    changed = true;
+                }
             }
             #[allow(
                 clippy::collapsible_if,
@@ -209,18 +226,28 @@ impl SchemaCompressor {
             if self.drop_titles {
                 if let Some(obj) = function.as_object_mut() {
                     obj.remove("title");
+                    changed = true;
                 }
             }
             if let Some(params) = function.get_mut("parameters") {
-                self.compress_json_schema(params, 1);
+                self.compress_json_schema(params, 1, &mut changed);
             }
         } else {
+            #[allow(
+                clippy::collapsible_if,
+                reason = "nested if improves readability for description extraction"
+            )]
             if let Some(desc_val) = result.get_mut("description") {
-                let truncated = desc_val.as_str().map(|d| {
-                    self.truncate_description(d, self.func_desc_max_len, self.func_desc_max_tokens)
-                });
-                if let Some(truncated) = truncated {
-                    *desc_val = Value::String(truncated);
+                if let Some(desc) = desc_val.as_str() {
+                    let truncated = self.truncate_description(
+                        desc,
+                        self.func_desc_max_len,
+                        self.func_desc_max_tokens,
+                    );
+                    if truncated != desc {
+                        *desc_val = Value::String(truncated);
+                        changed = true;
+                    }
                 }
             }
             #[allow(
@@ -230,25 +257,22 @@ impl SchemaCompressor {
             if self.drop_titles {
                 if let Some(obj) = result.as_object_mut() {
                     obj.remove("title");
+                    changed = true;
                 }
             }
             if let Some(params) = result.get_mut("parameters") {
-                self.compress_json_schema(params, 1);
+                self.compress_json_schema(params, 1, &mut changed);
             }
             // Bare-schema path: the manual truncate + title removal above may overlap
             // with compress_json_schema below.  The redundancy is intentional defense-in-depth
             // — edge cases where result["description"] or result["title"] differ from what
             // the recursive walker sees at depth 0 are handled correctly by both paths.
             if result.get("type").is_some() || result.get("properties").is_some() {
-                self.compress_json_schema(&mut result, 0);
+                self.compress_json_schema(&mut result, 0, &mut changed);
             }
         }
 
-        let compressed_text = serde_json::to_string(&result).unwrap_or_else(|e| {
-            tracing::warn!("SchemaCompressor: serde serialization failed: {e}");
-            String::new()
-        });
-        if !self.compress_all && original_text == compressed_text {
+        if !self.compress_all && !changed {
             return tool.clone();
         }
         result
@@ -260,7 +284,12 @@ impl SchemaCompressor {
     /// `items`, `anyOf`, `oneOf`, `allOf`, `additionalProperties`,
     /// `patternProperties`, `$defs`, `definitions`.
     #[allow(clippy::too_many_lines)]
-    pub(crate) fn compress_json_schema(&self, schema: &mut Value, depth: usize) {
+    pub(crate) fn compress_json_schema(
+        &self,
+        schema: &mut Value,
+        depth: usize,
+        changed: &mut bool,
+    ) {
         if depth > 64 {
             return;
         }
@@ -270,9 +299,11 @@ impl SchemaCompressor {
 
         if self.drop_titles {
             obj.remove("title");
+            *changed = true;
         }
         if self.drop_examples {
             obj.remove("examples");
+            *changed = true;
         }
         if let Some(desc) = obj
             .get("description")
@@ -289,10 +320,11 @@ impl SchemaCompressor {
             } else {
                 self.param_desc_max_tokens
             };
-            obj.insert(
-                "description".into(),
-                Value::String(self.truncate_description(&desc, max_len, token_max)),
-            );
+            let truncated = self.truncate_description(&desc, max_len, token_max);
+            if truncated != desc {
+                obj.insert("description".into(), Value::String(truncated));
+                *changed = true;
+            }
         }
         #[allow(
             clippy::collapsible_if,
@@ -304,6 +336,7 @@ impl SchemaCompressor {
                 if original_len > self.max_enum_items {
                     let remaining = original_len - self.max_enum_items;
                     enum_arr.truncate(self.max_enum_items);
+                    *changed = true;
                     // Security: Do NOT inject fake sentinel strings into the enum
                     // array. LLMs and validators treat every array element as a
                     // legitimate enum value — a sentinel like "<... N more omitted>"
@@ -329,12 +362,12 @@ impl SchemaCompressor {
         if let Some(properties) = obj.get_mut("properties") {
             if let Some(props_obj) = properties.as_object_mut() {
                 for (_key, prop_schema) in props_obj.iter_mut() {
-                    self.compress_json_schema(prop_schema, depth + 1);
+                    self.compress_json_schema(prop_schema, depth + 1, changed);
                 }
             }
         }
         if let Some(items) = obj.get_mut("items") {
-            self.compress_json_schema(items, depth + 1);
+            self.compress_json_schema(items, depth + 1, changed);
         }
         #[allow(
             clippy::collapsible_if,
@@ -343,7 +376,7 @@ impl SchemaCompressor {
         if let Some(any_of) = obj.get_mut("anyOf") {
             if let Some(arr) = any_of.as_array_mut() {
                 for item in arr.iter_mut() {
-                    self.compress_json_schema(item, depth + 1);
+                    self.compress_json_schema(item, depth + 1, changed);
                 }
             }
         }
@@ -354,7 +387,7 @@ impl SchemaCompressor {
         if let Some(one_of) = obj.get_mut("oneOf") {
             if let Some(arr) = one_of.as_array_mut() {
                 for item in arr.iter_mut() {
-                    self.compress_json_schema(item, depth + 1);
+                    self.compress_json_schema(item, depth + 1, changed);
                 }
             }
         }
@@ -365,7 +398,7 @@ impl SchemaCompressor {
         if let Some(all_of) = obj.get_mut("allOf") {
             if let Some(arr) = all_of.as_array_mut() {
                 for item in arr.iter_mut() {
-                    self.compress_json_schema(item, depth + 1);
+                    self.compress_json_schema(item, depth + 1, changed);
                 }
             }
         }
@@ -376,7 +409,7 @@ impl SchemaCompressor {
         )]
         if let Some(additional) = obj.get_mut("additionalProperties") {
             if additional.is_object() {
-                self.compress_json_schema(additional, depth + 1);
+                self.compress_json_schema(additional, depth + 1, changed);
             }
         }
         #[allow(
@@ -386,7 +419,7 @@ impl SchemaCompressor {
         if let Some(pattern_props) = obj.get_mut("patternProperties") {
             if let Some(props_obj) = pattern_props.as_object_mut() {
                 for (_pattern, prop_schema) in props_obj.iter_mut() {
-                    self.compress_json_schema(prop_schema, depth + 1);
+                    self.compress_json_schema(prop_schema, depth + 1, changed);
                 }
             }
         }
@@ -397,7 +430,7 @@ impl SchemaCompressor {
         if let Some(nested_defs) = obj.get_mut("$defs") {
             if let Some(defs_obj) = nested_defs.as_object_mut() {
                 for (_key, def_schema) in defs_obj.iter_mut() {
-                    self.compress_json_schema(def_schema, depth + 1);
+                    self.compress_json_schema(def_schema, depth + 1, changed);
                 }
             }
         }
@@ -408,7 +441,7 @@ impl SchemaCompressor {
         if let Some(nested_defs) = obj.get_mut("definitions") {
             if let Some(defs_obj) = nested_defs.as_object_mut() {
                 for (_key, def_schema) in defs_obj.iter_mut() {
-                    self.compress_json_schema(def_schema, depth + 1);
+                    self.compress_json_schema(def_schema, depth + 1, changed);
                 }
             }
         }
