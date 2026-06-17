@@ -43,3 +43,6 @@ credentials/
 .aws/
 .gcloud/
 tokenless-export_*.json
+
+# Coverage / test artifacts
+lcov.info
