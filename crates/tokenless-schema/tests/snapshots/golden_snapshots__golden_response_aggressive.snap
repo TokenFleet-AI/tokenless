@@ -1,42 +1,42 @@
 ---
 source: crates/tokenless-schema/tests/golden_snapshots.rs
-assertion_line: 102
 expression: result
 ---
 {
+  "total": 100,
   "items": [
     {
-      "<...keys_truncated>": "<... 2 more keys truncated>",
-      "description": "Description for item 1 with some additio… (truncated)",
       "id": 1,
-      "name": "Item Alpha"
+      "name": "Item Alpha",
+      "description": "Description for item 1 with some additio… (truncated)",
+      "<...keys_truncated>": "<... 3 more keys truncated>"
     },
     {
-      "<...keys_truncated>": "<... 2 more keys truncated>",
-      "description": "Description for item 2 with some additio… (truncated)",
       "id": 2,
-      "name": "Item Beta"
+      "name": "Item Beta",
+      "description": "Description for item 2 with some additio… (truncated)",
+      "<...keys_truncated>": "<... 3 more keys truncated>"
     },
     {
-      "<...keys_truncated>": "<... 2 more keys truncated>",
-      "description": "Description for item 3 with some additio… (truncated)",
       "id": 3,
-      "name": "Item Gamma"
+      "name": "Item Gamma",
+      "description": "Description for item 3 with some additio… (truncated)",
+      "<...keys_truncated>": "<... 3 more keys truncated>"
     },
     {
-      "<...keys_truncated>": "<... 2 more keys truncated>",
-      "description": "Description for item 4 with some additio… (truncated)",
       "id": 4,
-      "name": "Item Delta"
+      "name": "Item Delta",
+      "description": "Description for item 4 with some additio… (truncated)",
+      "<...keys_truncated>": "<... 3 more keys truncated>"
     },
     {
-      "<...keys_truncated>": "<... 2 more keys truncated>",
-      "description": "Description for item 5 with some additio… (truncated)",
       "id": 5,
-      "name": "Item Epsilon"
+      "name": "Item Epsilon",
+      "description": "Description for item 5 with some additio… (truncated)",
+      "<...keys_truncated>": "<... 3 more keys truncated>"
     },
     "<... up to 17 more items truncated>"
   ],
   "next_cursor": "cursor_abcdef123456",
-  "total": 100
+  "<...keys_truncated>": "<... 2 more keys truncated>"
 }

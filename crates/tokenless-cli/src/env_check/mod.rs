@@ -27,7 +27,7 @@ pub(crate) use spec::{
 };
 
 /// Run the env-check command.
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::fn_params_excessive_bools)]
 pub fn run(
     tool: Option<&str>,
     all: bool,

@@ -1,7 +1,7 @@
 //! Handlers for `tokenless hook` subcommands.
 //!
-//! Three entry points for hook protocol: `rewrite` (PreToolUse),
-//! `compress` (PostToolUse), and `diff` (differential response).
+//! Three entry points for hook protocol: `rewrite` (`PreToolUse`),
+//! `compress` (`PostToolUse`), and `diff` (differential response).
 //! Shared helpers live in the [`helpers`] module.
 
 mod helpers;
@@ -19,7 +19,7 @@ use helpers::{
     write_debug_log,
 };
 
-/// Handle `tokenless hook rewrite` — PreToolUse command rewriting via RTK.
+/// Handle `tokenless hook rewrite` — `PreToolUse` command rewriting via RTK.
 pub(crate) fn hook_rewrite(
     target: &str,
     project: Option<String>,
@@ -72,6 +72,23 @@ pub(crate) fn hook_rewrite(
         return Ok(());
     }
 
+    if rtk_registry::contains_unattestable_construct(command) {
+        println!("{input}");
+        record_compression_stats(
+            tokenless_stats::OperationType::RewriteCommand,
+            Some(target.to_string()),
+            session_id,
+            None,
+            project.clone(),
+            Some(user_name),
+            input.clone(),
+            input,
+            false,
+            Some("SkippedUnsafe".into()),
+        );
+        return Ok(());
+    }
+
     let rewritten = rtk_registry::rewrite_command(command, &[], &[]);
     if let Some(ref rw) = rewritten
         && let Some(obj) = val.as_object()
@@ -102,7 +119,7 @@ pub(crate) fn hook_rewrite(
     Ok(())
 }
 
-/// Handle `tokenless hook compress` — PostToolUse response compression.
+/// Handle `tokenless hook compress` — `PostToolUse` response compression.
 #[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
 pub(crate) fn hook_compress(
     semantic: bool,
@@ -137,7 +154,7 @@ pub(crate) fn hook_compress(
     if output.is_empty() {
         println!("{input}");
         if debug {
-            write_debug_log(tool_name, &project, &input, "", "empty");
+            write_debug_log(tool_name, project.as_deref(), &input, "", "empty");
         }
         return Ok(());
     }
@@ -182,7 +199,13 @@ pub(crate) fn hook_compress(
                 Some(method.into()),
             );
             if debug {
-                write_debug_log(tool_name, &project, output, &compressed_str, "compressed");
+                write_debug_log(
+                    tool_name,
+                    project.as_deref(),
+                    output,
+                    &compressed_str,
+                    "compressed",
+                );
             }
             append_compress_log_entry(
                 target,
@@ -216,7 +239,13 @@ pub(crate) fn hook_compress(
                     Some("Standard".into()),
                 );
                 if debug {
-                    write_debug_log(tool_name, &project, output, &cleaned, "compressed");
+                    write_debug_log(
+                        tool_name,
+                        project.as_deref(),
+                        output,
+                        &cleaned,
+                        "compressed",
+                    );
                 }
                 append_compress_log_entry(
                     target,
@@ -229,7 +258,7 @@ pub(crate) fn hook_compress(
         } else {
             println!("{input}");
             if debug {
-                write_debug_log(tool_name, &project, output, output, "passthrough");
+                write_debug_log(tool_name, project.as_deref(), output, output, "passthrough");
             }
         }
     }
@@ -263,12 +292,13 @@ pub(crate) fn hook_diff() -> Result<(), (String, i32)> {
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::needless_pass_by_value,
-    reason = "Test code uses unwrap/expect idiomatically"
+    clippy::panic,
+    reason = "Test code uses unwrap/expect/panic idiomatically"
 )]
 mod tests {
     use super::helpers::*;
-    use super::*;
 
+    #[expect(dead_code, reason = "Used by test functions")]
     fn read_json_fixture(name: &str) -> serde_json::Value {
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
@@ -455,7 +485,7 @@ mod tests {
     fn test_should_handle_truncated_ansi_sequence_gracefully() {
         let input = "hello \x1b[未完成的序列";
         let result = compress_plain_text(input);
-        assert!(result.len() > 0);
+        assert!(!result.is_empty());
     }
 
     #[test]

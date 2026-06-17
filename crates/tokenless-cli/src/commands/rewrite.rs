@@ -6,10 +6,11 @@ use tokenless_stats::{OperationType, estimate_tokens_from_bytes};
 use crate::shared::{read_input, record_compression_stats, rtk_available};
 
 /// Handle `tokenless rewrite`.
+#[allow(clippy::cast_precision_loss)]
 pub(crate) fn rewrite(
     command: Option<String>,
-    exclude: Vec<String>,
-    transparent_prefix: Vec<String>,
+    exclude: &[String],
+    transparent_prefix: &[String],
     project: Option<String>,
     agent_id: Option<String>,
     session_id: Option<String>,
@@ -21,10 +22,17 @@ pub(crate) fn rewrite(
         return Err(("Empty command".to_string(), 1));
     }
 
+    if rtk_registry::contains_unattestable_construct(&input) {
+        println!(
+            "Skipped: command contains shell constructs unsafe for auto-rewrite ($(), backticks, process substitution, or file redirects)"
+        );
+        return Ok(());
+    }
+
     let classification = classify_command(&input);
     match classification {
         Classification::Supported { .. } => {
-            if let Some(rewritten) = rewrite_command(&input, &exclude, &transparent_prefix) {
+            if let Some(rewritten) = rewrite_command(&input, exclude, transparent_prefix) {
                 let before_tokens = estimate_tokens_from_bytes(input.len());
                 let after_tokens = estimate_tokens_from_bytes(rewritten.len());
                 let saved_pct = if before_tokens > 0 {

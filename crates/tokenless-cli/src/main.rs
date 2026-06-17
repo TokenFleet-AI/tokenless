@@ -426,7 +426,7 @@ fn run() -> Result<(), (String, i32)> {
             session_id,
             tool_use_id,
         } => commands::compress::compress_schema(
-            file,
+            &file,
             batch,
             report,
             project,
@@ -444,10 +444,10 @@ fn run() -> Result<(), (String, i32)> {
             session_id,
             tool_use_id,
         } => commands::compress::compress_response(
-            file,
+            &file,
             report,
             semantic,
-            context,
+            &context,
             project,
             agent_id,
             session_id,
@@ -461,7 +461,7 @@ fn run() -> Result<(), (String, i32)> {
             session_id,
             tool_use_id,
         } => commands::compress::compress_auto(
-            file,
+            &file,
             report,
             project,
             agent_id,
@@ -474,8 +474,8 @@ fn run() -> Result<(), (String, i32)> {
             agent_id,
             session_id,
             tool_use_id,
-        } => commands::toon::compress_toon(file, project, agent_id, session_id, tool_use_id),
-        Commands::DecompressToon { file } => commands::toon::decompress_toon(file),
+        } => commands::toon::compress_toon(&file, project, agent_id, session_id, tool_use_id),
+        Commands::DecompressToon { file } => commands::toon::decompress_toon(&file),
         Commands::Rewrite {
             command,
             exclude,
@@ -486,8 +486,8 @@ fn run() -> Result<(), (String, i32)> {
             tool_use_id,
         } => commands::rewrite::rewrite(
             command,
-            exclude,
-            transparent_prefix,
+            &exclude,
+            &transparent_prefix,
             project,
             agent_id,
             session_id,
@@ -521,7 +521,7 @@ fn run() -> Result<(), (String, i32)> {
             }
             commands::init_cmd::handle(
                 global,
-                agent,
+                &agent,
                 debug,
                 compress,
                 no_compress,
@@ -535,7 +535,7 @@ fn run() -> Result<(), (String, i32)> {
             fix,
             checklist,
             json,
-        } => commands::env_check_cmd::handle(tool, all, fix, checklist, json),
+        } => commands::env_check_cmd::handle(tool.as_deref(), all, fix, checklist, json),
         Commands::Mcp(McpAction::Start) => {
             if !shared::is_experimental_enabled() {
                 return Err((
@@ -561,26 +561,26 @@ fn run() -> Result<(), (String, i32)> {
                     1,
                 ));
             }
-            commands::tui::handle(refresh, lang)
+            commands::tui::handle(refresh, &lang)
         }
         Commands::Stats(stats_cmd) => match stats_cmd {
             StatsCommands::Summary {
                 limit,
                 project,
                 namespace,
-            } => commands::stats::stats_summary(limit, project, namespace),
+            } => commands::stats::stats_summary(limit, project.as_deref(), namespace.as_deref()),
             StatsCommands::List {
                 limit,
                 project,
                 namespace,
-            } => commands::stats::stats_list(limit, project, namespace),
+            } => commands::stats::stats_list(limit, project.as_deref(), namespace.as_deref()),
             StatsCommands::Show { id } => commands::stats::stats_show(id),
             StatsCommands::Clear { yes } => commands::stats::stats_clear(yes),
             StatsCommands::Rewrites {
                 limit,
                 offset,
                 project,
-            } => commands::stats::stats_rewrites(limit, offset, project),
+            } => commands::stats::stats_rewrites(limit, offset, project.as_deref()),
             StatsCommands::Status => commands::stats::stats_status(),
             StatsCommands::Enable => commands::stats::stats_enable(),
             StatsCommands::Disable => commands::stats::stats_disable(),
@@ -591,20 +591,22 @@ fn run() -> Result<(), (String, i32)> {
                 until,
                 project,
                 namespace: _,
-            } => commands::stats::stats_diff(since, until, project),
+            } => {
+                commands::stats::stats_diff(since.as_deref(), until.as_deref(), project.as_deref())
+            }
             StatsCommands::Delete {
                 id,
                 agent,
                 before,
                 yes,
-            } => commands::stats::stats_delete(id, agent, before, yes),
+            } => commands::stats::stats_delete(id, agent.as_deref(), before.as_deref(), yes),
             StatsCommands::Vacuum => commands::stats::stats_vacuum(),
             StatsCommands::Export { output } => commands::stats::stats_export(&output),
             StatsCommands::Share {
                 since,
                 project,
                 format,
-            } => commands::stats::stats_share(since, project, Some(format)),
+            } => commands::stats::stats_share(since.as_deref(), project.as_deref(), Some(format)),
         },
     }
 }

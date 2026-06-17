@@ -406,6 +406,7 @@ fn clamp_u64_arg(args: &mut Value, key: &str, max_value: u64) -> Result<(), Stri
 
 // ── Tool: compress_schema ──────────────────────────────────────────────
 
+#[allow(clippy::cast_possible_truncation)]
 fn exec_compress_schema(args: &Value) -> Result<Value, String> {
     let schema = args
         .get("schema")
@@ -440,6 +441,7 @@ fn exec_compress_schema(args: &Value) -> Result<Value, String> {
 
 // ── Tool: compress_response ────────────────────────────────────────────
 
+#[allow(clippy::cast_possible_truncation)]
 fn exec_compress_response(args: &Value) -> Result<Value, String> {
     let response = args
         .get("response")
@@ -479,6 +481,16 @@ fn exec_rewrite_command(args: &Value, agent_id: &str) -> Result<Value, String> {
         .get("command")
         .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing 'command' parameter".to_string())?;
+
+    if rtk_registry::contains_unattestable_construct(command) {
+        return Ok(serde_json::json!({
+            "rewritten": command,
+            "savings_pct": 0.0_f64,
+            "agent_id": agent_id,
+            "skipped": true,
+            "skipped_reason": "unattestable_construct",
+        }));
+    }
 
     let rewritten = rewrite_command(command, &[], &[]);
 
@@ -901,6 +913,38 @@ mod tests {
         let args = serde_json::json!({});
         let result = exec_rewrite_command(&args, "test");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_exec_rewrite_command_skips_backtick_substitution() {
+        let args = serde_json::json!({
+            "command": "git log --pretty=`whoami`"
+        });
+        let result = exec_rewrite_command(&args, "test-agent").unwrap();
+        assert_eq!(result["skipped"], true);
+        assert_eq!(result["skipped_reason"], "unattestable_construct");
+        assert_eq!(result["rewritten"], "git log --pretty=`whoami`");
+        assert_eq!(result["savings_pct"], 0.0);
+    }
+
+    #[test]
+    fn test_exec_rewrite_command_skips_dollar_paren_substitution() {
+        let args = serde_json::json!({
+            "command": "git status $(rm -rf /)"
+        });
+        let result = exec_rewrite_command(&args, "test-agent").unwrap();
+        assert_eq!(result["skipped"], true);
+        assert_eq!(result["skipped_reason"], "unattestable_construct");
+    }
+
+    #[test]
+    fn test_exec_rewrite_command_allows_simple_variable_expansion() {
+        let args = serde_json::json!({
+            "command": "echo $HOME"
+        });
+        let result = exec_rewrite_command(&args, "test-agent").unwrap();
+        // echo is not rewritable, but the command should not be flagged as unsafe
+        assert!(result.get("skipped").is_none() || result["skipped"] == false);
     }
 
     #[test]

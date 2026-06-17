@@ -45,6 +45,7 @@ pub(crate) struct ToolDepSpec {
     pub(crate) network: Vec<String>,
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn normalize_dep(value: &Value) -> DepEntry {
     match value {
         Value::String(s) => {

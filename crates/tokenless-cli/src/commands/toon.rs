@@ -8,14 +8,15 @@ use crate::{
 };
 
 /// Handle `tokenless compress-toon`.
+#[allow(clippy::ref_option)]
 pub(crate) fn compress_toon(
-    file: Option<String>,
+    file: &Option<String>,
     project: Option<String>,
     agent_id: Option<String>,
     session_id: Option<String>,
     tool_use_id: Option<String>,
 ) -> Result<(), (String, i32)> {
-    let input = read_input(&file).map_err(|e| (e, 2))?;
+    let input = read_input(file).map_err(|e| (e, 2))?;
     if let Some(cached) = cache::cache_get(&input) {
         println!("{cached}");
         return Ok(());
@@ -48,8 +49,9 @@ pub(crate) fn compress_toon(
 }
 
 /// Handle `tokenless decompress-toon`.
-pub(crate) fn decompress_toon(file: Option<String>) -> Result<(), (String, i32)> {
-    let input = read_input(&file).map_err(|e| (e, 2))?;
+#[allow(clippy::ref_option)]
+pub(crate) fn decompress_toon(file: &Option<String>) -> Result<(), (String, i32)> {
+    let input = read_input(file).map_err(|e| (e, 2))?;
     let decoded: serde_json::Value =
         toon_format::decode_default(&input).map_err(|e| (format!("toon decode failed: {e}"), 2))?;
     let output = serde_json::to_string_pretty(&decoded)

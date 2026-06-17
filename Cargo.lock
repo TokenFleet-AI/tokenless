@@ -2234,9 +2234,9 @@ dependencies = [
 
 [[package]]
 name = "rtk-registry"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e0a5ae1bb07e0942fd95a2f2db34033b1c749924a7261ebaf35712847e3f75f"
+checksum = "7b712718f5afbe70bfde7e6126480a81bca8b27fcb07d94a3a88099022a36e8d"
 dependencies = [
  "lazy_static",
  "regex",

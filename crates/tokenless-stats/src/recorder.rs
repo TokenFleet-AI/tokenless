@@ -1363,7 +1363,7 @@ mod tests {
         assert!(result.was_modified());
         assert_eq!(
             result.into_plain_text().as_deref(),
-            Some("api_key=REDAC TED") // gitleaks:allow
+            Some("api_key=[REDACTED]") // gitleaks:allow
         );
     }
 

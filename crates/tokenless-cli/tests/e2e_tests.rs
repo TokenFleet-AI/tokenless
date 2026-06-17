@@ -1,5 +1,7 @@
 //! End-to-end CLI tests for the `tokenless` binary.
 
+#![allow(clippy::expect_used)]
+
 use insta::{assert_snapshot, with_settings};
 
 fn tokenless_command() -> assert_cmd::Command {

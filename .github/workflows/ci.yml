@@ -33,12 +33,12 @@ jobs:
           components: rustfmt, clippy
 
       - name: Build
-        run: cargo build --release --workspace
+        run: cargo build --release --workspace --features tokenless-semantic/onnx
 
       - name: Test
         env:
           INSTA_UPDATE: always
-        run: cargo test --workspace
+        run: cargo test --workspace --features tokenless-semantic/onnx
 
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic

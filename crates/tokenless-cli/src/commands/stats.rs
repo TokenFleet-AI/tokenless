@@ -2,6 +2,7 @@
 
 use std::{
     collections::BTreeMap,
+    fmt::Write as _,
     io::{self, Write},
 };
 
@@ -16,10 +17,8 @@ fn format_summary(records: &[StatsRecord], title: Option<&str>) -> String {
     let mut output = String::new();
 
     if let Some(title) = title {
-        output.push_str(title);
-        output.push('\n');
-        output.push_str(&"=".repeat(title.len()));
-        output.push('\n');
+        let _ = writeln!(output, "{title}");
+        let _ = writeln!(output, "{}", "=".repeat(title.len()));
     }
 
     if records.is_empty() {
@@ -56,12 +55,13 @@ fn format_summary(records: &[StatsRecord], title: Option<&str>) -> String {
         total_before_tokens += before_tokens;
         total_after_tokens += after_tokens;
 
-        output.push_str(&format!(
+        let _ = write!(
+            output,
             "{operation_name}\n  Count: {count}\n  Chars: {before_chars} → {after_chars} (-{chars_saved}, {chars_pct:.1}%)\n  Tokens: {before_tokens} → {after_tokens} (-{tokens_saved}, {tokens_pct:.1}%)\n\n",
             count = group.len(),
             chars_saved = format_number(chars_saved),
             tokens_saved = format_number(tokens_saved),
-        ));
+        );
     }
 
     let total_chars_saved = total_before_chars.saturating_sub(total_after_chars);
@@ -69,7 +69,8 @@ fn format_summary(records: &[StatsRecord], title: Option<&str>) -> String {
     let total_chars_pct = percentage(total_chars_saved, total_before_chars);
     let total_tokens_pct = percentage(total_tokens_saved, total_before_tokens);
 
-    output.push_str(&format!(
+    let _ = write!(
+        output,
         "Total\n  Count: {count}\n  Chars: {before_chars} → {after_chars} (-{chars_saved}, {chars_pct:.1}%)\n  Tokens: {before_tokens} → {after_tokens} (-{tokens_saved}, {tokens_pct:.1}%)\n",
         count = records.len(),
         before_chars = format_number(total_before_chars),
@@ -80,17 +81,18 @@ fn format_summary(records: &[StatsRecord], title: Option<&str>) -> String {
         after_tokens = format_number(total_after_tokens),
         tokens_saved = format_number(total_tokens_saved),
         tokens_pct = total_tokens_pct,
-    ));
+    );
 
     output
 }
 
 fn format_list(records: &[StatsRecord], limit: usize) -> String {
     let mut output = String::new();
-    output.push_str(&format!(
+    let _ = write!(
+        output,
         "Recent {} records (most recent first):\n\n",
         records.len().min(limit)
-    ));
+    );
     for record in records.iter().take(limit) {
         output.push_str(&record.format_summary_line());
         output.push('\n');
@@ -100,33 +102,36 @@ fn format_list(records: &[StatsRecord], limit: usize) -> String {
 
 fn format_show(record: &StatsRecord) -> String {
     let mut output = String::new();
-    output.push_str(&format!(
+    let _ = write!(
+        output,
         "Record ID: {id}\nTimestamp: {timestamp}\nOperation: {operation}\nAgent: {agent}\n\n",
         id = record.id,
         timestamp = record.timestamp.format("%Y-%m-%d %H:%M:%S"),
         operation = record.operation.as_str(),
         agent = record.agent_id,
-    ));
+    );
 
     if let Some(session_id) = &record.session_id {
-        output.push_str(&format!("Session: {session_id}\n"));
+        let _ = writeln!(output, "Session: {session_id}");
     }
     if let Some(tool_use_id) = &record.tool_use_id {
-        output.push_str(&format!("ToolUse: {tool_use_id}\n"));
+        let _ = writeln!(output, "ToolUse: {tool_use_id}");
     }
     if let Some(source_pid) = record.source_pid {
-        output.push_str(&format!("PID: {source_pid}\n"));
+        let _ = writeln!(output, "PID: {source_pid}");
     }
-    output.push_str(&format!(
-        "Experimental: {}\n",
+    let _ = writeln!(
+        output,
+        "Experimental: {}",
         if record.experimental_mode {
             "yes"
         } else {
             "no"
         }
-    ));
+    );
 
-    output.push_str(&format!(
+    let _ = write!(
+        output,
         "\nBefore: {before_chars} chars, {before_tokens} tokens\nAfter: {after_chars} chars, {after_tokens} tokens\nSaved: {chars_saved} chars (-{chars_pct:.1}%), {tokens_saved} tokens (-{tokens_pct:.1}%)\n\n",
         before_chars = record.before_chars,
         before_tokens = record.before_tokens,
@@ -136,7 +141,7 @@ fn format_show(record: &StatsRecord) -> String {
         chars_pct = record.chars_percent(),
         tokens_saved = record.tokens_saved(),
         tokens_pct = record.tokens_percent(),
-    ));
+    );
 
     if let Some(text) = &record.before_text {
         output.push_str("--- Before ---\n");
@@ -167,61 +172,68 @@ fn format_rewrites(entries: &[(&str, usize, Option<f64>)], limit: usize, offset:
     let total_pages = total_commands.div_ceil(limit);
     let current_page = offset / limit + 1;
 
-    output.push_str(&format!(
+    let _ = write!(
+        output,
         "  {total_commands} commands, {total_rewrites} rewrites (page {current_page}/{total_pages})\n\n",
-    ));
+    );
 
     for (command, count, savings) in entries.iter().skip(offset).take(limit) {
         match savings {
             Some(savings_pct) => {
-                output.push_str(&format!("  {count:>5}  {command:<40} ~{savings_pct:.0}%\n"));
+                let _ = writeln!(output, "  {count:>5}  {command:<40} ~{savings_pct:.0}%");
             }
-            None => output.push_str(&format!("  {count:>5}  {command}\n")),
+            None => {
+                let _ = writeln!(output, "  {count:>5}  {command}");
+            }
         }
     }
 
     if offset + shown < total_commands {
         let remaining = total_commands - offset - shown;
-        output.push_str(&format!(
+        let _ = write!(
+            output,
             "\n  ... {remaining} more command(s). Use --offset {} for next page.\n",
             offset + limit
-        ));
+        );
     }
 
     output
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn format_diff(records: &[StatsRecord], since: &str, until: &str) -> String {
     let summary = StatsSummary::from_records(records);
     let mut output = String::new();
 
     output.push_str("Tokenless Savings Report\n");
     output.push_str("========================\n");
-    output.push_str(&format!("Period: {since} → {until}\n\n"));
+    let _ = writeln!(output, "Period: {since} → {until}\n");
 
     if records.is_empty() {
         output.push_str("No records found for this period.\n");
         return output;
     }
 
-    output.push_str(&format!("Total records:   {}\n", summary.total_records));
-    output.push_str(&format!(
-        "Chars:   {} → {}  (-{}, {:.1}%)\n",
+    let _ = writeln!(output, "Total records:   {}", summary.total_records);
+    let _ = writeln!(
+        output,
+        "Chars:   {} → {}  (-{}, {:.1}%)",
         format_number(summary.total_before_chars),
         format_number(summary.total_after_chars),
         format_number(summary.chars_saved()),
         summary.chars_percent(),
-    ));
-    output.push_str(&format!(
-        "Tokens:  {} → {}  (-{}, {:.1}%)\n",
+    );
+    let _ = writeln!(
+        output,
+        "Tokens:  {} → {}  (-{}, {:.1}%)",
         format_number(summary.total_before_tokens),
         format_number(summary.total_after_tokens),
         format_number(summary.tokens_saved()),
         summary.tokens_percent(),
-    ));
+    );
 
     let estimated_cost = summary.tokens_saved() as f64 * 8.0 / 1_000_000.0;
-    output.push_str(&format!("Est. cost saved: ~${estimated_cost:.2}\n"));
+    let _ = writeln!(output, "Est. cost saved: ~${estimated_cost:.2}");
 
     let mut by_agent: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
     for record in records {
@@ -232,16 +244,18 @@ fn format_diff(records: &[StatsRecord], since: &str, until: &str) -> String {
     if by_agent.len() > 1 {
         output.push_str("\nPer-Agent:\n");
         for (agent, (tokens, count)) in &by_agent {
-            output.push_str(&format!(
-                "  {agent}: -{} tokens ({count} ops)\n",
+            let _ = writeln!(
+                output,
+                "  {agent}: -{} tokens ({count} ops)",
                 format_number(*tokens),
-            ));
+            );
         }
     }
 
     output
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn percentage(saved: usize, total: usize) -> f64 {
     if total == 0 {
         0.0
@@ -264,12 +278,12 @@ fn format_number(value: usize) -> String {
 
 pub(crate) fn stats_summary(
     limit: Option<usize>,
-    project: Option<String>,
-    namespace: Option<String>,
+    project: Option<&str>,
+    namespace: Option<&str>,
 ) -> Result<(), (String, i32)> {
     let recorder = open_recorder()?;
     let records = recorder
-        .records_filtered(None, None, project.as_deref(), namespace.as_deref(), limit)
+        .records_filtered(None, None, project, namespace, limit)
         .map_err(|e| (format!("Failed to query records: {e}"), 1))?;
 
     let title = match (&project, &namespace) {
@@ -284,18 +298,12 @@ pub(crate) fn stats_summary(
 
 pub(crate) fn stats_list(
     limit: usize,
-    project: Option<String>,
-    namespace: Option<String>,
+    project: Option<&str>,
+    namespace: Option<&str>,
 ) -> Result<(), (String, i32)> {
     let recorder = open_recorder()?;
     let records = recorder
-        .records_filtered(
-            None,
-            None,
-            project.as_deref(),
-            namespace.as_deref(),
-            Some(limit),
-        )
+        .records_filtered(None, None, project, namespace, Some(limit))
         .map_err(|e| (format!("Failed to query records: {e}"), 1))?;
     println!("{}", format_list(&records, limit));
     Ok(())
@@ -336,11 +344,11 @@ pub(crate) fn stats_clear(yes: bool) -> Result<(), (String, i32)> {
 pub(crate) fn stats_rewrites(
     limit: usize,
     offset: usize,
-    project: Option<String>,
+    project: Option<&str>,
 ) -> Result<(), (String, i32)> {
     let recorder = open_recorder()?;
     let all = recorder
-        .records_filtered(None, None, project.as_deref(), None, None)
+        .records_filtered(None, None, project, None, None)
         .map_err(|e| (format!("Failed to query records: {e}"), 1))?;
     let rewrites: Vec<_> = all
         .iter()
@@ -372,6 +380,7 @@ pub(crate) fn stats_rewrites(
     Ok(())
 }
 
+#[allow(clippy::unnecessary_wraps)]
 pub(crate) fn stats_status() -> Result<(), (String, i32)> {
     let config = TokenlessConfig::load();
     let source = if std::env::var("TOKENLESS_STATS_ENABLED").is_ok() {
@@ -442,29 +451,25 @@ pub(crate) fn stats_experimental_off() -> Result<(), (String, i32)> {
 }
 
 pub(crate) fn stats_diff(
-    since: Option<String>,
-    until: Option<String>,
-    project: Option<String>,
+    since: Option<&str>,
+    until: Option<&str>,
+    project: Option<&str>,
 ) -> Result<(), (String, i32)> {
     let recorder = open_recorder()?;
     let until_str = until
-        .as_deref()
         .and_then(parse_time_range)
         .unwrap_or_else(|| chrono::Local::now().to_rfc3339());
-    let since_str = since
-        .as_deref()
-        .and_then(parse_time_range)
-        .unwrap_or_else(|| {
-            let d = chrono::Local::now() - chrono::Duration::days(7);
-            d.to_rfc3339()
-        });
+    let since_str = since.and_then(parse_time_range).unwrap_or_else(|| {
+        let d = chrono::Local::now() - chrono::Duration::days(7);
+        d.to_rfc3339()
+    });
 
     let since_label = since_str.clone();
     let until_label = until_str.clone();
 
     // Use records_filtered for project support, then post-filter by time
     let all_records = recorder
-        .records_filtered(None, None, project.as_deref(), None, None)
+        .records_filtered(None, None, project, None, None)
         .map_err(|e| (format!("Failed to query records: {e}"), 1))?;
     let records: Vec<_> = all_records
         .into_iter()
@@ -480,8 +485,8 @@ pub(crate) fn stats_diff(
 
 pub(crate) fn stats_delete(
     id: Option<i64>,
-    agent: Option<String>,
-    before: Option<String>,
+    agent: Option<&str>,
+    before: Option<&str>,
     yes: bool,
 ) -> Result<(), (String, i32)> {
     let recorder = open_recorder()?;
@@ -489,12 +494,12 @@ pub(crate) fn stats_delete(
     // Determine what to delete
     let desc: String = if id.is_some() {
         "record #{}".to_string()
-    } else if let Some(ref agent_id) = agent {
+    } else if let Some(agent_id) = agent {
         let count = recorder
             .count()
             .map_err(|e| (format!("Failed to count records: {e}"), 1))?;
         format!("all records for agent \"{agent_id}\" ({count} total records in DB)")
-    } else if let Some(ref date) = before {
+    } else if let Some(date) = before {
         let count = recorder
             .count()
             .map_err(|e| (format!("Failed to count records: {e}"), 1))?;
@@ -524,12 +529,12 @@ pub(crate) fn stats_delete(
             .delete_by_id(record_id)
             .map_err(|e| (format!("Failed to delete: {e}"), 1))?;
         println!("Deleted record #{record_id}.");
-    } else if let Some(ref agent_id) = agent {
+    } else if let Some(agent_id) = agent {
         let deleted = recorder
             .delete_by_agent(agent_id)
             .map_err(|e| (format!("Failed to delete: {e}"), 1))?;
         println!("Deleted {deleted} records for agent \"{agent_id}\".");
-    } else if let Some(ref date) = before {
+    } else if let Some(date) = before {
         let deleted = recorder
             .delete_before(date)
             .map_err(|e| (format!("Failed to delete: {e}"), 1))?;
@@ -576,20 +581,20 @@ pub(crate) fn stats_export(output: &str) -> Result<(), (String, i32)> {
 }
 
 /// Generate a shareable weekly/monthly report.
+#[allow(clippy::cast_precision_loss)]
 pub(crate) fn stats_share(
-    since: Option<String>,
-    project: Option<String>,
+    since: Option<&str>,
+    project: Option<&str>,
     format: Option<String>,
 ) -> Result<(), (String, i32)> {
     let recorder = open_recorder()?;
     let now = chrono::Local::now();
     let since_str = since
-        .as_deref()
         .and_then(parse_time_range)
         .unwrap_or_else(|| (now - chrono::Duration::days(7)).to_rfc3339());
     let until_str = now.to_rfc3339();
     let all = recorder
-        .records_filtered(None, None, project.as_deref(), None, None)
+        .records_filtered(None, None, project, None, None)
         .map_err(|e| (format!("Failed to query records: {e}"), 1))?;
     let records: Vec<_> = all
         .into_iter()
@@ -617,39 +622,36 @@ pub(crate) fn stats_share(
     }
 
     let fmt = format.unwrap_or_else(|| "terminal".to_string());
-    match fmt.as_str() {
-        "markdown" => {
-            println!("# 📊 Tokenless Weekly Report\n");
-            println!(
-                "**Period**: {} → {}",
-                &since_str[..10.min(since_str.len())],
-                &until_str[..10.min(until_str.len())]
-            );
-            println!("**Records**: {}", records.len());
-            println!("**Tokens saved**: ~{total_saved_tokens}");
-            println!("**Bytes saved**: {total_saved_bytes}");
-            println!("**Est. cost saved**: ~${est_cost:.2}\n");
-            println!("## Top Agents\n");
-            for (agent, count) in agent_counts.iter().take(5) {
-                println!("- `{agent}`: {count} records");
-            }
+    if fmt.as_str() == "markdown" {
+        println!("# 📊 Tokenless Weekly Report\n");
+        println!(
+            "**Period**: {} → {}",
+            &since_str[..10.min(since_str.len())],
+            &until_str[..10.min(until_str.len())]
+        );
+        println!("**Records**: {}", records.len());
+        println!("**Tokens saved**: ~{total_saved_tokens}");
+        println!("**Bytes saved**: {total_saved_bytes}");
+        println!("**Est. cost saved**: ~${est_cost:.2}\n");
+        println!("## Top Agents\n");
+        for (agent, count) in agent_counts.iter().take(5) {
+            println!("- `{agent}`: {count} records");
         }
-        _ => {
-            println!("📊 Tokenless Weekly Report");
-            println!("{:=<40}", "");
-            println!(
-                "Period:   {} → {}",
-                &since_str[..10.min(since_str.len())],
-                &until_str[..10.min(until_str.len())]
-            );
-            println!("Records:  {}", records.len());
-            println!("Tokens:   ~{total_saved_tokens} saved");
-            println!("Bytes:    {total_saved_bytes} saved");
-            println!("Cost:     ~${est_cost:.2} saved");
-            println!("\nTop Agents:");
-            for (agent, count) in agent_counts.iter().take(5) {
-                println!("  {agent}: {count}");
-            }
+    } else {
+        println!("📊 Tokenless Weekly Report");
+        println!("{:=<40}", "");
+        println!(
+            "Period:   {} → {}",
+            &since_str[..10.min(since_str.len())],
+            &until_str[..10.min(until_str.len())]
+        );
+        println!("Records:  {}", records.len());
+        println!("Tokens:   ~{total_saved_tokens} saved");
+        println!("Bytes:    {total_saved_bytes} saved");
+        println!("Cost:     ~${est_cost:.2} saved");
+        println!("\nTop Agents:");
+        for (agent, count) in agent_counts.iter().take(5) {
+            println!("  {agent}: {count}");
         }
     }
     Ok(())

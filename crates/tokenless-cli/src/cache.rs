@@ -82,10 +82,10 @@ impl PredictCache {
         }
         let key = Self::hash_key(input);
         // Remove existing entry for same key if any
-        if self.store.contains_key(&key) {
-            if let Some(pos) = self.order.iter().position(|k| *k == key) {
-                self.order.remove(pos);
-            }
+        if self.store.contains_key(&key)
+            && let Some(pos) = self.order.iter().position(|k| *k == key)
+        {
+            self.order.remove(pos);
         }
         self.store.insert(key, output.to_string());
         self.order.push_front(key);
@@ -94,23 +94,6 @@ impl PredictCache {
             if let Some(evicted) = self.order.pop_back() {
                 self.store.remove(&evicted);
             }
-        }
-    }
-
-    /// Return the number of entries currently cached.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.store.len()
-    }
-
-    /// Get the cache hit rate as a percentage (0.0–100.0).
-    #[must_use]
-    pub fn hit_rate(&self) -> f64 {
-        let total = self.hits + self.misses;
-        if total == 0 {
-            0.0
-        } else {
-            (self.hits as f64 / total as f64) * 100.0
         }
     }
 }
@@ -190,7 +173,13 @@ fn compute_diff_inner(command_key: &str, new_output: &str, threshold: f64) -> Op
         let diff = unified_diff(old_output, new_output);
         // Unchanged outputs always emit the marker (no threshold check needed).
         // Otherwise, only use diff if it is meaningfully smaller than full output.
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        // cast_precision_loss is acceptable: usize > 2^53 (~9 PB) is unreachable
+        // for CLI output length in practice.
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_precision_loss,
+            clippy::cast_sign_loss
+        )]
         let threshold_len = (new_output.len() as f64 * threshold) as usize;
         if diff == "(unchanged)" || diff.len() < threshold_len {
             Some(diff)

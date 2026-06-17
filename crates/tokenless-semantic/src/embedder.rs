@@ -5,7 +5,7 @@
 )]
 //!
 //! Uses `all-MiniLM-L6-v2` (FP32, ~86MB) via ONNX Runtime.
-//! The model and tokenizer are expected in `~/.tokenless/models/`.
+//! The model and tokenizer are expected in `~/.tokenfleet-ai/tokenless/models/`.
 //!
 //! On first use, call [`ensure_models()`] to download files from the project's
 //! GitHub Releases.  If the models are unavailable, the compressor degrades

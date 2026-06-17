@@ -64,7 +64,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y musl-tools
 
-      - run: cargo build --release --target ${{ matrix.target }}
+      - run: cargo build --release --target ${{ matrix.target }} --features tokenless-semantic/onnx
 
       - name: Package (Unix)
         if: matrix.os != 'windows-latest'

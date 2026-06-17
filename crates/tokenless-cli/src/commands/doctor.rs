@@ -8,6 +8,11 @@ use std::path::PathBuf;
 use crate::shared::{get_home_dir, get_tokenless_dir, open_recorder};
 
 /// Run the `tokenless doctor` diagnostic.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_precision_loss,
+    clippy::unnecessary_wraps
+)]
 pub fn doctor() -> Result<(), (String, i32)> {
     println!("🔍 tokenless doctor — environment diagnostic\n");
     println!("{:=<50}", "");
@@ -195,6 +200,7 @@ pub fn doctor() -> Result<(), (String, i32)> {
 ///
 /// Shows current hook status, recent savings, and top operations without the
 /// full output of `stats summary`.
+#[allow(clippy::unnecessary_wraps, clippy::cast_precision_loss)]
 pub fn status() -> Result<(), (String, i32)> {
     use tokenless_stats::TokenlessConfig;
 
@@ -213,11 +219,11 @@ pub fn status() -> Result<(), (String, i32)> {
     ];
 
     let mut installed: Vec<&str> = Vec::new();
-    for (_name, _key, paths) in agents {
+    for (name, _key, paths) in agents {
         let any_local = paths.iter().any(|p| cwd.join(p).exists());
         let any_global = paths.iter().any(|p| home.join(p).exists());
         if any_local || any_global {
-            installed.push(_name);
+            installed.push(name);
         }
     }
 

@@ -11,7 +11,7 @@ use crate::shared::get_home_dir;
 /// Write original/compressed output to a debug log file for inspection.
 pub(crate) fn write_debug_log(
     tool_name: &str,
-    project: &Option<String>,
+    project: Option<&str>,
     before: &str,
     after: &str,
     action: &str,
@@ -177,6 +177,7 @@ pub(crate) fn extract_tool_output(val: &serde_json::Value) -> &str {
 }
 
 /// Append a structured compress log entry (fire-and-forget).
+#[allow(clippy::cast_precision_loss)]
 pub(crate) fn append_compress_log_entry(
     target: &str,
     before: &str,

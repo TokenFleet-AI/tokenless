@@ -148,17 +148,17 @@ pub(crate) fn get_tokenless_dir() -> std::path::PathBuf {
 /// When `TOKENLESS_STATS_DB` is set, canonicalizes and validates that the
 /// path is within the user's home directory to prevent symlink traversal.
 pub(crate) fn get_db_path() -> String {
-    if let Ok(env_path) = std::env::var("TOKENLESS_STATS_DB") {
-        if let Ok(canonical) = std::path::Path::new(&env_path).canonicalize() {
-            let home = std::path::PathBuf::from(get_home_dir());
-            if canonical.starts_with(&home) || canonical.starts_with("/tmp") {
-                return canonical.display().to_string();
-            }
-            tracing::warn!(
-                path = %env_path,
-                "TOKENLESS_STATS_DB outside home/tmp, falling back to default"
-            );
+    if let Ok(env_path) = std::env::var("TOKENLESS_STATS_DB")
+        && let Ok(canonical) = std::path::Path::new(&env_path).canonicalize()
+    {
+        let home = std::path::PathBuf::from(get_home_dir());
+        if canonical.starts_with(&home) || canonical.starts_with("/tmp") {
+            return canonical.display().to_string();
         }
+        tracing::warn!(
+            path = %env_path,
+            "TOKENLESS_STATS_DB outside home/tmp, falling back to default"
+        );
     }
     get_tokenless_dir().join("stats.db").display().to_string()
 }
@@ -196,7 +196,7 @@ pub(crate) fn open_recorder() -> Result<StatsRecorder, (String, i32)> {
 /// features (format router, semantic compression, diff, etc.).
 /// `method` identifies the specific compression strategy used (e.g. `"ToonHrv"`,
 /// `"HighFidelity"`, `"RtkStandard"`).
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
 pub(crate) fn record_compression_stats(
     op: OperationType,
     agent_id: Option<String>,
@@ -404,6 +404,7 @@ struct ProxyReport {
 ///
 /// This is fire-and-forget: failures are traced and written to an error
 /// log file but never block compression output.
+#[allow(clippy::needless_pass_by_value)]
 fn append_report_to_file(report: ProxyReport) -> Result<(), ()> {
     use std::io::Write;
 
@@ -417,9 +418,7 @@ fn append_report_to_file(report: ProxyReport) -> Result<(), ()> {
     let file_path = get_reports_dir().join(format!("{safe_sid}.jsonl"));
 
     if is_secure_default_enabled()
-        && fs::metadata(&file_path)
-            .map(|meta| meta.len() >= MAX_SECURE_REPORT_BYTES)
-            .unwrap_or(false)
+        && fs::metadata(&file_path).is_ok_and(|meta| meta.len() >= MAX_SECURE_REPORT_BYTES)
     {
         tracing::warn!(path = %file_path.display(), "report file reached secure-default size cap");
         return Err(());
