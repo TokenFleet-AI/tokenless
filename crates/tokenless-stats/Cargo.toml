@@ -19,6 +19,7 @@ thiserror.workspace = true
 dirs.workspace = true
 tracing.workspace = true
 typed-builder.workspace = true
+secrecy.workspace = true
 
 [lints]
 workspace = true

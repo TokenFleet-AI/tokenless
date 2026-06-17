@@ -11,6 +11,8 @@
 //! role: string | enum[admin,user,guest]
 //! ```
 
+use std::fmt::Write;
+
 use serde_json::Value;
 
 /// Indent string used for each nesting level.
@@ -51,50 +53,41 @@ fn encode_object(obj: &serde_json::Map<String, Value>, indent_level: usize) -> S
         }
     }
 
-    let mut lines = Vec::new();
+    let mut output = String::with_capacity(obj.len().saturating_mul(32));
     let prefix = INDENT.repeat(indent_level);
 
-    for (key, val) in obj {
-        let line = match val {
+    for (index, (key, val)) in obj.iter().enumerate() {
+        if index > 0 {
+            output.push('\n');
+        }
+        match val {
             Value::Object(inner) => {
                 // Check if this looks like a schema property definition.
                 if is_schema_object(inner) {
-                    format!("{prefix}{key}: {}", encode_schema_value(inner))
+                    let _ = write!(output, "{prefix}{key}: {}", encode_schema_value(inner));
                 } else {
-                    // Regular nested object.
-                    format!(
-                        "{}{}:\n{}",
-                        prefix,
-                        key,
+                    let _ = write!(
+                        output,
+                        "{prefix}{key}:\n{}",
                         encode_object(inner, indent_level + 1)
-                    )
+                    );
                 }
             }
             Value::Array(arr) => {
                 if arr.is_empty() {
-                    format!("{prefix}{key}: []")
+                    let _ = write!(output, "{prefix}{key}: []");
                 } else {
-                    let items: Vec<String> = arr
-                        .iter()
-                        .map(|v| {
-                            format!(
-                                "{}- {}",
-                                INDENT.repeat(indent_level + 1),
-                                encode(v, indent_level + 1)
-                            )
-                        })
-                        .collect();
-                    format!("{prefix}{key}:\n{}", items.join("\n"))
+                    let _ = writeln!(output, "{prefix}{key}:");
+                    append_array_items(&mut output, arr, indent_level + 1);
                 }
             }
             other => {
-                format!("{prefix}{key}: {}", encode(other, indent_level))
+                let _ = write!(output, "{prefix}{key}: {}", encode(other, indent_level));
             }
-        };
-        lines.push(line);
+        }
     }
 
-    lines.join("\n")
+    output
 }
 
 /// Encode a JSON array using Enhanced TOON.
@@ -102,12 +95,20 @@ fn encode_array(arr: &[Value], indent_level: usize) -> String {
     if arr.is_empty() {
         return "[]".to_string();
     }
+
+    let mut output = String::with_capacity(arr.len().saturating_mul(16));
+    append_array_items(&mut output, arr, indent_level);
+    output
+}
+
+fn append_array_items(output: &mut String, arr: &[Value], indent_level: usize) {
     let prefix = INDENT.repeat(indent_level);
-    let items: Vec<String> = arr
-        .iter()
-        .map(|v| format!("{prefix}- {}", encode(v, indent_level)))
-        .collect();
-    items.join("\n")
+    for (index, value) in arr.iter().enumerate() {
+        if index > 0 {
+            output.push('\n');
+        }
+        let _ = write!(output, "{prefix}- {}", encode(value, indent_level));
+    }
 }
 
 /// Recognized JSON Schema `type` values.
@@ -218,14 +219,15 @@ fn encode_schema_value(obj: &serde_json::Map<String, Value>) -> String {
     if let Some(enum_val) = obj.get("enum")
         && let Some(arr) = enum_val.as_array()
     {
-        let items: Vec<String> = arr
+        let enum_content = arr
             .iter()
-            .map(|v| match v {
-                Value::String(s) => s.clone(),
+            .map(|value| match value {
+                Value::String(string) => string.as_str().to_owned(),
                 other => other.to_string(),
             })
-            .collect();
-        parts.push(format!("enum[{}]", items.join(",")));
+            .collect::<Vec<_>>()
+            .join(",");
+        parts.push(format!("enum[{enum_content}]"));
     }
 
     // Range constraint (min/max). Extract numeric bounds; cast f64 to i64 for integer-like display

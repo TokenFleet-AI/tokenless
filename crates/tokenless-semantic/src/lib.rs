@@ -101,7 +101,7 @@ impl Default for SemanticCompressor {
 impl SemanticCompressor {
     /// Create a new compressor with default settings.
     ///
-    /// Level 2 (ONNX) is NOT loaded — call [`load_onnx`] to enable it.
+    /// Level 2 (ONNX) is NOT loaded — call [`Self::load_onnx`] to enable it.
     #[must_use]
     pub fn new() -> Self {
         Self::default()

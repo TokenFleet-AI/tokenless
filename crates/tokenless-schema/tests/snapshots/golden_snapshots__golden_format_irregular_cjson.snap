@@ -1,8 +1,9 @@
 ---
 source: crates/tokenless-schema/tests/golden_snapshots.rs
+assertion_line: 144
 expression: "router_snapshot(&strategy, &output)"
 ---
 {
-  "strategy": "cjson-compact",
-  "output": "{config:{version:2,features:{auth:T,logging:F},endpoints:[{path:\"/api/v1/users\",method:GET,auth_required:T},{path:\"/api/v1/users\",method:POST,auth_required:T,rate_limit:100},{path:\"/api/v1/health\",method:GET,auth_required:F},{path:\"/api/v1/search\",method:POST,auth_required:T,rate_limit:50,timeout_ms:5000}],metadata:{deployed_at:\"2025-06-01T12:00:00Z\",environment:production}}}"
+  "output": "{config:{endpoints:[{auth_required:T,method:GET,path:\"/api/v1/users\"},{auth_required:T,method:POST,path:\"/api/v1/users\",rate_limit:100},{auth_required:F,method:GET,path:\"/api/v1/health\"},{auth_required:T,method:POST,path:\"/api/v1/search\",rate_limit:50,timeout_ms:5000}],features:{auth:T,logging:F},metadata:{deployed_at:\"2025-06-01T12:00:00Z\",environment:production},version:2}}",
+  "strategy": "cjson-compact"
 }

@@ -1,80 +1,81 @@
 ---
 source: crates/tokenless-schema/tests/golden_snapshots.rs
+assertion_line: 62
 expression: result
 ---
 {
   "$defs": {
-    "Pet": {
-      "type": "object",
+    "Owner": {
+      "description": "Represents a pet owner registered in the system. Owners can have multiple pets and each owner record includes contact information, address details, and a list o",
       "properties": {
+        "email": {
+          "description": "Primary email address for contacting the owner. Used for appointment reminders, vaccination alerts, and account notifications.",
+          "format": "email",
+          "type": "string"
+        },
         "id": {
-          "type": "integer",
-          "description": "Auto-generated unique identifier for the pet record in the database."
+          "description": "Auto-generated unique identifier for the owner record.",
+          "type": "integer"
         },
         "name": {
-          "type": "string",
-          "description": "The display name of the pet as provided by the owner or store staff."
+          "description": "Full legal name of the pet owner as registered in the system.",
+          "type": "string"
+        },
+        "phone": {
+          "description": "Contact phone number in E.164 international format for the owner.",
+          "pattern": "^\\+?[1-9]\\d{1,14}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "email"
+      ],
+      "type": "object"
+    },
+    "Pet": {
+      "description": "Represents a pet in the store system. Pets can be various species including dogs, cats, birds, and fish.",
+      "properties": {
+        "breed": {
+          "description": "Optional breed designation for the pet. This field is free-form text and may contain mixed breed descriptions such as 'Labrador Mix' or 'Domestic Shorthair'.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Auto-generated unique identifier for the pet record in the database.",
+          "type": "integer"
+        },
+        "name": {
+          "description": "The display name of the pet as provided by the owner or store staff.",
+          "type": "string"
         },
         "species": {
-          "type": "string",
           "description": "The biological species classification for this pet. Used for filtering and search functionality across the store catalog.",
           "enum": [
             "dog",
             "cat",
             "bird"
           ],
-          "x-tokenless-enum-truncated": 3
-        },
-        "breed": {
           "type": "string",
-          "description": "Optional breed designation for the pet. This field is free-form text and may contain mixed breed descriptions such as 'Labrador Mix' or 'Domestic Shorthair'."
+          "x-tokenless-enum-truncated": 3
         }
       },
-      "description": "Represents a pet in the store system. Pets can be various species including dogs, cats, birds, and fish.",
       "required": [
         "id",
         "name",
         "species"
-      ]
-    },
-    "Owner": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "integer",
-          "description": "Auto-generated unique identifier for the owner record."
-        },
-        "name": {
-          "type": "string",
-          "description": "Full legal name of the pet owner as registered in the system."
-        },
-        "email": {
-          "type": "string",
-          "description": "Primary email address for contacting the owner. Used for appointment reminders, vaccination alerts, and account notifications.",
-          "format": "email"
-        },
-        "phone": {
-          "type": "string",
-          "description": "Contact phone number in E.164 international format for the owner.",
-          "pattern": "^\\+?[1-9]\\d{1,14}$"
-        }
-      },
-      "description": "Represents a pet owner registered in the system. Owners can have multiple pets and each owner record includes contact information, address details, and a list o",
-      "required": [
-        "id",
-        "name",
-        "email"
-      ]
+      ],
+      "type": "object"
     }
   },
-  "type": "object",
   "description": "Root schema definition for the Pet Store API. This schema defines all the core data models used throughout the API including pets, owners, and veterinary records. It follows the OpenAPI 3.0 specification with JSON Schema Draft 2020-12 compatibility.",
   "properties": {
-    "pet": {
-      "$ref": "#/$defs/Pet"
-    },
     "owner": {
       "$ref": "#/$defs/Owner"
+    },
+    "pet": {
+      "$ref": "#/$defs/Pet"
     }
-  }
+  },
+  "type": "object"
 }

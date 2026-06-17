@@ -1,3 +1,16 @@
+//! JSON API response compression.
+//!
+//! [`ResponseCompressor`] removes debug/internal fields, truncates strings and
+//! arrays, and limits nesting depth. Supports configurable profiles via
+//! [`CompressionProfile`] for different tool output types (shell commands,
+//! API responses, generic output).
+//!
+//! # Profiles
+//!
+//! - `HighFidelity` — minimal filtering for shell/command output (4096 chars, 128 items)
+//! - `Standard` — balanced defaults (512 chars, 16 items)
+//! - `Aggressive` — maximum compression for read-only tools
+
 use std::collections::HashSet;
 
 use serde_json::{Map, Value};

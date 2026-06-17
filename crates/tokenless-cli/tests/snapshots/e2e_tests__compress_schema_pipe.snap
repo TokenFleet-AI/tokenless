@@ -1,0 +1,6 @@
+---
+source: crates/tokenless-cli/tests/e2e_tests.rs
+assertion_line: 91
+expression: stdout
+---
+{"function":{"name":"sum","description":"Add two numbers","parameters":{"type":"object","properties":{"a":{"type":"number"},"b":{"type":"number"}}}}}

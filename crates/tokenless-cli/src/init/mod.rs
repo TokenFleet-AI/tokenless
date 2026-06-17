@@ -52,11 +52,11 @@ pub enum Agent {
     Pi,
     /// Gemini CLI.
     Gemini,
-    /// OpenCode VS Code extension.
+    /// `OpenCode` VS Code extension.
     Opencode,
     /// GitHub Copilot (VS Code + CLI).
     Copilot,
-    /// OpenAI Codex CLI (AGENTS.md + RTK.md rules, no hooks).
+    /// `OpenAI` `Codex` CLI (`AGENTS.md` + `RTK.md` rules, no hooks).
     Codex,
 }
 
@@ -242,22 +242,21 @@ fn detect_project_name(cwd: &Path, cli_override: Option<&str>) -> String {
         .args(["remote", "get-url", "origin"])
         .current_dir(cwd)
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if let Some(name) = extract_repo_name(&url) {
-                return name;
-            }
+        let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if let Some(name) = extract_repo_name(&url) {
+            return name;
         }
     }
 
     // 3. Cargo.toml [package].name
-    if let Some(name) = read_manifest_field(cwd.join("Cargo.toml"), "package.name") {
+    if let Some(name) = read_manifest_field(&cwd.join("Cargo.toml"), "package.name") {
         return name;
     }
 
     // 4. package.json "name"
-    if let Some(name) = read_manifest_field(cwd.join("package.json"), "name") {
+    if let Some(name) = read_manifest_field(&cwd.join("package.json"), "name") {
         return name;
     }
 
@@ -283,20 +282,20 @@ fn extract_repo_name(url: &str) -> Option<String> {
 }
 
 /// Read a field from a JSON or TOML manifest file using simple line-based parsing.
-fn read_manifest_field(path: std::path::PathBuf, field_path: &str) -> Option<String> {
-    let content = std::fs::read_to_string(&path).ok()?;
+fn read_manifest_field(path: &Path, field_path: &str) -> Option<String> {
+    let content = std::fs::read_to_string(path).ok()?;
 
     match field_path {
         "package.name" => {
             // Simple line-based parse for Cargo.toml: name = "value"
             for line in content.lines() {
                 let trimmed = line.trim();
-                if trimmed.starts_with("name") {
-                    if let Some(val) = trimmed.split('=').nth(1) {
-                        let val = val.trim().trim_matches('"').trim_matches('\'');
-                        if !val.is_empty() {
-                            return Some(val.to_string());
-                        }
+                if trimmed.starts_with("name")
+                    && let Some(val) = trimmed.split('=').nth(1)
+                {
+                    let val = val.trim().trim_matches('"').trim_matches('\'');
+                    if !val.is_empty() {
+                        return Some(val.to_string());
                     }
                 }
             }
@@ -306,16 +305,16 @@ fn read_manifest_field(path: std::path::PathBuf, field_path: &str) -> Option<Str
             // Simple parse for package.json: "name": "value"
             for line in content.lines() {
                 let trimmed = line.trim();
-                if trimmed.starts_with("\"name\"") || trimmed.starts_with("\"name ") {
-                    if let Some(val) = trimmed.split(':').nth(1) {
-                        let val = val
-                            .trim()
-                            .trim_matches('"')
-                            .trim_matches('\'')
-                            .trim_end_matches(',');
-                        if !val.is_empty() {
-                            return Some(val.to_string());
-                        }
+                if (trimmed.starts_with("\"name\"") || trimmed.starts_with("\"name "))
+                    && let Some(val) = trimmed.split(':').nth(1)
+                {
+                    let val = val
+                        .trim()
+                        .trim_matches('"')
+                        .trim_matches('\'')
+                        .trim_end_matches(',');
+                    if !val.is_empty() {
+                        return Some(val.to_string());
                     }
                 }
             }
@@ -400,14 +399,12 @@ fn init_claude(config: &InitConfig) -> Result<(), String> {
       {{
         "matcher": "Bash",
         "hooks": [
-          {{ "type": "command", "command": "tokenless hook rewrite --target claude{project}{user}" }}
+          {{ "type": "command", "command": "tokenless hook rewrite --target claude{project_flag}{user_flag}" }}
         ]
       }}
     ]
   }}
 }}"#,
-            project = project_flag,
-            user = user_flag,
         )
     } else {
         format!(
@@ -418,7 +415,7 @@ fn init_claude(config: &InitConfig) -> Result<(), String> {
       {{
         "matcher": "Bash",
         "hooks": [
-          {{ "type": "command", "command": "tokenless hook rewrite --target claude{project}{user}" }}
+          {{ "type": "command", "command": "tokenless hook rewrite --target claude{project_flag}{user_flag}" }}
         ]
       }}
     ],
@@ -426,15 +423,12 @@ fn init_claude(config: &InitConfig) -> Result<(), String> {
       {{
         "matcher": "^(?!Bash$).*",
         "hooks": [
-          {{ "type": "command", "command": "tokenless hook compress --semantic --target claude{project}{debug}{user}" }}
+          {{ "type": "command", "command": "tokenless hook compress --semantic --target claude{project_flag}{debug_flag}{user_flag}" }}
         ]
       }}
     ]
   }}
 }}"#,
-            project = project_flag,
-            debug = debug_flag,
-            user = user_flag,
         )
     };
 
@@ -450,10 +444,10 @@ fn init_claude(config: &InitConfig) -> Result<(), String> {
     }
     println!(
         "  compress: {}",
-        if config.compress != Some(false) {
-            "enabled"
-        } else {
+        if config.compress == Some(false) {
             "disabled"
+        } else {
+            "enabled"
         }
     );
     if config.passthrough {
@@ -697,7 +691,7 @@ fn init_opencode(config: &InitConfig) -> Result<(), String> {
 // rules files (same pattern as RTK project hooks/codex/).
 
 /// RTK awareness content for Codex CLI.
-const CODEX_RULES: &str = r#"# RTK - Rust Token Killer (Codex CLI)
+const CODEX_RULES: &str = r"# RTK - Rust Token Killer (Codex CLI)
 
 **Usage**: Token-optimized CLI proxy for shell commands.
 
@@ -729,7 +723,7 @@ rtk --version
 rtk gain
 which rtk
 ```
-"#;
+";
 
 const RTK_MD: &str = "RTK.md";
 const AGENTS_MD: &str = "AGENTS.md";
@@ -750,9 +744,7 @@ fn resolve_codex_dir_from(codex_home: Option<PathBuf>, home_dir: Option<PathBuf>
     if let Some(path) = codex_home.filter(|p| !p.as_os_str().is_empty()) {
         return path;
     }
-    home_dir
-        .map(|home| home.join(".codex"))
-        .unwrap_or_else(|| PathBuf::from(".codex"))
+    home_dir.map_or_else(|| PathBuf::from(".codex"), |home| home.join(".codex"))
 }
 
 /// Generate the `@RTK.md` reference string.
@@ -803,11 +795,11 @@ fn init_codex(config: &InitConfig) -> Result<(), String> {
     };
 
     // Global mode: create parent dir, use absolute @ reference
-    if config.global {
-        if let Some(parent) = agents_md_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create {}: {e}", path_display(parent)))?;
-        }
+    if config.global
+        && let Some(parent) = agents_md_path.parent()
+    {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create {}: {e}", path_display(parent)))?;
     }
 
     let rtk_ref = if config.global {
@@ -837,6 +829,7 @@ fn init_codex(config: &InitConfig) -> Result<(), String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 

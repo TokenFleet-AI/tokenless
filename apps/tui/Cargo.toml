@@ -22,7 +22,6 @@ dirs = "6.0"
 # Internal
 tokenless-tui = { path = "../../crates/tokenless-tui", version = "1.0.0" }
 tokenless-stats = { path = "../../crates/tokenless-stats", version = "1.0.0" }
-tokenless-core = { path = "../../crates/core", version = "1.0.0" }
 
 [build-dependencies]
 built = "0.7"

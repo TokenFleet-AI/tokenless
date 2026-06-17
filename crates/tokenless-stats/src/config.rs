@@ -10,6 +10,10 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 /// Persistent configuration for tokenless stats recording.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "config naturally uses bools for feature flags"
+)]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
@@ -50,6 +54,13 @@ pub struct TokenlessConfig {
     /// Default: `false` (normal compression behavior).
     #[serde(default)]
     pub passthrough_mode: bool,
+
+    /// Whether secure-default mode is enabled.
+    ///
+    /// When enabled, the CLI applies stricter bounds and validation for
+    /// inputs, MCP parameters, log output, and helper script execution.
+    #[serde(default)]
+    pub secure_default: bool,
 }
 
 /// Serde default for boolean `true` fields.
@@ -77,6 +88,7 @@ impl fmt::Debug for TokenlessConfig {
             .field("compress_enabled", &self.compress_enabled)
             .field("last_init_at", &self.last_init_at)
             .field("passthrough_mode", &self.passthrough_mode)
+            .field("secure_default", &self.secure_default)
             .finish()
     }
 }
@@ -91,6 +103,7 @@ impl Default for TokenlessConfig {
             compress_enabled: None,
             last_init_at: None,
             passthrough_mode: false,
+            secure_default: false,
         }
     }
 }
@@ -182,6 +195,15 @@ impl TokenlessConfig {
             return val == "1" || val.eq_ignore_ascii_case("true");
         }
         self.passthrough_mode
+    }
+
+    /// Check if secure-default mode is enabled, respecting env override.
+    #[must_use]
+    pub fn is_secure_default_enabled(&self) -> bool {
+        if let Ok(val) = std::env::var("TOKENLESS_SECURE_DEFAULT") {
+            return val == "1" || val.eq_ignore_ascii_case("true");
+        }
+        self.secure_default
     }
 
     /// Return whether the config file exists on disk.

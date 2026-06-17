@@ -7,10 +7,10 @@ use crate::env_check::spec::{DepEntry, ToolDepSpec};
 
 /// Check whether a command is available on `$PATH`.
 fn check_cmd(cmd: &str) -> bool {
-    Command::new("sh")
-        .args(["-c", &format!("command -v {cmd}")])
+    Command::new("which")
+        .arg(cmd)
         .output()
-        .map_or(false, |o| o.status.success())
+        .is_ok_and(|o| o.status.success())
 }
 
 /// Status of a single dependency check.
@@ -89,7 +89,7 @@ pub(crate) fn version_ge(installed: &str, required: &str) -> bool {
         cleaned
             .split('.')
             .filter_map(|seg| {
-                let num_part: String = seg.chars().take_while(|c| c.is_ascii_digit()).collect();
+                let num_part: String = seg.chars().take_while(char::is_ascii_digit).collect();
                 num_part.parse().ok()
             })
             .collect()
@@ -110,9 +110,7 @@ pub(crate) fn version_ge(installed: &str, required: &str) -> bool {
 }
 
 pub(crate) fn check_dep(dep: &DepEntry) -> DepStatus {
-    let found = Command::new("sh")
-        .args(["-c", &format!("command -v \"$1\""), "--", &dep.binary])
-        .output();
+    let found = Command::new("which").arg(&dep.binary).output();
 
     match found {
         Ok(output) if output.status.success() => {
@@ -173,7 +171,7 @@ pub(crate) fn check_permission(perm: &str) -> bool {
         "exec_shell" => Command::new("which")
             .arg("bash")
             .output()
-            .map_or(false, |o| o.status.success()),
+            .is_ok_and(|o| o.status.success()),
         _ => {
             eprintln!("[tokenless] env_check: unknown permission type: {perm}");
             true
@@ -187,7 +185,7 @@ pub(crate) fn check_network(net: &str) -> bool {
         "https_outbound" => Command::new("curl")
             .args(["-s", "--max-time", "2", "https://example.com"])
             .output()
-            .map_or(false, |o| o.status.success()),
+            .is_ok_and(|o| o.status.success()),
         _ => true,
     }
 }

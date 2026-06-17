@@ -12,6 +12,7 @@ pub(crate) fn handle(
     compress: bool,
     no_compress: bool,
     passthrough: bool,
+    secure_default: bool,
 ) -> Result<(), (String, i32)> {
     let agent = match agent.as_str() {
         "cursor" => init::Agent::Cursor,
@@ -56,6 +57,7 @@ pub(crate) fn handle(
 
     // Persist passthrough mode
     config.passthrough_mode = passthrough;
+    config.secure_default = secure_default;
 
     // Record init timestamp
     config.last_init_at = Some(chrono::Utc::now().to_rfc3339());

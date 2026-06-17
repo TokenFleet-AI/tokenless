@@ -1,8 +1,9 @@
 ---
 source: crates/tokenless-schema/tests/golden_snapshots.rs
+assertion_line: 128
 expression: "router_snapshot(&strategy, &output)"
 ---
 {
-  "strategy": "enhanced-toon",
-  "output": "name: search_products\ndescription: Search for products in the catalog using various filters including category, price range, and sorting options.\nparameters: object"
+  "output": "description: Search for products in the catalog using various filters including category, price range, and sorting options.\nname: search_products\nparameters: object",
+  "strategy": "enhanced-toon"
 }

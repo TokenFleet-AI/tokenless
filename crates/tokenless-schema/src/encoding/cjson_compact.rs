@@ -54,15 +54,30 @@ fn encode_value(value: &Value) -> String {
         Value::Number(n) => n.to_string(),
         Value::String(s) => encode_string(s),
         Value::Array(arr) => {
-            let items: Vec<String> = arr.iter().map(encode_value).collect();
-            format!("[{}]", items.join(","))
+            let mut output = String::with_capacity(arr.len().saturating_mul(8).saturating_add(2));
+            output.push('[');
+            for (index, item) in arr.iter().enumerate() {
+                if index > 0 {
+                    output.push(',');
+                }
+                output.push_str(&encode_value(item));
+            }
+            output.push(']');
+            output
         }
         Value::Object(obj) => {
-            let items: Vec<String> = obj
-                .iter()
-                .map(|(k, v)| format!("{}:{}", encode_string(k), encode_value(v)))
-                .collect();
-            format!("{{{}}}", items.join(","))
+            let mut output = String::with_capacity(obj.len().saturating_mul(16).saturating_add(2));
+            output.push('{');
+            for (index, (key, item)) in obj.iter().enumerate() {
+                if index > 0 {
+                    output.push(',');
+                }
+                output.push_str(&encode_string(key));
+                output.push(':');
+                output.push_str(&encode_value(item));
+            }
+            output.push('}');
+            output
         }
     }
 }

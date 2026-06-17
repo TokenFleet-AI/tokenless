@@ -10,13 +10,26 @@ readme = "README.md"
 keywords = ["llm", "token", "compression", "openai", "function-calling"]
 categories = ["development-tools", "compression"]
 
+[lib]
+crate-type = ["lib", "cdylib"]
+
+[features]
+default = []
+wasm = ["dep:wasm-bindgen"]
+
 [dependencies]
 serde_json.workspace = true
 regex.workspace = true
 tracing.workspace = true
+wasm-bindgen = { version = "0.2.105", optional = true }
 
 [dev-dependencies]
 insta.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "schema_bench"
+harness = false
 
 [lints]
 workspace = true

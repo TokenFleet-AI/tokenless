@@ -30,10 +30,10 @@ toml = "0.8"
 toon-format = { version = "0.5", default-features = false }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+secrecy = "0.10"
 
 # CLI
 blake3 = "1"
-lru = "0.18"
 
 # TUI
 ratatui = "0.30"

@@ -1,8 +1,9 @@
 ---
 source: crates/tokenless-schema/tests/golden_snapshots.rs
+assertion_line: 136
 expression: "router_snapshot(&strategy, &output)"
 ---
 {
-  "strategy": "passthrough",
-  "output": "{\"data\":{\"user\":{\"profile\":{\"preferences\":{\"notifications\":{\"email\":{\"enabled\":true,\"frequency\":\"daily\"}}}}}}}"
+  "output": "{\"data\":{\"user\":{\"profile\":{\"preferences\":{\"notifications\":{\"email\":{\"enabled\":true,\"frequency\":\"daily\"}}}}}}}",
+  "strategy": "passthrough"
 }

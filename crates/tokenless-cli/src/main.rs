@@ -4,16 +4,9 @@
 //! under [`shared`].  The `main()` entry point parses CLI args and dispatches
 //! to the appropriate handler.
 #![allow(
+    // Sync std::fs is intentional — this is a synchronous CLI, not an async server.
     clippy::disallowed_methods,
     clippy::disallowed_types,
-    clippy::collapsible_if,
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::unreadable_literal,
-    clippy::unnecessary_map_or,
-    clippy::useless_format,
-    clippy::pedantic,
-    reason = "pre-existing CLI code conventions; pedantic enforced at crate level"
 )]
 
 mod cache;
@@ -34,13 +27,17 @@ use clap::{Parser, Subcommand};
     about = "LLM token optimization via schema and response compression"
 )]
 struct Cli {
+    /// Enable stricter secure defaults for validation, logging, and helper execution.
+    #[arg(long, global = true)]
+    secure_default: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Compress OpenAI Function Calling tool schemas.
+    /// Compress `OpenAI` `Function Calling` tool schemas.
     CompressSchema {
         #[arg(short, long)]
         file: Option<String>,
@@ -50,6 +47,9 @@ enum Commands {
         /// Print token savings report to stderr.
         #[arg(long)]
         report: bool,
+        /// Explain compression decisions.
+        #[arg(long)]
+        explain: bool,
         /// Project name for multi-project statistics.
         #[arg(long)]
         project: Option<String>,
@@ -193,6 +193,10 @@ enum Commands {
     Mcp(McpAction),
     /// Show a demo of all compression strategies.
     Demo,
+    /// Run environment diagnostic (binary, PATH, hooks, stats).
+    Doctor,
+    /// Show lightweight hook/stats status for quick daily check.
+    Status,
     /// Launch the interactive TUI dashboard.
     Tui {
         /// Refresh interval in seconds (default: 1).
@@ -212,7 +216,7 @@ enum McpAction {
 
 #[derive(Subcommand)]
 enum HookCommands {
-    /// PreToolUse: rewrite shell commands via RTK.
+    /// `PreToolUse`: rewrite shell commands via RTK.
     Rewrite {
         /// Agent target (e.g., "claude").
         #[arg(short, long, default_value = "claude")]
@@ -224,7 +228,7 @@ enum HookCommands {
         #[arg(long)]
         user_name: Option<String>,
     },
-    /// PostToolUse: compress tool response output.
+    /// `PostToolUse`: compress tool response output.
     Compress {
         /// Enable semantic-aware field filtering (Level 2 ONNX or Level 1 rules).
         #[arg(long)]
@@ -242,16 +246,19 @@ enum HookCommands {
         #[arg(long)]
         debug: bool,
     },
-    /// PostToolUse: differential response (unified diff).
+    /// `PostToolUse`: differential response (unified diff).
     Diff,
 }
 
 #[derive(Debug, Subcommand)]
 enum RewriteTarget {
-    /// Claude Code PreToolUse hook.
+    /// `Claude` Code `PreToolUse` hook.
     Claude,
+    /// `Cursor` IDE.
     Cursor,
+    /// `Gemini` CLI.
     Gemini,
+    /// `Copilot` CLI.
     Copilot,
 }
 
@@ -313,10 +320,47 @@ enum StatsCommands {
         #[arg(long)]
         until: Option<String>,
     },
+    /// Delete specific records from stats.
+    Delete {
+        /// Delete a single record by ID.
+        #[arg(long)]
+        id: Option<i64>,
+        /// Delete all records for a specific agent.
+        #[arg(long)]
+        agent: Option<String>,
+        /// Delete all records before a date (ISO 8601, e.g. "2026-05-01").
+        #[arg(long)]
+        before: Option<String>,
+        /// Skip confirmation prompt.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Reclaim disk space after deleting large amounts of records.
+    Vacuum,
+    /// Export all stats records to a JSON file.
+    Export {
+        /// Output file path (required).
+        #[arg(short, long)]
+        output: String,
+    },
+    /// Generate a shareable weekly/monthly report.
+    Share {
+        #[arg(long)]
+        since: Option<String>,
+        #[arg(long)]
+        project: Option<String>,
+        /// Output format: "terminal" (default) or "markdown".
+        #[arg(long, default_value = "terminal")]
+        format: String,
+    },
 }
 
 // ── Dispatch ─────────────────────────────────────────────────────────────────
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "CLI dispatch: each match arm maps to a subcommand handler"
+)]
 fn run() -> Result<(), (String, i32)> {
     // Init tracing: stderr + log file
     use tracing_subscriber::layer::SubscriberExt;
@@ -358,13 +402,25 @@ fn run() -> Result<(), (String, i32)> {
     let config = tokenless_stats::TokenlessConfig::load();
     tokenless_schema::set_experimental_mode(config.is_experimental_enabled());
 
+    let mut config = config;
+    if std::env::var("TOKENLESS_SECURE_DEFAULT")
+        .is_ok_and(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+    {
+        config.secure_default = true;
+    }
+
     let cli = Cli::parse();
+
+    if cli.secure_default {
+        config.secure_default = true;
+    }
 
     match cli.command {
         Commands::CompressSchema {
             file,
             batch,
             report,
+            explain: _,
             project,
             agent_id,
             session_id,
@@ -459,7 +515,20 @@ fn run() -> Result<(), (String, i32)> {
             compress,
             no_compress,
             passthrough,
-        } => commands::init_cmd::handle(global, agent, debug, compress, no_compress, passthrough),
+        } => {
+            if cli.secure_default {
+                config.secure_default = true;
+            }
+            commands::init_cmd::handle(
+                global,
+                agent,
+                debug,
+                compress,
+                no_compress,
+                passthrough,
+                cli.secure_default,
+            )
+        }
         Commands::EnvCheck {
             tool,
             all,
@@ -482,6 +551,8 @@ fn run() -> Result<(), (String, i32)> {
             println!("{}", commands::demo::generate());
             Ok(())
         }
+        Commands::Doctor => commands::doctor::doctor(),
+        Commands::Status => commands::doctor::status(),
         Commands::Tui { refresh, lang } => {
             if !shared::is_experimental_enabled() {
                 return Err((
@@ -521,6 +592,19 @@ fn run() -> Result<(), (String, i32)> {
                 project,
                 namespace: _,
             } => commands::stats::stats_diff(since, until, project),
+            StatsCommands::Delete {
+                id,
+                agent,
+                before,
+                yes,
+            } => commands::stats::stats_delete(id, agent, before, yes),
+            StatsCommands::Vacuum => commands::stats::stats_vacuum(),
+            StatsCommands::Export { output } => commands::stats::stats_export(&output),
+            StatsCommands::Share {
+                since,
+                project,
+                format,
+            } => commands::stats::stats_share(since, project, Some(format)),
         },
     }
 }

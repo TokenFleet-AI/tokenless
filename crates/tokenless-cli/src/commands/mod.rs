@@ -4,6 +4,7 @@
 
 pub(crate) mod compress;
 pub(crate) mod demo;
+pub(crate) mod doctor;
 pub(crate) mod env_check_cmd;
 pub(crate) mod hook;
 pub(crate) mod init_cmd;

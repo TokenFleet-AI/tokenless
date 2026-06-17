@@ -7,7 +7,8 @@ This directory contains reusable project documentation for the template reposito
 - [SDK 集成指南 (英文)](./sdk-integration.md) — 第三方 Rust 库集成文档
 - [SDK 集成指南 (中文)](./sdk-integration-zh.md) — 中文版 SDK 集成文档
 
-- [用户指南与教程](./user-guide.md) — 全面的使用教程、设计说明和 API 参考
+- [用户指南与教程 (英文)](./user-guide.md) — 全面的使用教程、设计说明和 API 参考
+- [用户指南与教程 (中文)](./user-guide-zh.md) — 中文版使用教程、设计说明和 API 参考
 
 - [Tokenless 架构设计 (中文)](./design/tokenless-architecture-zh.md) — 中文版架构设计文档
 - [Architecture (EN)](../specs/0001-architecture.md) — 英文版架构规格（Specs 0001）
@@ -30,6 +31,14 @@ This directory contains reusable project documentation for the template reposito
 - [0012 智能格式路由](../specs/0012-format-router.md)
 - [0013 差分响应压缩](../specs/0013-differential-response.md)
 - [0014 语义感知压缩](../specs/0014-semantic-aware-compression.md)
+- [0015 安全加固](../specs/0015-security-hardening.md)
+- [0016 架构对齐](../specs/0016-architecture-alignment.md)
+- [0017 统计历史管理](../specs/0017-stats-management.md)
+- [0018 压缩统计回传](../specs/0018-compression-stats-reporting.md)
+- [0019 异步语义 Provider](../specs/0019-async-semantic-provider.md)
+- [0020 团队成本控制台](../specs/0020-team-dashboard.md)
+- [0021 策略配置中心](../specs/0021-policy-config-center.md)
+- [Codex CLI 支持](../specs/codex-support-spec.md)
 
 ## Agent workflow
 
@@ -64,11 +73,24 @@ This directory contains reusable project documentation for the template reposito
 
 ## 项目健康分析
 
-- [多维度分析报告](./analysis/multi-dimensional-analysis.md) — 架构、文档、安全、性能四维度综合评估
+- [多角色并行分析综合规划](./analysis/multi-role-feature-plan-20260617.md) — 30 项功能规划 + 三阶段路线图
+- [架构评审](./analysis/architecture-review-20260617.md) — Crate 边界、依赖图、扩展性分析
+- [安全评审](./analysis/security-review-20260617.md) — 威胁矩阵、输入信任边界、供应链分析
+- [性能评审](./analysis/performance-review-20260617.md) — 热路径分析、缓存效率、基准测试计划
+- [UX/DevRel 评审](./analysis/ux-devrel-review-20260617.md) — 安装体验、文档完整性、传播能力
+- [市场/创新评审](./analysis/market-innovation-review-20260617.md) — 竞品分析、商业模式、创新方向
+- [代码质量评审](./analysis/code-quality-review-20260617.md) — 测试覆盖率、lint 纪律、CI/CD 健康度
+- [多维度分析报告 (旧版)](./analysis/multi-dimensional-analysis.md) — 架构、文档、安全、性能四维度综合评估
 - [性能基准报告](./performance-benchmarks.md) — 实际压缩效果与构建指标
+
+## 参考指南
+
+- [Agent 能力矩阵](./agent-capability-matrix.md) — 13 种 Agent 的压缩能力对照表
+- [使用示例与 Recipes](./examples/recipes.md) — 场景化安装与使用示例
 
 ## 研究分析
 
 - [模板迁移分析](./research/template-migration-analysis.md) — rust-tui-template 模板替换评估（RuFlo 6 Agent Swarm 联合审计）
+- [WASM 构建可行性](./research/wasm-build-feasibility.md) — `tokenless-schema` 的 WebAssembly 构建能力、替代方案与后续计划
 
-Owner: baoyx · 版本：v1.2 · 生效日期：2026-06-01 · 最后更新：2026-06-01
+Owner: baoyx · 版本：v1.3 · 生效日期：2026-06-17 · 最后更新：2026-06-17
