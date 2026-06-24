@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 readme = "README.md"
 description = "Interactive TUI dashboard for tokenless compression statistics"
-keywords = ["llm", "token", "tui", "dashboard", "statistics", "ratatui"]
+keywords = ["llm", "token", "tui", "dashboard", "statistics"]
 categories = ["command-line-interface", "visualization", "development-tools"]
 
 [dependencies]
