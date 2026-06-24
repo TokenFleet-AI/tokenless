@@ -46,3 +46,4 @@ tokenless-export_*.json
 
 # Coverage / test artifacts
 lcov.info
+test_allow*
