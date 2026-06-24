@@ -38,20 +38,24 @@ jobs:
           - target: x86_64-apple-darwin
             os: macos-latest
             archive: tar.gz
-            onnx: false  # ort no prebuilt for x86_64-apple-darwin
+            features: ""  # ort no prebuilt for x86_64-apple-darwin
           - target: aarch64-apple-darwin
             os: macos-latest
             archive: tar.gz
-            onnx: false  # Xcode 16.4 clang_rt.osx broken; build ONNX version locally
+            features: ""  # Xcode 16.4 clang_rt.osx broken; build ONNX version locally
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+            features: "--features tokenless-semantic/onnx"
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             archive: tar.gz
             musl: true
-            onnx: false  # ort no prebuilt for x86_64-unknown-linux-musl
+            features: ""  # ort no prebuilt for musl
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             archive: zip
-            onnx: true
+            features: "--features tokenless-semantic/onnx"
 
     steps:
       - uses: actions/checkout@v4
@@ -73,13 +77,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y musl-tools
 
-      - name: Build (with ONNX)
-        if: matrix.onnx
-        run: cargo build --release --target ${{ matrix.target }} --features tokenless-semantic/onnx
-
-      - name: Build (without ONNX)
-        if: "!matrix.onnx"
-        run: cargo build --release --target ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} ${{ matrix.features }}
 
       - name: Package (Unix)
         if: matrix.os != 'windows-latest'
