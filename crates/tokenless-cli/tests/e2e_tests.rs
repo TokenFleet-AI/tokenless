@@ -82,13 +82,14 @@ fn sanitize_output(output: &str) -> String {
             "[PATH_STATUS]",
         );
 
-    // Normalize RTK install tip (appears in doctor when RTK not installed)
+    // Strip RTK install tip (appears in doctor when RTK not installed,
+    // but not when RTK is installed — remove to keep snapshots consistent).
     let output = output.replace(
         "💡 Tip: Install RTK for command rewriting: https://github.com/RTK/rink\n\n",
-        "[RTK_TIP]",
+        "",
     );
 
-    // Normalize demo RTK status note
+    // Strip demo RTK status note (appears only when RTK not installed).
     let output = output.replace("\n\n   (RTK not installed; showing expected output)", "");
 
     output.replace("/private", "")
