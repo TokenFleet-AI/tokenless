@@ -1,6 +1,5 @@
 ---
 source: crates/tokenless-cli/tests/e2e_tests.rs
-assertion_line: 141
 description: secure-default global flag should be accepted
 expression: output
 ---

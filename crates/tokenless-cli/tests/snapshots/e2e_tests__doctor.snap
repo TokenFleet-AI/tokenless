@@ -1,6 +1,5 @@
 ---
 source: crates/tokenless-cli/tests/e2e_tests.rs
-assertion_line: 52
 expression: output
 ---
 🔍 tokenless doctor — environment diagnostic

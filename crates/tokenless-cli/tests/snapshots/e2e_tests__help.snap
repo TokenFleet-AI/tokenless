@@ -1,6 +1,5 @@
 ---
 source: crates/tokenless-cli/tests/e2e_tests.rs
-assertion_line: 133
 expression: output
 ---
 LLM token optimization via schema and response compression
