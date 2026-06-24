@@ -19,7 +19,7 @@ toml = "0.8"
 # Level 2: ONNX embedding model (opt-in via feature flag)
 dirs = { workspace = true, optional = true }
 ort = { version = "2.0.0-rc.12", optional = true }
-tokenizers = { version = "0.21", optional = true, default-features = false, features = ["onig"] }
+tokenizers = { version = "0.23", optional = true, default-features = false, features = ["onig"] }
 ureq = { version = "3", optional = true }
 
 [features]

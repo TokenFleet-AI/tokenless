@@ -43,7 +43,7 @@ crossterm = "0.29"
 typed-builder = "0.19"
 
 # Business
-rtk-registry = "0.1.1"
+rtk-registry = "1.0.0"
 
 insta = { version = "1", features = ["json"] }
 
