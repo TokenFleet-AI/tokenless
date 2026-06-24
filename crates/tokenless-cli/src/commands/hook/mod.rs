@@ -482,6 +482,15 @@ mod tests {
     }
 
     #[test]
+    fn test_compress_plain_text_truncates_at_utf8_boundary() {
+        let long = format!("{}💥tail", "x".repeat(8191));
+        let result = compress_plain_text(&long);
+        assert!(result.contains("truncated"), "should have truncation note");
+        assert!(result.starts_with(&"x".repeat(8191)));
+        assert!(!result.contains('💥'), "should not include a partial emoji");
+    }
+
+    #[test]
     fn test_should_handle_truncated_ansi_sequence_gracefully() {
         let input = "hello \x1b[未完成的序列";
         let result = compress_plain_text(input);
