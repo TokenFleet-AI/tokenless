@@ -2801,7 +2801,7 @@ dependencies = [
 
 [[package]]
 name = "tless-tui"
-version = "1.0.0"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "built",
@@ -2850,7 +2850,7 @@ dependencies = [
 
 [[package]]
 name = "tokenless"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "assert_cmd",
  "blake3",
@@ -2877,7 +2877,7 @@ dependencies = [
 
 [[package]]
 name = "tokenless-schema"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "criterion",
  "insta",
@@ -2889,7 +2889,7 @@ dependencies = [
 
 [[package]]
 name = "tokenless-semantic"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "dirs",
  "ort",
@@ -2904,7 +2904,7 @@ dependencies = [
 
 [[package]]
 name = "tokenless-stats"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "chrono",
  "dirs",
@@ -2919,7 +2919,7 @@ dependencies = [
 
 [[package]]
 name = "tokenless-tui"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "chrono",
  "crossterm",
