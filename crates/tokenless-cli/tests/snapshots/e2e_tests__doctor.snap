@@ -5,7 +5,7 @@ expression: output
 🔍 tokenless doctor — environment diagnostic
 
 ==================================================
-✅ tokenless binary: $HOME/Documents/workspace/github.com/TokenFleet-AI/tokenless/target/debug/tokenless
+✅ tokenless binary: $CWD/target/debug/tokenless
 [PATH_STATUS]
 [RTK_STATUS]
 📁 tokenless dir: $HOME/.tokenfleet-ai/tokenless

@@ -27,10 +27,17 @@ fn sanitized_command_output(args: &[&str]) -> String {
 }
 
 fn sanitize_output(output: &str) -> String {
-    let current_dir = std::env::current_dir()
+    // CWD during `cargo test` is the crate directory, but the binary
+    // path is relative to the workspace root. Walk up to workspace root.
+    let crate_dir = std::env::current_dir()
         .ok()
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_default();
+    let ws_root = if crate_dir.ends_with("/crates/tokenless-cli") {
+        crate_dir.replace("/crates/tokenless-cli", "")
+    } else {
+        crate_dir.clone()
+    };
 
     // Normalize cargo-llvm-cov's separate target directory so coverage runs
     // produce the same snapshot output as plain `cargo test`.
@@ -41,13 +48,14 @@ fn sanitize_output(output: &str) -> String {
         .replace("/tmp/tokenless-e2e-home", "$HOME")
         .replace("/private/tmp/tokenless-e2e-home", "$HOME");
 
-    let output = if current_dir.is_empty() {
+    // Replace workspace root with $CWD (before home_dir).
+    let output = if ws_root.is_empty() {
         output
     } else {
-        output.replace(&current_dir, "$CWD")
+        output.replace(&ws_root, "$CWD")
     };
 
-    // Normalize environment-specific binary paths (e.g., ~/.tokenfleet-ai/bin)
+    // Normalize home directory paths.
     let home = dirs::home_dir().unwrap_or_default();
     let home_str = home.to_string_lossy();
     let output = output.replace(&*home_str, "$HOME");
@@ -73,6 +81,15 @@ fn sanitize_output(output: &str) -> String {
             "⚠️  not found in PATH — add to your shell config",
             "[PATH_STATUS]",
         );
+
+    // Normalize RTK install tip (appears in doctor when RTK not installed)
+    let output = output.replace(
+        "💡 Tip: Install RTK for command rewriting: https://github.com/RTK/rink\n\n",
+        "[RTK_TIP]",
+    );
+
+    // Normalize demo RTK status note
+    let output = output.replace("\n\n   (RTK not installed; showing expected output)", "");
 
     output.replace("/private", "")
 }
