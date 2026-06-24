@@ -5,9 +5,9 @@ expression: output
 🔍 tokenless doctor — environment diagnostic
 
 ==================================================
-✅ tokenless binary: /Users/byx/Documents/workspace/github.com/TokenFleet-AI/tokenless/target/debug/tokenless
-✅ in PATH: /Users/byx/.tokenfleet-ai/bin/tokenless
-✅ RTK installed (command rewriting available)
+✅ tokenless binary: $HOME/Documents/workspace/github.com/TokenFleet-AI/tokenless/target/debug/tokenless
+[PATH_STATUS]
+[RTK_STATUS]
 📁 tokenless dir: $HOME/.tokenfleet-ai/tokenless
    ✅ directory exists
 

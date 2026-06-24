@@ -47,6 +47,33 @@ fn sanitize_output(output: &str) -> String {
         output.replace(&current_dir, "$CWD")
     };
 
+    // Normalize environment-specific binary paths (e.g., ~/.tokenfleet-ai/bin)
+    let home = dirs::home_dir().unwrap_or_default();
+    let home_str = home.to_string_lossy();
+    let output = output.replace(&*home_str, "$HOME");
+
+    // Normalize RTK installation status (depends on local environment)
+    let output = output
+        .replace(
+            "✅ RTK installed (command rewriting available)",
+            "[RTK_STATUS]",
+        )
+        .replace(
+            "ℹ️  RTK not installed (command rewriting disabled; other features work fine)",
+            "[RTK_STATUS]",
+        );
+
+    // Normalize PATH status (depends on local environment)
+    let output = output
+        .replace(
+            "✅ in PATH: $HOME/.tokenfleet-ai/bin/tokenless",
+            "[PATH_STATUS]",
+        )
+        .replace(
+            "⚠️  not found in PATH — add to your shell config",
+            "[PATH_STATUS]",
+        );
+
     output.replace("/private", "")
 }
 
