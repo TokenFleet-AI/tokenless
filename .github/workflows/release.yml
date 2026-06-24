@@ -38,16 +38,20 @@ jobs:
           - target: x86_64-apple-darwin
             os: macos-latest
             archive: tar.gz
+            onnx: false  # ort no prebuilt for x86_64-apple-darwin
           - target: aarch64-apple-darwin
             os: macos-latest
             archive: tar.gz
+            onnx: true
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             archive: tar.gz
             musl: true
+            onnx: false  # ort no prebuilt for x86_64-unknown-linux-musl
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             archive: zip
+            onnx: true
 
     steps:
       - uses: actions/checkout@v4
@@ -64,7 +68,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y musl-tools
 
-      - run: cargo build --release --target ${{ matrix.target }} --features tokenless-semantic/onnx
+      - name: Build (with ONNX)
+        if: matrix.onnx
+        run: cargo build --release --target ${{ matrix.target }} --features tokenless-semantic/onnx
+
+      - name: Build (without ONNX)
+        if: "!matrix.onnx"
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package (Unix)
         if: matrix.os != 'windows-latest'
