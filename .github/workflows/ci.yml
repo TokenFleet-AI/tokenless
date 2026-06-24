@@ -27,6 +27,23 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Pin Xcode (avoid broken clang_rt.osx in Xcode 16.4)
+        if: runner.os == 'macOS'
+        run: |
+          # Xcode 16.4 ships with a broken clang_rt.osx search path.
+          # Find the latest Xcode that still has the compiler-rt library.
+          for xcode in /Applications/Xcode_*.app; do
+            version=$(basename "$xcode" .app | sed 's/Xcode_//')
+            libdir="$xcode/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/"*
+            if ls "$libdir"/lib/darwin/libclang_rt.osx.a 2>/dev/null; then
+              echo "Using Xcode $version (has clang_rt.osx)"
+              sudo xcode-select -s "$xcode/Contents/Developer"
+              exit 0
+            fi
+          done
+          echo "No Xcode with clang_rt.osx found; listing available:"
+          ls -d /Applications/Xcode_*.app
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
