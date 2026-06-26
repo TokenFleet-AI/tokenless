@@ -94,3 +94,4 @@ This directory contains reusable project documentation for the template reposito
 - [WASM 构建可行性](./research/wasm-build-feasibility.md) — `tokenless-schema` 的 WebAssembly 构建能力、替代方案与后续计划
 
 Owner: baoyx · 版本：v1.3 · 生效日期：2026-06-17 · 最后更新：2026-06-17
+- 发布流程参考 [发布指南](./release-guide.md)。
