@@ -69,19 +69,28 @@ check-agent-sync:
 		exit 1; \
 	}
 
-release: ## Usage: make release VERSION=patch|minor|major
+release: release-push ## Usage: make release VERSION=patch|minor|major (step 1: push + tag)
+	@echo ""
+	@echo "==> Step 1 完成: 代码已推送并创建 tag"
+	@echo "==> 请等待 GitHub Actions CI 通过"
+	@echo "==> 查看 CI 状态: gh run list --limit 1"
+	@echo "==> CI 通过后执行: make release-publish"
+
+release-push: ## Step 1: 更新版本、提交、生成 CHANGELOG、创建 tag、推送
 ifndef VERSION
-	$(error Usage: make release VERSION=patch|minor|major)
+	$(error Usage: make release-push VERSION=patch|minor|major)
 endif
 	@cargo release version $(VERSION) --execute --workspace
 	@cargo release commit --execute --workspace
 	@git cliff -o CHANGELOG.md
 	@git commit -a -n -m "Update CHANGELOG.md" || true
 	@cargo release tag --execute --workspace
-	@git push origin master
+	@git push origin master --tags
+
+release-publish: ## Step 2: 发布到 crates.io（CI 通过后执行）
 	@cargo release publish --execute --workspace
 
 update-submodule:
 	@git submodule update --init --recursive --remote
 
-.PHONY: build test fmt clippy audit lint install adapter-install adapter-uninstall setup clean check-agent-sync release update-submodule
+.PHONY: build test fmt clippy audit lint install adapter-install adapter-uninstall setup clean check-agent-sync release release-push release-publish update-submodule
