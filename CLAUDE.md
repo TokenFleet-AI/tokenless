@@ -8,8 +8,6 @@ This repository is a reusable Rust 2024 workspace template. These rules are mand
 - Preserve template placeholders such as `tokenless` unless the user explicitly asks to instantiate the template.
 - Do not replace template variables with concrete project names during maintenance.
 - Use `CLAUDE.md` as the single project-level agent instruction file.
-- Use Ruflo for agent workflow/orchestration. Do not maintain project-local `.claude/skills` unless explicitly requested.
-- Keep Ruflo or Claude-flow runtime state out of git; persist reusable guidance in `CLAUDE.md`, `docs/`, or `specs/`.
 - Do not commit, push, merge, release, deploy, install dependencies, or change ticket state without explicit user permission.
 - Never run `cargo clean`; ask first if it is truly required.
 - Never write `TODO`, `todo!()`, temporary stubs, or incomplete code. If blocked, stop, reassess, and implement the complete solution.

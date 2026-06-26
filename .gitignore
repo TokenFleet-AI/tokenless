@@ -8,9 +8,6 @@
 crates/tokenless-semantic/models/*.onnx
 crates/tokenless-semantic/models/*.json
 
-# Ruflo / Claude-flow runtime state
-.claude-flow/
-.swarm/
 .claude/
 .mcp.json
 ruvector.db
