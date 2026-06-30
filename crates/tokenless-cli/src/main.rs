@@ -612,8 +612,16 @@ fn run() -> Result<(), (String, i32)> {
 }
 
 fn main() {
+    let ec_buffer = exception_collector::ExceptionBuffer::with_default_dir("tokenless")
+        .unwrap_or_else(|_| {
+            exception_collector::ExceptionBuffer::new(std::path::Path::new(":memory:"))
+                .expect("in-memory fallback buffer")
+        });
+
     if let Err((msg, code)) = run() {
+        exception_collector::collect_result_err(&ec_buffer, "tokenless", &msg);
         eprintln!("Error: {msg}");
+        let _ = ec_buffer.flush();
         std::process::exit(code);
     }
 }
