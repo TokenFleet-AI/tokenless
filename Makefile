@@ -81,7 +81,7 @@ ifndef VERSION
 	$(error Usage: make release-push VERSION=patch|minor|major)
 endif
 	@cargo release version $(VERSION) --execute --workspace --no-confirm
-	@cargo release commit --execute --workspace --no-confirm
+	@cargo release commit --execute --no-confirm
 	@git cliff -o CHANGELOG.md
 	@git commit -a -n -m "Update CHANGELOG.md" || true
 	@cargo release tag --execute --workspace --no-confirm
