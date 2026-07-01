@@ -33,7 +33,7 @@ nix = { version = "0.30", features = ["user"] }
 rtk-registry.workspace = true
 blake3.workspace = true
 tokenless-tui = { path = "../tokenless-tui", version = "1.2.0" }
-exception-collector = { path = "../../../token-fleet-switch/crates/exception-collector" }
+exception-collector = { git = "https://github.com/TokenFleet-AI/exception-collector" }
 
 [dev-dependencies]
 insta.workspace = true

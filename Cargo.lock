@@ -870,7 +870,8 @@ dependencies = [
 
 [[package]]
 name = "exception-collector"
-version = "1.0.0"
+version = "0.1.0"
+source = "git+https://github.com/TokenFleet-AI/exception-collector#c79ba7bbb7174c81424a06a63a2b14d07f71d5c0"
 dependencies = [
  "async-trait",
  "chrono",
