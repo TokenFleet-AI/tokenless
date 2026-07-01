@@ -612,11 +612,17 @@ fn run() -> Result<(), (String, i32)> {
 }
 
 fn main() {
-    let ec_buffer = exception_collector::ExceptionBuffer::with_default_dir("tokenless")
-        .unwrap_or_else(|_| {
-            exception_collector::ExceptionBuffer::new(std::path::Path::new(":memory:"))
-                .expect("in-memory fallback buffer")
-        });
+    let ec_buffer = match exception_collector::ExceptionBuffer::with_default_dir("tokenless") {
+        Ok(buf) => buf,
+        Err(_) => match exception_collector::ExceptionBuffer::new(std::path::Path::new(":memory:"))
+        {
+            Ok(buf) => buf,
+            Err(e) => {
+                eprintln!("Error: failed to initialize exception buffer: {e}");
+                std::process::exit(1);
+            }
+        },
+    };
 
     if let Err((msg, code)) = run() {
         exception_collector::collect_result_err(&ec_buffer, "tokenless", &msg);
